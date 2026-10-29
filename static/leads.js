@@ -31,11 +31,17 @@
     promo: ['Promo', null, 'tight', (r) => esc(r.promo_code || '')],
     notes: ['Notes', null, 'notes', (r) => `<span title="${esc([r.va_notes, r.buyer_notes].filter(Boolean).join(' | '))}">${esc(r.buyer_notes || r.va_notes || '')}</span>`],
   };
-  const DEFAULT_ORDER = ['asin', 'product', 'store', 'brand', 'cost', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
-  const ORDER_KEY = 'leadColOrder.v1';
+  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
+  const ORDER_KEY = 'leadColOrder.v2';
   function loadOrder() {
     try {
-      const saved = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null');
+      let saved = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null');
+      if (!saved) {   // carry over an older arrangement, with ASIN moved next to Store
+        const old = JSON.parse(localStorage.getItem('leadColOrder.v1') || 'null');
+        if (Array.isArray(old) && old.includes('store')) {
+          saved = old.filter((k) => k !== 'asin'); saved.splice(saved.indexOf('store'), 0, 'asin');
+        }
+      }
       if (Array.isArray(saved)) { const ok = saved.filter((k) => COLS[k]); return ok.concat(DEFAULT_ORDER.filter((k) => !ok.includes(k))); }
     } catch { /* storage blocked */ }
     return DEFAULT_ORDER.slice();
