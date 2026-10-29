@@ -32,10 +32,12 @@ window.LG = (() => {
     const me = await api('GET', '/api/me');
     st.me = me.user; st.connectorUrl = me.connector_url;
     $('#whoami').textContent = st.me.name || st.me.email;
+    $$('.owner-only').forEach((el) => el.classList.toggle('hidden', st.me.role !== 'owner'));
     $('#menuBtn').addEventListener('click', () => $('#menu').classList.toggle('hidden'));
     document.addEventListener('click', async (e) => {
       if (!e.target.closest('#menu') && e.target !== $('#menuBtn')) $('#menu').classList.add('hidden');
       if (e.target.closest('[data-act="logout"]')) { await api('POST', '/api/logout'); location.href = '/login'; }
+      const go = e.target.closest('#menu [data-go]'); if (go) location.href = go.dataset.go;
     });
     return st.me;
   }

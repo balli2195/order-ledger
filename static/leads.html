@@ -17,7 +17,13 @@
     <div class="who">
       <span id="whoami" class="muted"></span>
       <button id="menuBtn" class="btn ghost">Menu ▾</button>
-      <div id="menu" class="menu hidden"><button data-act="logout">Sign out</button></div>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
     </div>
   </header>
 

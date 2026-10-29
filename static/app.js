@@ -48,6 +48,8 @@
     connectLive();
     const hash = location.hash.match(/^#order=(.+)$/);
     if (hash) openOrder(hash[1]);
+    const page = { '#users': () => can('owner') && showUsers(), '#connect': showConnect, '#activity': showActivity }[location.hash];
+    if (page) { history.replaceState(null, '', location.pathname); page(); }
   }
 
   async function loadOrders() {
