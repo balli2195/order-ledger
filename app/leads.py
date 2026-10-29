@@ -75,8 +75,7 @@ async def mode() -> str:
 async def require_home() -> None:
     if await mode() != "home":
         raise LedgerError(
-            "Leads are still copied live from Airtable, so edit them in Airtable for now. "
-            "Once the owner switches leads over (Leads page → Make this the home for leads), edits happen here."
+            "Stores and brands are still copied from Airtable; change them there until leads are switched over."
         )
 
 
@@ -299,17 +298,6 @@ async def create_lead(actor: Actor, data: dict) -> dict:
         f["product_name"] = await keepa_title(f["asin"])
         if not f["product_name"]:
             f.pop("product_name")
-    if await mode() != "home":
-        # Airtable is still the home for leads: create it there (its automations score it) and copy it back now.
-        from . import airtable_sync
-        try:
-            lid = await airtable_sync.create_in_airtable(f, actor.label, actor.source)
-        except Exception as e:
-            raise LedgerError(f"Couldn't add the lead to Airtable: {e}")
-        async with db.pool.connection() as conn:
-            async with conn.transaction():
-                await _audit(conn, actor, "create", "lead", lid, None, None, jsonable({k: v for k, v in f.items()}))
-        return await get_lead(lid)
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await _ensure_names(conn, "stores", f.get("stores", []))
@@ -327,33 +315,7 @@ async def create_lead(actor: Actor, data: dict) -> dict:
 
 
 async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
-    if await mode() != "home":
-        # Airtable is still the home: write each change to its Airtable record, then it's copied back at once.
-        from . import airtable_sync
-        out = []
-        for ch in changes:
-            lid = ch.get("id")
-            f = clean_lead({k: v for k, v in ch.items() if k != "id"})
-            if not lid or not f:
-                raise LedgerError("Each change needs a lead id and at least one field")
-            if f.get("asin") and not re.fullmatch(r"[A-Z0-9]{10}", f["asin"]):
-                raise LedgerError(f"ASIN should be 10 letters/digits (got {f['asin']!r})")
-            async with db.pool.connection() as conn:
-                cur = await conn.execute("SELECT * FROM leads WHERE id=%s", (lid,))
-                before = await cur.fetchone()
-            if not before:
-                raise LedgerError(f"Lead {lid} not found")
-            if not before["airtable_id"]:
-                raise LedgerError("This lead isn't in Airtable, so it can't be edited until leads are switched over")
-            try:
-                await airtable_sync.update_in_airtable(before["airtable_id"], f, actor.label, actor.source)
-            except Exception as e:
-                raise LedgerError(f"Couldn't save to Airtable: {e}")
-            async with db.pool.connection() as conn:
-                async with conn.transaction():
-                    await _audit(conn, actor, "update", "lead", lid, None, {k: before[k] for k in f}, jsonable(f))
-            out.append(str(lid))
-        return out
+    mirror = await mode() != "home"
     touched = []
     rescore = []
     async with db.pool.connection() as conn:
@@ -370,9 +332,14 @@ async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
                 await _ensure_names(conn, "stores", f.get("stores", []))
                 await _ensure_names(conn, "brands", f.get("brands", []))
                 sets = ", ".join(f"{k}=%s" for k in f)
+                extra_set = ""
+                extra_args: list = []
+                if mirror and before["airtable_id"]:
+                    extra_set = ", local_edits=(SELECT array_agg(DISTINCT x) FROM unnest(local_edits || %s::text[]) x)"
+                    extra_args = [list(f)]
                 cur = await conn.execute(
-                    f"UPDATE leads SET {sets}, updated_at=now(), updated_by=%s WHERE id=%s RETURNING *",
-                    list(f.values()) + [actor.user_id, lid],
+                    f"UPDATE leads SET {sets}, updated_at=now(), updated_by=%s{extra_set} WHERE id=%s RETURNING *",
+                    list(f.values()) + [actor.user_id] + extra_args + [lid],
                 )
                 after = await cur.fetchone()
                 await _audit(conn, actor, "update", "lead", lid, None,
@@ -387,11 +354,16 @@ async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
 
 
 async def delete_leads(actor: Actor, ids: list[str]) -> int:
-    await require_home()
+    mirror = await mode() != "home"
     async with db.pool.connection() as conn:
         async with conn.transaction():
             n = 0
             for lid in ids:
+                if mirror:
+                    cur = await conn.execute("SELECT airtable_id FROM leads WHERE id=%s", (lid,))
+                    r = await cur.fetchone()
+                    if r and r["airtable_id"]:
+                        raise LedgerError("This lead comes from Airtable; delete it there (or after switching over)")
                 cur = await conn.execute("DELETE FROM leads WHERE id=%s RETURNING *", (lid,))
                 before = await cur.fetchone()
                 if not before:
@@ -467,7 +439,9 @@ async def score_lead(lead_id: str) -> dict:
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await conn.execute(
-                "UPDATE leads SET lead_score_band=%s, lead_score_roi=%s, lead_score_notes=%s, updated_at=now() WHERE id=%s",
+                "UPDATE leads SET lead_score_band=%s, lead_score_roi=%s, lead_score_notes=%s, updated_at=now(), "
+                "local_edits=CASE WHEN airtable_id IS NULL THEN local_edits ELSE (SELECT array_agg(DISTINCT x) FROM "
+                "unnest(local_edits || ARRAY['lead_score_band','lead_score_roi','lead_score_notes']) x) END WHERE id=%s",
                 (s.get("band"), round(float(s.get("pred_roi") or 0), 4), s.get("notes"), lead_id),
             )
             await _notify(conn, "upsert", [lead_id], "Lead Score", "api")

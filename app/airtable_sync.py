@@ -129,33 +129,21 @@ def _row(rec: dict, stores: dict[str, str], brands: dict[str, str]) -> dict:
     return row
 
 
-UPSERT = """
-INSERT INTO leads (airtable_id, asin, lead_date, product_name, sourced_by, stores, brands, store_link, cost, promo_code,
-                   va_notes, feedback, buy_qty, qty_ordered, buyer_notes, lead_score_band, lead_score_roi, lead_score_notes,
-                   claude_buy_qty, claude_buy_note, replen, extra, created_at)
-VALUES (%(airtable_id)s, %(asin)s, %(lead_date)s, %(product_name)s, %(sourced_by)s, %(stores)s, %(brands)s, %(store_link)s,
-        %(cost)s, %(promo_code)s, %(va_notes)s, %(feedback)s, %(buy_qty)s, %(qty_ordered)s, %(buyer_notes)s,
-        %(lead_score_band)s, %(lead_score_roi)s, %(lead_score_notes)s, %(claude_buy_qty)s, %(claude_buy_note)s,
-        %(replen)s, %(extra)s, COALESCE(%(created_at)s::timestamptz, now()))
-ON CONFLICT (airtable_id) DO UPDATE SET
-  asin=EXCLUDED.asin, lead_date=EXCLUDED.lead_date, product_name=EXCLUDED.product_name, sourced_by=EXCLUDED.sourced_by,
-  stores=EXCLUDED.stores, brands=EXCLUDED.brands, store_link=EXCLUDED.store_link, cost=EXCLUDED.cost,
-  promo_code=EXCLUDED.promo_code, va_notes=EXCLUDED.va_notes, feedback=EXCLUDED.feedback, buy_qty=EXCLUDED.buy_qty,
-  qty_ordered=EXCLUDED.qty_ordered, buyer_notes=EXCLUDED.buyer_notes, lead_score_band=EXCLUDED.lead_score_band,
-  lead_score_roi=EXCLUDED.lead_score_roi, lead_score_notes=EXCLUDED.lead_score_notes,
-  claude_buy_qty=EXCLUDED.claude_buy_qty, claude_buy_note=EXCLUDED.claude_buy_note, replen=EXCLUDED.replen,
-  extra=EXCLUDED.extra, updated_at=now()
-WHERE (leads.asin, leads.lead_date, leads.product_name, leads.sourced_by, leads.stores, leads.brands, leads.store_link,
-       leads.cost, leads.promo_code, leads.va_notes, leads.feedback, leads.buy_qty, leads.qty_ordered, leads.buyer_notes,
-       leads.lead_score_band, leads.lead_score_roi, leads.lead_score_notes, leads.claude_buy_qty, leads.claude_buy_note,
-       leads.replen, leads.extra)
-  IS DISTINCT FROM
-      (EXCLUDED.asin, EXCLUDED.lead_date, EXCLUDED.product_name, EXCLUDED.sourced_by, EXCLUDED.stores, EXCLUDED.brands,
-       EXCLUDED.store_link, EXCLUDED.cost, EXCLUDED.promo_code, EXCLUDED.va_notes, EXCLUDED.feedback, EXCLUDED.buy_qty,
-       EXCLUDED.qty_ordered, EXCLUDED.buyer_notes, EXCLUDED.lead_score_band, EXCLUDED.lead_score_roi,
-       EXCLUDED.lead_score_notes, EXCLUDED.claude_buy_qty, EXCLUDED.claude_buy_note, EXCLUDED.replen, EXCLUDED.extra)
-RETURNING id
-"""
+_SYNC_COLS = ['asin', 'lead_date', 'product_name', 'sourced_by', 'stores', 'brands', 'store_link', 'cost', 'promo_code', 'va_notes', 'feedback', 'buy_qty', 'qty_ordered', 'buyer_notes', 'lead_score_band', 'lead_score_roi', 'lead_score_notes', 'claude_buy_qty', 'claude_buy_note', 'replen', 'extra']
+
+
+def _keep(c: str) -> str:
+    # A field edited on the site keeps the site's value; everything else follows Airtable.
+    return f"CASE WHEN '{c}' = ANY(leads.local_edits) THEN leads.{c} ELSE EXCLUDED.{c} END"
+
+
+UPSERT = (
+    "INSERT INTO leads (airtable_id, " + ", ".join(_SYNC_COLS) + ", created_at) VALUES (%(airtable_id)s, "
+    + ", ".join(f"%({c})s" for c in _SYNC_COLS) + ", COALESCE(%(created_at)s::timestamptz, now())) "
+    "ON CONFLICT (airtable_id) DO UPDATE SET " + ", ".join(f"{c}={_keep(c)}" for c in _SYNC_COLS) + ", updated_at=now() "
+    "WHERE (" + ", ".join(f"leads.{c}" for c in _SYNC_COLS) + ") IS DISTINCT FROM ("
+    + ", ".join(_keep(c) for c in _SYNC_COLS) + ") RETURNING id"
+)
 
 
 async def sync_once(full: bool) -> dict:
@@ -230,116 +218,3 @@ async def loop() -> None:
             log.warning("airtable sync failed: %s", e)
         await asyncio.sleep(INCREMENTAL_EVERY)
 
-
-# ---------------------------------------------------------------- create (used while leads are mirrored)
-
-
-
-async def _link_ids(conn, client: httpx.AsyncClient, kind: str, table: str, name_fld: str, names: list[str]) -> list[str]:
-    """Airtable record ids for store/brand names, creating records in Airtable for names it doesn't have yet."""
-    ids = []
-    for name in names:
-        cur = await conn.execute(f"SELECT airtable_id FROM {kind} WHERE lower(name)=lower(%s) AND airtable_id IS NOT NULL LIMIT 1", (name,))
-        r = await cur.fetchone()
-        if r:
-            ids.append(r["airtable_id"])
-            continue
-        resp = await client.post(f"{AT_API}/{BASE}/{table}", json={"fields": {name_fld: name}, "returnFieldsByFieldId": True})
-        resp.raise_for_status()
-        rec = resp.json()
-        await conn.execute(
-            f"INSERT INTO {kind} (name, airtable_id) VALUES (%s,%s) ON CONFLICT (name) DO UPDATE SET airtable_id=EXCLUDED.airtable_id",
-            (name, rec["id"]))
-        ids.append(rec["id"])
-    return ids
-
-
-async def create_in_airtable(f: dict, by: str | None, src: str) -> str:
-    """Create a lead record in Airtable from cleaned site fields, copy it back at once, and return the site's lead id."""
-    if not TOKEN:
-        raise RuntimeError("AIRTABLE_TOKEN isn't set")
-    fields: dict = {}
-    for k in ("asin", "product_name", "sourced_by", "store_link", "promo_code", "va_notes", "feedback", "buyer_notes"):
-        if f.get(k):
-            fields[F[k]] = f[k]
-    if f.get("lead_date"):
-        fields[F["lead_date"]] = f["lead_date"].isoformat() if hasattr(f["lead_date"], "isoformat") else str(f["lead_date"])
-    if f.get("cost") is not None:
-        fields[F["cost"]] = float(f["cost"])
-    for k in ("buy_qty", "qty_ordered"):
-        if f.get(k) is not None:
-            fields[F[k]] = int(f[k])
-    async with httpx.AsyncClient(timeout=60, headers={"Authorization": f"Bearer {TOKEN}"}) as client:
-        async with db.pool.connection() as conn:
-            async with conn.transaction():
-                if f.get("stores"):
-                    fields[F_STORE_LINK] = await _link_ids(conn, client, "stores", T_STORES, "fldA6H5koCfWhuIQ1", f["stores"])
-                if f.get("brands"):
-                    fields[F_BRAND_LINKS[0]] = await _link_ids(conn, client, "brands", T_BRANDS, "fld5731MAIhxilIJr", f["brands"])
-        resp = await client.post(f"{AT_API}/{BASE}/{T_LEADS}",
-                                 json={"fields": fields, "typecast": True, "returnFieldsByFieldId": True})
-        if resp.status_code >= 400:
-            raise RuntimeError(f"Airtable refused the new lead: {resp.text[:300]}")
-        rec = resp.json()
-    async with db.pool.connection() as conn:
-        async with conn.transaction():
-            cur = await conn.execute("SELECT airtable_id, name FROM stores WHERE airtable_id IS NOT NULL")
-            smap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
-            cur = await conn.execute("SELECT airtable_id, name FROM brands WHERE airtable_id IS NOT NULL")
-            bmap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
-            cur = await conn.execute(UPSERT, _row(rec, smap, bmap))
-            hit = await cur.fetchone()
-            if not hit:
-                cur = await conn.execute("SELECT id FROM leads WHERE airtable_id=%s", (rec["id"],))
-                hit = await cur.fetchone()
-            payload = {"t": "lead", "op": "upsert", "ids": [str(hit["id"])], "by": by, "src": src}
-            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps(payload),))
-    return str(hit["id"])
-
-
-TEXT_KEYS = ("asin", "product_name", "sourced_by", "store_link", "promo_code", "va_notes", "feedback", "buyer_notes",
-             "lead_score_notes", "claude_buy_note")
-NUM_KEYS = ("cost", "lead_score_roi")
-INT_KEYS = ("buy_qty", "qty_ordered", "lead_score_band", "claude_buy_qty")
-
-
-async def update_in_airtable(airtable_id: str, f: dict, by: str | None, src: str) -> str:
-    """Write changed fields to the Airtable record (blank clears), copy it back now, and return the site's lead id."""
-    if not TOKEN:
-        raise RuntimeError("AIRTABLE_TOKEN isn't set")
-    fields: dict = {}
-    for k, v in f.items():
-        if k in TEXT_KEYS:
-            fields[F[k]] = v if v not in (None, "") else None
-        elif k in NUM_KEYS or k in INT_KEYS:
-            fields[F[k]] = None if v is None else (int(v) if k in INT_KEYS else float(v))
-        elif k == "lead_date":
-            fields[F[k]] = v.isoformat() if hasattr(v, "isoformat") else (v or None)
-        elif k == "replen":
-            fields[F[k]] = bool(v)
-    async with httpx.AsyncClient(timeout=60, headers={"Authorization": f"Bearer {TOKEN}"}) as client:
-        if "stores" in f or "brands" in f:
-            async with db.pool.connection() as conn:
-                async with conn.transaction():
-                    if "stores" in f:
-                        fields[F_STORE_LINK] = await _link_ids(conn, client, "stores", T_STORES, "fldA6H5koCfWhuIQ1", f["stores"] or [])
-                    if "brands" in f:
-                        fields[F_BRAND_LINKS[0]] = await _link_ids(conn, client, "brands", T_BRANDS, "fld5731MAIhxilIJr", f["brands"] or [])
-                        fields[F_BRAND_LINKS[1]] = fields[F_BRAND_LINKS[0]]   # both Airtable brand links get the site's one list
-        resp = await client.patch(f"{AT_API}/{BASE}/{T_LEADS}/{airtable_id}",
-                                  json={"fields": fields, "typecast": True, "returnFieldsByFieldId": True})
-        if resp.status_code >= 400:
-            raise RuntimeError(f"Airtable refused the change: {resp.text[:300]}")
-        rec = resp.json()
-    async with db.pool.connection() as conn:
-        async with conn.transaction():
-            cur = await conn.execute("SELECT airtable_id, name FROM stores WHERE airtable_id IS NOT NULL")
-            smap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
-            cur = await conn.execute("SELECT airtable_id, name FROM brands WHERE airtable_id IS NOT NULL")
-            bmap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
-            await conn.execute(UPSERT, _row(rec, smap, bmap))
-            cur = await conn.execute("SELECT id FROM leads WHERE airtable_id=%s", (airtable_id,))
-            hit = await cur.fetchone()
-            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps(
-                {"t": "lead", "op": "upsert", "ids": [str(hit["id"])], "by": by, "src": src}),))
-    return str(hit["id"])

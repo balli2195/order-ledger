@@ -35,8 +35,9 @@ buyer_notes, feedback, buy_qty (planned), qty_ordered (actually bought), lead_sc
 (predicted ROI) / lead_score_notes from the Lead Score server, claude_buy_qty / claude_buy_note, replen.
 expected_spend = cost*buy_qty, actual_spend = cost*qty_ordered, left_to_buy = buy_qty-qty_ordered.
 The VA bonus is 1.2% of actual spend on leads sourced by the bonus sourcer (see get_lead_choices).
-Stores and brands have a can_source flag. While leads mode is "mirror" the leads are copied live from Airtable
-and are read-only here; after the owner's cutover ("home") they're edited here."""
+Stores and brands have a can_source flag. While leads mode is "mirror", leads are copied from Airtable every minute
+(this site never writes to Airtable); leads added or edited here stay here and edited fields aren't overwritten by
+the copy. After the owner's cutover ("home") the copy stops."""
 
 mcp = FastMCP(
     "Order Ledger",
@@ -318,14 +319,14 @@ async def get_lead(lead_id: str) -> dict:
 
 @mcp.tool()
 async def create_lead(lead: LeadIn) -> dict:
-    """Add a lead (after cutover). It is scored automatically once it has an ASIN, cost and store link."""
+    """Add a lead (stays on this site; Airtable isn't changed). It is scored automatically once it has an ASIN, cost and store link."""
     actor = await _actor("editor")
     return await L.create_lead(actor, lead.model_dump(exclude_none=True))
 
 
 @mcp.tool()
 async def update_leads(changes: list[LeadChange]) -> dict:
-    """Edit one or more leads (after cutover). Only the fields you pass change."""
+    """Edit one or more leads on this site (Airtable isn't changed). Only the fields you pass change."""
     actor = await _actor("editor")
     ids = await L.update_leads(actor, [c.model_dump(exclude_none=True) for c in changes])
     return {"updated": len(ids), "ids": ids}
@@ -333,7 +334,7 @@ async def update_leads(changes: list[LeadChange]) -> dict:
 
 @mcp.tool()
 async def delete_leads(lead_ids: list[str], confirm: bool = False) -> dict:
-    """Delete leads (after cutover). Ask the user first, then call with confirm=true."""
+    """Delete leads (site-added ones any time; Airtable-copied ones only after cutover). Ask the user first, then call with confirm=true."""
     actor = await _actor("editor")
     if not confirm:
         raise o.LedgerError("Not deleted: confirm with the user, then call again with confirm=true")
@@ -342,9 +343,8 @@ async def delete_leads(lead_ids: list[str], confirm: bool = False) -> dict:
 
 @mcp.tool()
 async def score_lead(lead_id: str) -> dict:
-    """(Re)score a lead with the Lead Score server and save the band, predicted ROI and notes (after cutover)."""
+    """(Re)score a lead with the Lead Score server and save the band, predicted ROI and notes on this site."""
     await _actor("editor")
-    await L.require_home()
     return await L.score_lead(lead_id)
 
 

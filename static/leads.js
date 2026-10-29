@@ -94,7 +94,7 @@
     const last = m.last_sync ? new Date(m.last_sync).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'not yet';
     const err = m.sync?.last_error ? ` <span class="err" title="${esc(m.sync.last_error)}">Last sync had a problem: ${esc(m.sync.last_error.split(' for url')[0].slice(0, 90))}</span>` : '';
     b.className = 'banner mirror';
-    b.innerHTML = `<span><b>Copied live from Airtable</b> (checked every minute; last ${esc(last)}). New leads and edits you make here are saved to Airtable too, so Airtable stays the main copy until you switch over.${err}</span>
+    b.innerHTML = `<span><b>Copied live from Airtable</b> (checked every minute; last ${esc(last)}). New leads and edits you make here stay on this site (Airtable isn't changed), and the copy never overwrites them.${err}</span>
       <span class="spacer"></span>
       ${can('owner') ? `<button class="btn small" data-act="sync">Sync now</button><span id="homeWrap"><button class="btn small primary" data-act="home">Make this the home for leads…</button></span>` : ''}`;
   }
@@ -152,7 +152,7 @@
   async function saveNote(id, field, val) {
     const row = S.byId.get(id); const prev = row ? row[field] : null;
     if (row) { row[field] = val; const tr = $(`#rows tr[data-id="${CSS.escape(id)}"]`); if (tr) tr.outerHTML = rowHtml(row); }
-    try { await api('PATCH', '/api/leads', [{ id, [field]: val }]); toast(isHome() ? 'Saved' : 'Saved (and in Airtable)'); }
+    try { await api('PATCH', '/api/leads', [{ id, [field]: val }]); toast('Saved'); }
     catch (e) { fail(e); if (row) { row[field] = prev; const tr = $(`#rows tr[data-id="${CSS.escape(id)}"]`); if (tr) tr.outerHTML = rowHtml(row); } }
   }
   function openNote(btn) {
@@ -234,7 +234,7 @@
       const lead = await api('POST', '/api/leads', vals);
       // Keep date, store, brand and who sourced it for the next entry; clear the rest.
       ['asin', 'cost', 'promo_code', 'store_link', 'va_notes'].forEach((n) => { const el = $(`#newrow [data-n="${n}"]`); if (el) el.value = ''; });
-      toast(`Added ${lead.asin || 'lead'}${isHome() ? '' : ' (saved to Airtable)'}`);
+      toast(`Added ${lead.asin || 'lead'}`);
       $('#newrow [data-n="asin"]')?.focus();
       await load();
       flashLead(lead.id);
@@ -276,7 +276,7 @@
         <h2>${esc(l.asin || 'Lead')} <span class="muted" style="font-size:15px">${esc(fmtDate(l.lead_date))}</span></h2>
         ${link ? `<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Open store ↗</a>` : ''}
         ${l.asin ? `<a class="btn small" href="https://www.amazon.com/dp/${esc(l.asin)}" target="_blank" rel="noopener">Amazon ↗</a>` : ''}
-        ${isHome() && editable() ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
+        ${editable() && (isHome() || !l.airtable_id) ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">
@@ -305,7 +305,7 @@
         </div>
 
         <div class="section-title">Lead Score ${band(l.lead_score_band)} <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.lead_score_roi != null ? 'predicted ROI ' + pct(l.lead_score_roi) : ''}</span>
-          ${isHome() && editable() ? `<button class="btn small" data-act="score">Score now</button>` : ''}</div>
+          ${editable() ? `<button class="btn small" data-act="score">Score now</button>` : ''}</div>
         ${l.lead_score_notes ? `<pre class="notes">${esc(l.lead_score_notes)}</pre>` : '<p class="muted">Not scored yet.</p>'}
 
         <div class="section-title">Claude buy qty <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.claude_buy_qty ?? '—'}</span></div>

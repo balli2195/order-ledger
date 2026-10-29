@@ -202,6 +202,10 @@ MIGRATIONS: list[str] = [
       ('bonus_sourcer', '"Ariane"'),
       ('sourcers', '["Ariane", "Nick"]');
     """,
+    # 3: fields edited on the site are never overwritten by the Airtable copy
+    """
+    ALTER TABLE leads ADD COLUMN local_edits text[] NOT NULL DEFAULT '{}';
+    """,
 ]
 
 

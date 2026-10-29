@@ -273,7 +273,6 @@ async def api_delete_lead(lead_id: str, request: Request):
 @app.post("/api/leads/{lead_id}/score")
 async def api_score_lead(lead_id: str, request: Request):
     await auth.require(request, "editor")
-    await L.require_home()
     return await L.score_lead(lead_id)
 
 
