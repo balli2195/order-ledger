@@ -38,3 +38,8 @@ FastAPI + Postgres (psycopg 3) on Render. No front-end build: `static/` is plain
 export DATABASE_URL=postgresql://postgres@127.0.0.1:5433/orders ADMIN_KEY=dev SECRET_KEY=dev SECURE_COOKIES=0
 uvicorn app.main:app --reload
 ```
+
+## Engine API (added Oct 29, 2026)
+For the lead scoring / Claude Buy QTY jobs. Header `X-Engine-Key: <ENGINE_KEY>` (Render env var `ENGINE_KEY`).
+- `GET /api/engine/leads?since=YYYY-MM-DD&asin=&limit=2000&offset=0` returns `{leads, total, offset, limit, next_offset}`, oldest first. Each lead has: id, date, created_at, asin, cost, store, stores, store_link, brand, brands, qty_ordered, buy_qty, lead_score_band, lead_score_pred_roi, claude_buy_qty. `limit` goes up to 5000; page until `next_offset` is null.
+- `POST /api/engine/leads/update {updates:[{id, claude_buy_qty, claude_buy_note, lead_score_band, lead_score_pred_roi, lead_score_notes}]}` accepts any subset of those fields, up to 200 per call, in one transaction. Edits are audited with source `engine` (shown as "Claude engine") and broadcast live. Any other field is rejected. Fields the engine writes are kept by the site (the Airtable copy won't overwrite them).

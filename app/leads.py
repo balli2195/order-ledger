@@ -446,3 +446,64 @@ async def score_lead(lead_id: str) -> dict:
             )
             await _notify(conn, "upsert", [lead_id], "Lead Score", "api")
     return {"ok": True, "band": s.get("band"), "pred_roi": s.get("pred_roi")}
+
+
+# ---------------------------------------------------------------- engine API (lead scoring / buy qty jobs)
+
+ENGINE_FIELDS = {"claude_buy_qty": "claude_buy_qty", "claude_buy_note": "claude_buy_note",
+                 "lead_score_band": "lead_score_band", "lead_score_pred_roi": "lead_score_roi",
+                 "lead_score_roi": "lead_score_roi", "lead_score_notes": "lead_score_notes"}
+ENGINE_ACTOR = Actor(None, "Claude engine", "engine")
+
+
+async def engine_leads(since: str | None = None, asin: str | None = None, limit: int = 2000, offset: int = 0) -> dict:
+    """Leads for the scoring / buy qty jobs, oldest first, paginated."""
+    w, a = [], []
+    if since:
+        w.append("l.lead_date >= %s"); a.append(_date(since))
+    if asin:
+        w.append("upper(l.asin) = upper(%s)"); a.append(asin.strip())
+    where = ("WHERE " + " AND ".join(w)) if w else ""
+    limit = max(1, min(int(limit), 5000)); offset = max(0, int(offset))
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            f"""SELECT l.id, l.lead_date AS date, l.created_at, l.asin, l.cost,
+                       array_to_string(l.stores, '; ') AS store, l.stores, l.store_link,
+                       array_to_string(l.brands, '; ') AS brand, l.brands, l.qty_ordered, l.buy_qty,
+                       l.lead_score_band, l.lead_score_roi AS lead_score_pred_roi, l.claude_buy_qty
+                FROM leads l {where}
+                ORDER BY l.lead_date ASC NULLS FIRST, l.created_at ASC, l.id
+                LIMIT %s OFFSET %s""",
+            a + [limit + 1, offset],
+        )
+        rows = [jsonable(dict(r)) for r in await cur.fetchall()]
+        cur = await conn.execute(f"SELECT count(*) n FROM leads l {where}", a)
+        total = (await cur.fetchone())["n"]
+    more = len(rows) > limit
+    rows = rows[:limit]
+    return {"leads": rows, "total": total, "offset": offset, "limit": limit,
+            "next_offset": offset + limit if more else None}
+
+
+async def engine_update(updates: list[dict]) -> dict:
+    """Write scoring / buy qty results. Only the engine fields are accepted; audited as source 'engine'."""
+    if not isinstance(updates, list) or not updates:
+        raise LedgerError("updates must be a non-empty list")
+    if len(updates) > 200:
+        raise LedgerError("At most 200 updates per call")
+    changes = []
+    for u in updates:
+        if not isinstance(u, dict) or not u.get("id"):
+            raise LedgerError("Each update needs an id")
+        bad = set(u) - set(ENGINE_FIELDS) - {"id"}
+        if bad:
+            raise LedgerError(f"Fields not allowed here: {', '.join(sorted(bad))}")
+        ch = {"id": u["id"]}
+        for k, col in ENGINE_FIELDS.items():
+            if k in u:
+                ch[col] = u[k]
+        if len(ch) == 1:
+            raise LedgerError(f"Update for {u['id']} has no fields")
+        changes.append(ch)
+    touched = await update_leads(ENGINE_ACTOR, changes)
+    return {"updated": len(touched), "ids": touched}

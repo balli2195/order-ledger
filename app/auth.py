@@ -16,6 +16,7 @@ from . import db
 
 SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
+ENGINE_KEY = os.environ.get("ENGINE_KEY", "")
 COOKIE = "ol_session"
 SESSION_DAYS = 30
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "1") == "1"
@@ -110,6 +111,13 @@ def require_admin_key(request: Request) -> None:
     given = request.headers.get("x-admin-key", "")
     if not ADMIN_KEY or not hmac.compare_digest(given, ADMIN_KEY):
         raise HTTPException(401, "Bad admin key")
+
+
+def require_engine_key(request: Request) -> None:
+    """Key for the lead scoring / buy qty jobs (header X-Engine-Key, env ENGINE_KEY)."""
+    given = request.headers.get("x-engine-key", "")
+    if not ENGINE_KEY or not hmac.compare_digest(given, ENGINE_KEY):
+        raise HTTPException(401, "Bad engine key")
 
 
 async def authenticate(email: str, password: str) -> tuple[User, int] | None:

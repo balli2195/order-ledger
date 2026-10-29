@@ -388,6 +388,21 @@ async def api_reset_user(user_id: int, request: Request):
     return {"link": f"{BASE_URL}/invite/{token}"}
 
 
+# ---------------------------------------------------------------- engine API (X-Engine-Key): lead scoring / buy qty jobs
+
+@app.get("/api/engine/leads")
+async def engine_leads(request: Request, since: str | None = None, asin: str | None = None,
+                       limit: int = 2000, offset: int = 0):
+    auth.require_engine_key(request)
+    return await L.engine_leads(since, asin, limit, offset)
+
+
+@app.post("/api/engine/leads/update")
+async def engine_leads_update(request: Request, body: dict = Body(...)):
+    auth.require_engine_key(request)
+    return await L.engine_update(body.get("updates"))
+
+
 # ---------------------------------------------------------------- admin key API (setup, import)
 
 @app.post("/api/admin/invite")

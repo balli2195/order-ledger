@@ -496,7 +496,7 @@ async def recent_changes(limit: int = 50, order_id=None, entity_id=None) -> list
         cur = await conn.execute(
             f"SELECT a.id, a.at, a.source, a.action, a.entity, a.entity_id, a.order_id, a.before, a.after, "
             f"(SELECT COALESCE(ld.asin, '') FROM leads ld WHERE a.entity='lead' AND ld.id=a.entity_id) AS lead_asin, "
-            f"COALESCE(NULLIF(u.name,''), u.email) AS who, o.store, o.order_ref "
+            f"COALESCE(NULLIF(u.name,''), u.email, CASE WHEN a.source='engine' THEN 'Claude engine' END) AS who, o.store, o.order_ref "
             f"FROM audit_log a LEFT JOIN users u ON u.id=a.user_id LEFT JOIN orders o ON o.id=a.order_id "
             f"{where} ORDER BY a.id DESC LIMIT %s",
             args + [limit],
