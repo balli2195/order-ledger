@@ -150,16 +150,26 @@
     const tb = $('#newrow'); if (!tb) return;
     if (!can('editor')) { tb.innerHTML = ''; return; }
     const keep = {}; $$('#newrow [data-n]').forEach((el) => { keep[el.dataset.n] = el.value; });
-    const cells = S.order.map((k) => `<td class="${COLS[k][2]}">${NEW_INPUTS[k] ? NEW_INPUTS[k]() : ''}</td>`).join('');
-    const notesInline = S.order.includes('notes') ? '' : `<input data-n="va_notes" placeholder="VA notes" style="flex:1 1 220px">`;
+    // One line: date sits in the Product column; link, notes and the Add button fill the longest run of empty columns.
+    const content = S.order.map((k) => k === 'product' ? `<input data-n="lead_date" type="date" style="width:150px">` : (NEW_INPUTS[k] ? NEW_INPUTS[k]() : null));
+    let best = { start: -1, len: 0 };
+    for (let i = 0, start = -1; i <= content.length; i++) {
+      if (i < content.length && content[i] === null) { if (start < 0) start = i; }
+      else if (start >= 0) { if (i - start > best.len) best = { start, len: i - start }; start = -1; }
+    }
+    const extras = `<div class="new-inline">
+        <input size="4" data-n="store_link" type="url" placeholder="Store link" class="new-link" title="Store link">
+        ${S.order.includes('notes') ? '' : `<input size="4" data-n="va_notes" placeholder="VA notes" class="new-notes">`}
+        <button class="btn primary small" data-act="new-save">Add</button></div>`;
+    let cells = '';
+    for (let i = 0; i < content.length; i++) {
+      const cls = COLS[S.order[i]][2];
+      if (i === best.start) { cells += `<td colspan="${best.len}">${extras}</td>`; i += best.len - 1; continue; }
+      cells += `<td class="${cls}">${content[i] ?? ''}</td>`;
+    }
+    const fallback = best.len ? '' : `<tr class="new-row new-more"><td colspan="${S.order.length}">${extras}</td></tr>`;
     tb.innerHTML = `<tr class="new-row"><td colspan="${S.order.length}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter. The product name is filled in from Keepa.</span></td></tr>
-      <tr class="new-row">${cells}</tr>
-      <tr class="new-row new-more"><td colspan="${S.order.length}"><div class="new-more-inner">
-        <label class="check">Date <input data-n="lead_date" type="date" style="width:150px"></label>
-        <input data-n="store_link" type="url" placeholder="Store link (https://…)" style="flex:2 1 320px">
-        ${notesInline}
-        <button class="btn primary small" data-act="new-save">Add lead</button>
-      </div></td></tr>`;
+      <tr class="new-row new-main">${cells}</tr>${fallback}`;
     const defaults = { lead_date: todayIso(), sourced_by: 'Ariane' };
     $$('#newrow [data-n]').forEach((el) => { const v = keep[el.dataset.n] ?? defaults[el.dataset.n]; if (v != null) el.value = v; });
     S.newRowOrder = S.order.join();
