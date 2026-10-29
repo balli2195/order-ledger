@@ -99,7 +99,7 @@
 
   function render() {
     const t = S.totals || {};
-    $('#summary').textContent = `${num(t.n)} leads match · ${num(t.bought)} bought`;
+    $('#summary') && ($('#summary').textContent = `${num(t.n)} leads match · ${num(t.bought)} bought`);
     $('#head').innerHTML = S.order.map((k) => {
       const [label, sk, cls] = COLS[k];
       const fk = HEADER_FILTERS[k];
