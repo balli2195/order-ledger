@@ -327,7 +327,33 @@ async def create_lead(actor: Actor, data: dict) -> dict:
 
 
 async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
-    await require_home()
+    if await mode() != "home":
+        # Airtable is still the home: write each change to its Airtable record, then it's copied back at once.
+        from . import airtable_sync
+        out = []
+        for ch in changes:
+            lid = ch.get("id")
+            f = clean_lead({k: v for k, v in ch.items() if k != "id"})
+            if not lid or not f:
+                raise LedgerError("Each change needs a lead id and at least one field")
+            if f.get("asin") and not re.fullmatch(r"[A-Z0-9]{10}", f["asin"]):
+                raise LedgerError(f"ASIN should be 10 letters/digits (got {f['asin']!r})")
+            async with db.pool.connection() as conn:
+                cur = await conn.execute("SELECT * FROM leads WHERE id=%s", (lid,))
+                before = await cur.fetchone()
+            if not before:
+                raise LedgerError(f"Lead {lid} not found")
+            if not before["airtable_id"]:
+                raise LedgerError("This lead isn't in Airtable, so it can't be edited until leads are switched over")
+            try:
+                await airtable_sync.update_in_airtable(before["airtable_id"], f, actor.label, actor.source)
+            except Exception as e:
+                raise LedgerError(f"Couldn't save to Airtable: {e}")
+            async with db.pool.connection() as conn:
+                async with conn.transaction():
+                    await _audit(conn, actor, "update", "lead", lid, None, {k: before[k] for k in f}, jsonable(f))
+            out.append(str(lid))
+        return out
     touched = []
     rescore = []
     async with db.pool.connection() as conn:

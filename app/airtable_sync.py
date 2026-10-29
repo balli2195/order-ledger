@@ -295,3 +295,51 @@ async def create_in_airtable(f: dict, by: str | None, src: str) -> str:
             payload = {"t": "lead", "op": "upsert", "ids": [str(hit["id"])], "by": by, "src": src}
             await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps(payload),))
     return str(hit["id"])
+
+
+TEXT_KEYS = ("asin", "product_name", "sourced_by", "store_link", "promo_code", "va_notes", "feedback", "buyer_notes",
+             "lead_score_notes", "claude_buy_note")
+NUM_KEYS = ("cost", "lead_score_roi")
+INT_KEYS = ("buy_qty", "qty_ordered", "lead_score_band", "claude_buy_qty")
+
+
+async def update_in_airtable(airtable_id: str, f: dict, by: str | None, src: str) -> str:
+    """Write changed fields to the Airtable record (blank clears), copy it back now, and return the site's lead id."""
+    if not TOKEN:
+        raise RuntimeError("AIRTABLE_TOKEN isn't set")
+    fields: dict = {}
+    for k, v in f.items():
+        if k in TEXT_KEYS:
+            fields[F[k]] = v if v not in (None, "") else None
+        elif k in NUM_KEYS or k in INT_KEYS:
+            fields[F[k]] = None if v is None else (int(v) if k in INT_KEYS else float(v))
+        elif k == "lead_date":
+            fields[F[k]] = v.isoformat() if hasattr(v, "isoformat") else (v or None)
+        elif k == "replen":
+            fields[F[k]] = bool(v)
+    async with httpx.AsyncClient(timeout=60, headers={"Authorization": f"Bearer {TOKEN}"}) as client:
+        if "stores" in f or "brands" in f:
+            async with db.pool.connection() as conn:
+                async with conn.transaction():
+                    if "stores" in f:
+                        fields[F_STORE_LINK] = await _link_ids(conn, client, "stores", T_STORES, "fldA6H5koCfWhuIQ1", f["stores"] or [])
+                    if "brands" in f:
+                        fields[F_BRAND_LINKS[0]] = await _link_ids(conn, client, "brands", T_BRANDS, "fld5731MAIhxilIJr", f["brands"] or [])
+                        fields[F_BRAND_LINKS[1]] = fields[F_BRAND_LINKS[0]]   # both Airtable brand links get the site's one list
+        resp = await client.patch(f"{AT_API}/{BASE}/{T_LEADS}/{airtable_id}",
+                                  json={"fields": fields, "typecast": True, "returnFieldsByFieldId": True})
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Airtable refused the change: {resp.text[:300]}")
+        rec = resp.json()
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("SELECT airtable_id, name FROM stores WHERE airtable_id IS NOT NULL")
+            smap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
+            cur = await conn.execute("SELECT airtable_id, name FROM brands WHERE airtable_id IS NOT NULL")
+            bmap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
+            await conn.execute(UPSERT, _row(rec, smap, bmap))
+            cur = await conn.execute("SELECT id FROM leads WHERE airtable_id=%s", (airtable_id,))
+            hit = await cur.fetchone()
+            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps(
+                {"t": "lead", "op": "upsert", "ids": [str(hit["id"])], "by": by, "src": src}),))
+    return str(hit["id"])

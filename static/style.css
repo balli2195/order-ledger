@@ -277,3 +277,21 @@ ol.steps { padding-left: 20px; } ol.steps li { margin: 6px 0; }
 #newrow .new-inline input.new-link { width: 120px; flex: 0 0 120px; }
 #newrow .new-inline input.new-notes { flex: 1 1 auto; width: auto; min-width: 80px; }
 #newrow input[type="date"] { min-width: 0; }
+
+/* ---------- note cells */
+td.note-cell { max-width: min(220px, 11vw); }
+.note-btn { all: unset; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--ink); font-size: 13px; padding: 2px 4px; margin: -2px -4px; border-radius: 5px; }
+.note-btn:hover { background: var(--line-2); }
+.note-btn.empty { color: var(--muted); opacity: 0; }
+tr:hover .note-btn.empty { opacity: 1; }
+.note-pop { position: absolute; z-index: 70; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 10px; display: grid; gap: 8px; }
+.note-pop textarea { width: 100%; resize: vertical; min-height: 120px; font-size: 14px; line-height: 1.45; }
+.note-pop-foot { display: flex; gap: 6px; align-items: center; } .note-pop-foot .muted { flex: 1; font-size: 12px; }
+.note-pop-head { font-size: 13px; }
+td.note-cell { overflow: hidden; white-space: nowrap; max-width: min(200px, 8vw); }
+@media (max-width: 1700px) {
+  .wrap.full td.prod { max-width: 13vw; }
+  .wrap.full td.tags { max-width: 8vw; }
+  td.note-cell { max-width: 7vw; }
+  .wrap.full td.promo { max-width: 7vw; }
+}

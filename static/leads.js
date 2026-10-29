@@ -29,9 +29,10 @@
     claude_qty: ['Claude qty', 'claude_qty', 'num', (r) => num(r.claude_buy_qty)],
     by: ['By', null, 'tight', (r) => esc(r.sourced_by || '')],
     promo: ['Promo', null, 'promo', (r) => r.promo_code ? `<span class="promo-code" title="${esc(r.promo_code)}">${esc(r.promo_code)}</span>` : '<span class="muted">—</span>'],
-    notes: ['Notes', null, 'notes', (r) => `<span title="${esc([r.va_notes, r.buyer_notes].filter(Boolean).join(' | '))}">${esc(r.buyer_notes || r.va_notes || '')}</span>`],
+    va_notes: ['VA notes', null, 'note-cell', (r) => noteCell(r, 'va_notes')],
+    buyer_notes: ['Buyer notes', null, 'note-cell', (r) => noteCell(r, 'buyer_notes')],
   };
-  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'promo', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
+  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
   const ORDER_KEY = 'leadColOrder.v2';
   function loadOrder() {
     try {
@@ -54,7 +55,7 @@
   function saveOrder() { try { localStorage.setItem(ORDER_KEY, JSON.stringify(S.order)); } catch { /* ignore */ } }
 
   const isHome = () => S.meta?.mode === 'home';
-  const editable = () => isHome() && can('editor');
+  const editable = () => can('editor');
 
   function filters() {
     const f = {};
@@ -93,7 +94,7 @@
     const last = m.last_sync ? new Date(m.last_sync).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'not yet';
     const err = m.sync?.last_error ? ` <span class="err" title="${esc(m.sync.last_error)}">Last sync had a problem: ${esc(m.sync.last_error.split(' for url')[0].slice(0, 90))}</span>` : '';
     b.className = 'banner mirror';
-    b.innerHTML = `<span><b>Copied live from Airtable</b> (checked every minute; last ${esc(last)}). New leads you add here go into Airtable too; edit existing leads in Airtable until you switch over.${err}</span>
+    b.innerHTML = `<span><b>Copied live from Airtable</b> (checked every minute; last ${esc(last)}). New leads and edits you make here are saved to Airtable too, so Airtable stays the main copy until you switch over.${err}</span>
       <span class="spacer"></span>
       ${can('owner') ? `<button class="btn small" data-act="sync">Sync now</button><span id="homeWrap"><button class="btn small primary" data-act="home">Make this the home for leads…</button></span>` : ''}`;
   }
@@ -135,6 +136,58 @@
       S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') + '</tr>';
   }
 
+  // ------------------------------------------------------------ note cells + pop-up editor
+  function noteCell(r, field) {
+    const v = r[field] || '';
+    return `<button class="note-btn ${v ? '' : 'empty'}" data-note="${field}" data-stop title="${esc(v || (can('editor') ? 'Click to add' : ''))}">${v ? esc(v) : (can('editor') ? '+ add' : '')}</button>`;
+  }
+  let notePop = null;
+  function closeNote(save) {
+    if (!notePop) return;
+    const { el, id, field, orig } = notePop;
+    const val = el.querySelector('textarea').value;
+    el.remove(); notePop = null;
+    if (save && can('editor') && val !== orig) saveNote(id, field, val);
+  }
+  async function saveNote(id, field, val) {
+    const row = S.byId.get(id); const prev = row ? row[field] : null;
+    if (row) { row[field] = val; const tr = $(`#rows tr[data-id="${CSS.escape(id)}"]`); if (tr) tr.outerHTML = rowHtml(row); }
+    try { await api('PATCH', '/api/leads', [{ id, [field]: val }]); toast(isHome() ? 'Saved' : 'Saved (and in Airtable)'); }
+    catch (e) { fail(e); if (row) { row[field] = prev; const tr = $(`#rows tr[data-id="${CSS.escape(id)}"]`); if (tr) tr.outerHTML = rowHtml(row); } }
+  }
+  function openNote(btn) {
+    closeNote(true);
+    const tr = btn.closest('tr[data-id]'); const id = tr.dataset.id; const field = btn.dataset.note;
+    const row = S.byId.get(id) || {}; const orig = row[field] || '';
+    const label = field === 'va_notes' ? 'VA notes' : 'Buyer notes';
+    const el = document.createElement('div');
+    el.className = 'note-pop';
+    el.innerHTML = `<div class="note-pop-head"><b>${label}</b> <span class="muted mono">${esc(row.asin || '')}</span></div>
+      <textarea rows="7" ${can('editor') ? '' : 'readonly'}>${esc(orig)}</textarea>
+      <div class="note-pop-foot"><span class="muted">${can('editor') ? '⌘/Ctrl+Enter to save · Esc to cancel' : ''}</span>
+      ${can('editor') ? '<button class="btn small" data-note-act="cancel">Cancel</button><button class="btn small primary" data-note-act="save">Save</button>' : '<button class="btn small" data-note-act="cancel">Close</button>'}</div>`;
+    document.body.appendChild(el);
+    const r = btn.getBoundingClientRect(); const w = Math.min(420, window.innerWidth - 24);
+    el.style.width = w + 'px';
+    el.style.left = Math.max(12, Math.min(r.left + window.scrollX, window.scrollX + window.innerWidth - w - 12)) + 'px';
+    const below = r.bottom + 6 + 260 < window.innerHeight;
+    el.style.top = (below ? r.bottom + window.scrollY + 6 : r.top + window.scrollY - 6 - el.offsetHeight) + 'px';
+    notePop = { el, id, field, orig };
+    const ta = el.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+  document.addEventListener('mousedown', (e) => {
+    if (notePop && !notePop.el.contains(e.target) && !e.target.closest('[data-note]')) closeNote(true);
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-note]'); if (b) { e.preventDefault(); openNote(b); return; }
+    const a = e.target.closest('[data-note-act]'); if (a) closeNote(a.dataset.noteAct === 'save');
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (!notePop) return;
+    if (e.key === 'Escape') { e.stopPropagation(); closeNote(false); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); closeNote(true); }
+  }, true);
+
   // ------------------------------------------------------------ inline entry row (like Airtable's blank row)
   const todayIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const NEW_INPUTS = {
@@ -144,7 +197,6 @@
     cost: () => `<input size="2" data-n="cost" class="num" inputmode="decimal" placeholder="0.00">`,
     promo: () => `<input size="4" data-n="promo_code" placeholder="Promo">`,
     by: () => `<select data-n="sourced_by"><option value=""></option>${(S.meta?.sourcers || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select>`,
-    notes: () => `<input size="4" data-n="va_notes" placeholder="VA notes">`,
   };
   function renderNewRow() {
     const tb = $('#newrow'); if (!tb) return;
@@ -159,7 +211,7 @@
     }
     const extras = `<div class="new-inline">
         <input size="4" data-n="store_link" type="url" placeholder="Store link" class="new-link" title="Store link">
-        ${S.order.includes('notes') ? '' : `<input size="4" data-n="va_notes" placeholder="VA notes" class="new-notes">`}
+        <input size="4" data-n="va_notes" placeholder="VA notes" class="new-notes">
         <button class="btn primary small" data-act="new-save">Add</button></div>`;
     let cells = '';
     for (let i = 0; i < content.length; i++) {
@@ -224,7 +276,7 @@
         <h2>${esc(l.asin || 'Lead')} <span class="muted" style="font-size:15px">${esc(fmtDate(l.lead_date))}</span></h2>
         ${link ? `<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Open store ↗</a>` : ''}
         ${l.asin ? `<a class="btn small" href="https://www.amazon.com/dp/${esc(l.asin)}" target="_blank" rel="noopener">Amazon ↗</a>` : ''}
-        ${editable() ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
+        ${isHome() && editable() ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">
@@ -253,7 +305,7 @@
         </div>
 
         <div class="section-title">Lead Score ${band(l.lead_score_band)} <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.lead_score_roi != null ? 'predicted ROI ' + pct(l.lead_score_roi) : ''}</span>
-          ${editable() ? `<button class="btn small" data-act="score">Score now</button>` : ''}</div>
+          ${isHome() && editable() ? `<button class="btn small" data-act="score">Score now</button>` : ''}</div>
         ${l.lead_score_notes ? `<pre class="notes">${esc(l.lead_score_notes)}</pre>` : '<p class="muted">Not scored yet.</p>'}
 
         <div class="section-title">Claude buy qty <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.claude_buy_qty ?? '—'}</span></div>
