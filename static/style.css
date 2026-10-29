@@ -144,6 +144,8 @@ th.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .pill-list a.pill-link { display: inline-block; background: var(--line-2); border-radius: 99px; padding: 0 7px; margin: 1px 3px 1px 0; font-size: 12px; color: var(--ink); text-decoration: none; }
 .pill-list a.pill-link:hover { background: var(--accent-soft); color: var(--accent); }
 td.notes span { color: var(--muted); }
+td.promo { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.promo-code { font: 500 12px var(--mono); }
 
 /* ---------- month tiles */
 .tiles {

@@ -28,10 +28,10 @@
     roi: ['Pred ROI', 'roi', 'num', (r) => pct(r.lead_score_roi)],
     claude_qty: ['Claude qty', 'claude_qty', 'num', (r) => num(r.claude_buy_qty)],
     by: ['By', null, 'tight', (r) => esc(r.sourced_by || '')],
-    promo: ['Promo', null, 'tight', (r) => esc(r.promo_code || '')],
+    promo: ['Promo', null, 'promo', (r) => r.promo_code ? `<span class="promo-code" title="${esc(r.promo_code)}">${esc(r.promo_code)}</span>` : '<span class="muted">—</span>'],
     notes: ['Notes', null, 'notes', (r) => `<span title="${esc([r.va_notes, r.buyer_notes].filter(Boolean).join(' | '))}">${esc(r.buyer_notes || r.va_notes || '')}</span>`],
   };
-  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
+  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'promo', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
   const ORDER_KEY = 'leadColOrder.v2';
   function loadOrder() {
     try {
@@ -42,7 +42,12 @@
           saved = old.filter((k) => k !== 'asin'); saved.splice(saved.indexOf('store'), 0, 'asin');
         }
       }
-      if (Array.isArray(saved)) { const ok = saved.filter((k) => COLS[k]); return ok.concat(DEFAULT_ORDER.filter((k) => !ok.includes(k))); }
+      if (Array.isArray(saved)) {
+        // Keep the saved arrangement; slot any newly added column in after its neighbour in the default order.
+        const ok = saved.filter((k) => COLS[k]);
+        DEFAULT_ORDER.forEach((k, i) => { if (!ok.includes(k)) { const prev = DEFAULT_ORDER[i - 1]; const at = prev && ok.includes(prev) ? ok.indexOf(prev) + 1 : ok.length; ok.splice(at, 0, k); } });
+        return ok;
+      }
     } catch { /* storage blocked */ }
     return DEFAULT_ORDER.slice();
   }
