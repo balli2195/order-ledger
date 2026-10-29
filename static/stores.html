@@ -12,7 +12,6 @@
   <header class="top">
     <div>
       <h1 class="brand">Myrddin Hub</h1>
-      <div class="subtitle"><span id="live" class="live-dot"></span><span id="summary">Loading…</span></div>
     </div>
     <div class="who">
       <span id="whoami" class="muted"></span>
@@ -57,7 +56,7 @@
     const dis = S.mode === 'home' && can('editor') ? '' : 'disabled';
     $('#note').classList.toggle('hidden', S.mode === 'home');
     $('#note').textContent = 'Copied from Airtable — change "Can source" there until leads are switched over.';
-    $('#summary').textContent = `${num(rows.length)} ${S.kind} · ${money(rows.reduce((s, r) => s + (r.spend || 0), 0), 0)} spent`;
+    if ($('#summary')) $('#summary').textContent = `${num(rows.length)} ${S.kind} · ${money(rows.reduce((s, r) => s + (r.spend || 0), 0), 0)} spent`;
     $('#rows').innerHTML = rows.slice(0, 1500).map((r) => `<tr data-name="${esc(r.name)}" style="cursor:default">
       <td><a href="/leads#" data-goto="${esc(r.name)}">${esc(r.name)}</a></td>
       <td class="center"><label class="switch"><input type="checkbox" ${r.can_source ? 'checked' : ''} ${dis}><span></span></label></td>

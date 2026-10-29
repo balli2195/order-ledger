@@ -71,8 +71,8 @@
   function connectLive() {
     if (es) es.close();
     es = new EventSource('/api/events');
-    es.onopen = () => { $('#live').classList.add('on'); $('#live').title = 'Live: changes appear instantly'; };
-    es.onerror = () => { $('#live').classList.remove('on'); $('#live').title = 'Reconnecting…'; };
+    es.onopen = () => { $('#live')?.classList.add('on'); };
+    es.onerror = () => { $('#live')?.classList.remove('on'); };
     es.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch { return; } onLive(m); };
   }
 
@@ -139,7 +139,7 @@
     $('#cDisc').textContent = disc.length || ''; $('#cMiss').textContent = miss.length || '';
     const list = S.filter === 'discrepancy' ? disc : S.filter === 'missing' ? miss : base;
     const total = list.reduce((s, o) => s + (o.order_total || 0), 0);
-    $('#summary').textContent = `${S.orders.length.toLocaleString()} orders tracked · ${money(total)} shown` +
+    if ($('#summary')) $('#summary').textContent = `${S.orders.length.toLocaleString()} orders tracked · ${money(total)} shown` +
       (list.length !== S.orders.length ? ` (${list.length.toLocaleString()} matching)` : '');
     const rows = list.slice(0, S.shown).map(rowHtml).join('');
     $('#rows').innerHTML = rows;
