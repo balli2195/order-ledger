@@ -26,10 +26,6 @@
   <div id="banner" class="banner hidden"></div>
 
   <div class="toolbar">
-    <div class="search">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" placeholder="Search ASIN, product, store, brand, notes, promo…" autocomplete="off">
-    </div>
     <div class="chips" id="range">
       <button class="chip" data-days="7">7 days</button>
       <button class="chip on" data-days="30">30 days</button>
@@ -49,8 +45,10 @@
     <label class="check"><input type="checkbox" id="unscored"> Not scored</label>
     <button class="btn small ghost" id="clear">Clear</button>
     <span class="spacer"></span>
-    <span class="muted" style="font-size:12px">Drag column headers to rearrange</span>
-    <button class="btn small ghost" data-act="reset-cols">Reset columns</button>
+    <div class="search" style="flex:0 1 380px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search ASIN, product, store, brand, notes, promo…" autocomplete="off">
+    </div>
   </div>
 
   <div class="table-wrap">
