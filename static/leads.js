@@ -100,11 +100,6 @@
   function render() {
     const t = S.totals || {};
     $('#summary').textContent = `${num(t.n)} leads match · ${num(t.bought)} bought`;
-    $('#stats').innerHTML = [
-      ['Leads', num(t.n)], ['Bought', num(t.bought)], ['Units ordered', num(t.units)],
-      ['Expected spend', money(t.expected, 0)], ['Actual spend', money(t.actual, 0)],
-      [`${esc(S.meta?.bonus_sourcer || 'VA')} bonus`, money(t.bonus)],
-    ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
     $('#head').innerHTML = S.order.map((k) => {
       const [label, sk, cls] = COLS[k];
       const arrow = sk && S.sort === sk ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
