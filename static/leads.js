@@ -20,8 +20,8 @@
     store: ['Store', null, 'tags', storeCell],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
     cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
-    buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => num(r.buy_qty)],
-    qty_ordered: ['Ordered', 'qty_ordered', 'num', (r) => num(r.qty_ordered)],
+    buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => numEditCell(r, 'buy_qty')],
+    qty_ordered: ['Ordered', 'qty_ordered', 'num', (r) => numEditCell(r, 'qty_ordered')],
     left: ['Left', 'left', 'num', (r) => num(r.left_to_buy)],
     spend: ['Spend', 'spend', 'num', (r) => r.actual_spend ? money(r.actual_spend, 0) : '—'],
     band: ['Band', 'band', 'center', (r) => band(r.lead_score_band)],
@@ -189,6 +189,63 @@
   }
   document.addEventListener('mousedown', (e) => { if (hPop && !hPop.contains(e.target) && !e.target.closest('th[data-hfilter]')) closeHeaderFilter(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && hPop) { e.stopPropagation(); closeHeaderFilter(); } }, true);
+
+  // ------------------------------------------------------------ inline number cells (Buy qty, Ordered)
+  function numEditCell(r, field) {
+    const v = r[field];
+    if (!can('editor')) return num(v);
+    return `<button class="num-edit" data-numedit="${field}" data-stop title="Click to edit">${v == null ? '<span class="muted">—</span>' : num(v)}</button>`;
+  }
+  let numEd = null;
+  function openNumEdit(btn) {
+    const tr = btn.closest('tr[data-id]'); const id = tr.dataset.id; const field = btn.dataset.numedit;
+    const row = S.byId.get(id) || {}; const orig = row[field] == null ? '' : String(row[field]);
+    const td = btn.closest('td');
+    td.innerHTML = `<input class="num-input" inputmode="numeric" value="${esc(orig)}">`;
+    const inp = td.querySelector('input'); inp.focus(); inp.select();
+    numEd = { id, field, orig, inp, td, done: false };
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finishNumEdit(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); finishNumEdit(true, 'down'); }
+      else if (e.key === 'Tab') { e.preventDefault(); finishNumEdit(true, e.shiftKey ? 'left' : 'right'); }
+    });
+    inp.addEventListener('blur', () => finishNumEdit(true));
+  }
+  async function finishNumEdit(save, move) {
+    const ed = numEd; if (!ed || ed.done) return; ed.done = true; numEd = null;
+    const val = ed.inp.value.trim().replace(/,/g, '');
+    const row = S.byId.get(ed.id);
+    const redraw = () => { const tr = $(`#rows tr[data-id="${CSS.escape(ed.id)}"]`); if (tr && row) tr.outerHTML = rowHtml(row); };
+    let next = null;
+    if (move) {
+      const tr = $(`#rows tr[data-id="${CSS.escape(ed.id)}"]`);
+      if (move === 'down') { let n = tr?.nextElementSibling; while (n && !n.dataset.id) n = n.nextElementSibling; next = n ? { id: n.dataset.id, field: ed.field } : null; }
+      else { const f = { right: { buy_qty: 'qty_ordered' }, left: { qty_ordered: 'buy_qty' } }[move][ed.field]; next = f ? { id: ed.id, field: f } : null; }
+    }
+    const openNext = () => { if (next) { const b = $(`#rows tr[data-id="${CSS.escape(next.id)}"] [data-numedit="${next.field}"]`); if (b) openNumEdit(b); } };
+    if (!(save && val !== ed.orig)) { redraw(); openNext(); return; }
+    if (val !== '' && !/^\d+$/.test(val)) { toast('Enter a whole number', true); redraw(); return; }
+    const prev = row ? row[ed.field] : null;
+    if (row) row[ed.field] = val === '' ? null : Number(val);
+    redraw(); openNext();   // move on right away; the save runs in the background
+    // Refresh the computed cells (Left, Spend) without disturbing an editor open in the same row.
+    const refreshComputed = () => {
+      const tr = $(`#rows tr[data-id="${CSS.escape(ed.id)}"]`); if (!tr || !row) return;
+      if (numEd && numEd.id === ed.id) {
+        S.order.forEach((k, idx) => { if (['left', 'spend'].includes(k) && tr.children[idx]) tr.children[idx].innerHTML = COLS[k][3](row); });
+      } else tr.outerHTML = rowHtml(row);
+    };
+    try {
+      await api('PATCH', '/api/leads', [{ id: ed.id, [ed.field]: val }]);
+      const fresh = await api('GET', '/api/leads/' + ed.id);
+      if (row) { const keepOpen = numEd && numEd.id === ed.id ? numEd.field : null; for (const [k, v] of Object.entries(fresh)) if (k !== keepOpen) row[k] = v; }
+      refreshComputed();
+    } catch (e) {
+      fail(e);
+      if (row) { row[ed.field] = prev; refreshComputed(); const tr = $(`#rows tr[data-id="${CSS.escape(ed.id)}"]`); if (tr && !(numEd && numEd.id === ed.id)) tr.outerHTML = rowHtml(row); }
+    }
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-numedit]'); if (b) { e.preventDefault(); openNumEdit(b); } }, true);
 
   // ------------------------------------------------------------ note cells + pop-up editor
   function noteCell(r, field) {
