@@ -272,11 +272,23 @@ async def _ensure_names(conn, kind: str, names: list[str]) -> None:
 
 
 async def create_lead(actor: Actor, data: dict) -> dict:
-    await require_home()
     f = clean_lead(data)
     if not f.get("asin") and not f.get("store_link"):
         raise LedgerError("A lead needs at least an ASIN or a store link")
+    if f.get("asin") and not re.fullmatch(r"[A-Z0-9]{10}", f["asin"]):
+        raise LedgerError(f"ASIN should be 10 letters/digits (got {f['asin']!r})")
     f.setdefault("lead_date", date.today())
+    if await mode() != "home":
+        # Airtable is still the home for leads: create it there (its automations score it) and copy it back now.
+        from . import airtable_sync
+        try:
+            lid = await airtable_sync.create_in_airtable(f, actor.label, actor.source)
+        except Exception as e:
+            raise LedgerError(f"Couldn't add the lead to Airtable: {e}")
+        async with db.pool.connection() as conn:
+            async with conn.transaction():
+                await _audit(conn, actor, "create", "lead", lid, None, None, jsonable({k: v for k, v in f.items()}))
+        return await get_lead(lid)
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await _ensure_names(conn, "stores", f.get("stores", []))

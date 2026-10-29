@@ -21,6 +21,7 @@ log = logging.getLogger("ledger.airtable")
 
 TOKEN = os.environ.get("AIRTABLE_TOKEN", "")
 BASE = os.environ.get("AIRTABLE_BASE", "appRZY2bE1iqg4woe")
+AT_API = os.environ.get("AIRTABLE_API", "https://api.airtable.com/v0")
 T_LEADS, T_STORES, T_BRANDS = "tblZ7YMTrHt4dzvbn", "tbl1dDAv7cIv8aapI", "tblUEjXRCbNRo7tIt"
 
 F = dict(
@@ -64,7 +65,7 @@ async def _pages(client: httpx.AsyncClient, table: str, params: dict) -> list[di
         if offset:
             p["offset"] = offset
         for attempt in range(5):
-            r = await client.get(f"https://api.airtable.com/v0/{BASE}/{table}", params=p)
+            r = await client.get(f"{AT_API}/{BASE}/{table}", params=p)
             if r.status_code == 429:
                 await asyncio.sleep(30)
                 continue
@@ -228,3 +229,69 @@ async def loop() -> None:
             status["last_error"] = f"{type(e).__name__}: {e}"
             log.warning("airtable sync failed: %s", e)
         await asyncio.sleep(INCREMENTAL_EVERY)
+
+
+# ---------------------------------------------------------------- create (used while leads are mirrored)
+
+
+
+async def _link_ids(conn, client: httpx.AsyncClient, kind: str, table: str, name_fld: str, names: list[str]) -> list[str]:
+    """Airtable record ids for store/brand names, creating records in Airtable for names it doesn't have yet."""
+    ids = []
+    for name in names:
+        cur = await conn.execute(f"SELECT airtable_id FROM {kind} WHERE lower(name)=lower(%s) AND airtable_id IS NOT NULL LIMIT 1", (name,))
+        r = await cur.fetchone()
+        if r:
+            ids.append(r["airtable_id"])
+            continue
+        resp = await client.post(f"{AT_API}/{BASE}/{table}", json={"fields": {name_fld: name}, "returnFieldsByFieldId": True})
+        resp.raise_for_status()
+        rec = resp.json()
+        await conn.execute(
+            f"INSERT INTO {kind} (name, airtable_id) VALUES (%s,%s) ON CONFLICT (name) DO UPDATE SET airtable_id=EXCLUDED.airtable_id",
+            (name, rec["id"]))
+        ids.append(rec["id"])
+    return ids
+
+
+async def create_in_airtable(f: dict, by: str | None, src: str) -> str:
+    """Create a lead record in Airtable from cleaned site fields, copy it back at once, and return the site's lead id."""
+    if not TOKEN:
+        raise RuntimeError("AIRTABLE_TOKEN isn't set")
+    fields: dict = {}
+    for k in ("asin", "product_name", "sourced_by", "store_link", "promo_code", "va_notes", "feedback", "buyer_notes"):
+        if f.get(k):
+            fields[F[k]] = f[k]
+    if f.get("lead_date"):
+        fields[F["lead_date"]] = f["lead_date"].isoformat() if hasattr(f["lead_date"], "isoformat") else str(f["lead_date"])
+    if f.get("cost") is not None:
+        fields[F["cost"]] = float(f["cost"])
+    for k in ("buy_qty", "qty_ordered"):
+        if f.get(k) is not None:
+            fields[F[k]] = int(f[k])
+    async with httpx.AsyncClient(timeout=60, headers={"Authorization": f"Bearer {TOKEN}"}) as client:
+        async with db.pool.connection() as conn:
+            async with conn.transaction():
+                if f.get("stores"):
+                    fields[F_STORE_LINK] = await _link_ids(conn, client, "stores", T_STORES, "fldA6H5koCfWhuIQ1", f["stores"])
+                if f.get("brands"):
+                    fields[F_BRAND_LINKS[0]] = await _link_ids(conn, client, "brands", T_BRANDS, "fld5731MAIhxilIJr", f["brands"])
+        resp = await client.post(f"{AT_API}/{BASE}/{T_LEADS}",
+                                 json={"fields": fields, "typecast": True, "returnFieldsByFieldId": True})
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Airtable refused the new lead: {resp.text[:300]}")
+        rec = resp.json()
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("SELECT airtable_id, name FROM stores WHERE airtable_id IS NOT NULL")
+            smap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
+            cur = await conn.execute("SELECT airtable_id, name FROM brands WHERE airtable_id IS NOT NULL")
+            bmap = {r["airtable_id"]: r["name"] for r in await cur.fetchall()}
+            cur = await conn.execute(UPSERT, _row(rec, smap, bmap))
+            hit = await cur.fetchone()
+            if not hit:
+                cur = await conn.execute("SELECT id FROM leads WHERE airtable_id=%s", (rec["id"],))
+                hit = await cur.fetchone()
+            payload = {"t": "lead", "op": "upsert", "ids": [str(hit["id"])], "by": by, "src": src}
+            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps(payload),))
+    return str(hit["id"])

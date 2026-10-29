@@ -82,7 +82,8 @@
     $('#dlBrands').innerHTML = S.meta.brands.map((s) => `<option value="${esc(s.name)}">`).join('');
     const cur = $('#sourced').value;
     $('#sourced').innerHTML = '<option value="">Anyone</option>' + (S.meta.sourcers || []).map((s) => `<option ${s === cur ? 'selected' : ''}>${esc(s)}</option>`).join('');
-    $('#addBtn').classList.toggle('hidden', !editable());
+    $('#addBtn').classList.toggle('hidden', !can('editor'));
+    S.newRowOrder = null;
     renderBanner();
   }
 
@@ -90,9 +91,9 @@
     const b = $('#banner'), m = S.meta;
     if (m.mode === 'home') { b.classList.add('hidden'); return; }
     const last = m.last_sync ? new Date(m.last_sync).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'not yet';
-    const err = m.sync?.last_error ? ` <span class="err">Last sync error: ${esc(m.sync.last_error)}</span>` : '';
+    const err = m.sync?.last_error ? ` <span class="err" title="${esc(m.sync.last_error)}">Last sync had a problem: ${esc(m.sync.last_error.split(' for url')[0].slice(0, 90))}</span>` : '';
     b.className = 'banner mirror';
-    b.innerHTML = `<span><b>Copied live from Airtable</b> (checked every minute; last ${esc(last)}). Keep editing leads in Airtable until you switch over.${err}</span>
+    b.innerHTML = `<span><b>Copied live from Airtable</b> (checked every minute; last ${esc(last)}). New leads you add here go into Airtable too; edit existing leads in Airtable until you switch over.${err}</span>
       <span class="spacer"></span>
       ${can('owner') ? `<button class="btn small" data-act="sync">Sync now</button><span id="homeWrap"><button class="btn small primary" data-act="home">Make this the home for leads…</button></span>` : ''}`;
   }
@@ -112,6 +113,7 @@
       html += rowHtml(r);
     }
     $('#rows').innerHTML = html;
+    if (S.newRowOrder !== S.order.join()) renderNewRow();
     $('#empty').classList.toggle('hidden', S.rows.length > 0);
     const left = (t.n || 0) - S.rows.length;
     $('#more').classList.toggle('hidden', left <= 0);
@@ -131,6 +133,60 @@
   function rowHtml(r) {
     return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''}">` +
       S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') + '</tr>';
+  }
+
+  // ------------------------------------------------------------ inline entry row (like Airtable's blank row)
+  const todayIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const NEW_INPUTS = {
+    product: () => `<input size="4" data-n="product_name" placeholder="Product">`,
+    asin: () => `<input size="4" data-n="asin" class="mono" placeholder="ASIN" maxlength="10">`,
+    store: () => `<input size="4" data-n="stores" list="dlStores" placeholder="Store">`,
+    brand: () => `<input size="4" data-n="brands" list="dlBrands" placeholder="Brand">`,
+    cost: () => `<input size="2" data-n="cost" class="num" inputmode="decimal" placeholder="0.00">`,
+    promo: () => `<input size="4" data-n="promo_code" placeholder="Promo">`,
+    buy_qty: () => `<input size="2" data-n="buy_qty" class="num" inputmode="numeric" placeholder="0">`,
+    qty_ordered: () => `<input size="2" data-n="qty_ordered" class="num" inputmode="numeric" placeholder="0">`,
+    by: () => `<select data-n="sourced_by"><option value=""></option>${(S.meta?.sourcers || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select>`,
+    notes: () => `<input size="4" data-n="va_notes" placeholder="VA notes">`,
+  };
+  function renderNewRow() {
+    const tb = $('#newrow'); if (!tb) return;
+    if (!can('editor')) { tb.innerHTML = ''; return; }
+    const keep = {}; $$('#newrow [data-n]').forEach((el) => { keep[el.dataset.n] = el.value; });
+    const cells = S.order.map((k) => `<td class="${COLS[k][2]}">${NEW_INPUTS[k] ? NEW_INPUTS[k]() : ''}</td>`).join('');
+    const notesInline = S.order.includes('notes') ? '' : `<input data-n="va_notes" placeholder="VA notes" style="flex:1 1 220px">`;
+    tb.innerHTML = `<tr class="new-row"><td colspan="${S.order.length}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter</span></td></tr>
+      <tr class="new-row">${cells}</tr>
+      <tr class="new-row new-more"><td colspan="${S.order.length}"><div class="new-more-inner">
+        <label class="check">Date <input data-n="lead_date" type="date" style="width:150px"></label>
+        <input data-n="store_link" type="url" placeholder="Store link (https://…)" style="flex:2 1 320px">
+        ${notesInline}
+        <button class="btn primary small" data-act="new-save">Add lead</button>
+      </div></td></tr>`;
+    let lastBy = ''; try { lastBy = localStorage.getItem('leadNewBy') || ''; } catch { /* ignore */ }
+    const defaults = { lead_date: todayIso(), sourced_by: lastBy };
+    $$('#newrow [data-n]').forEach((el) => { const v = keep[el.dataset.n] ?? defaults[el.dataset.n]; if (v != null) el.value = v; });
+    S.newRowOrder = S.order.join();
+  }
+  async function saveNewRow() {
+    const vals = {}; $$('#newrow [data-n]').forEach((el) => { if (el.value.trim() !== '') vals[el.dataset.n] = el.value.trim(); });
+    if (!vals.asin && !vals.store_link) { toast('Enter at least an ASIN or a store link', true); $('#newrow [data-n="asin"]')?.focus(); return; }
+    const btn = $('#newrow [data-act="new-save"]'); if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      const lead = await api('POST', '/api/leads', vals);
+      try { if (vals.sourced_by) localStorage.setItem('leadNewBy', vals.sourced_by); } catch { /* ignore */ }
+      // Keep date, store, brand and who sourced it for the next entry; clear the rest.
+      ['product_name', 'asin', 'cost', 'promo_code', 'buy_qty', 'qty_ordered', 'store_link', 'va_notes'].forEach((n) => { const el = $(`#newrow [data-n="${n}"]`); if (el) el.value = ''; });
+      toast(`Added ${lead.asin || 'lead'}${isHome() ? '' : ' (saved to Airtable)'}`);
+      (S.order.includes('product') ? $('#newrow [data-n="product_name"]') : $('#newrow [data-n="asin"]'))?.focus();
+      await load();
+      flashLead(lead.id);
+    } catch (e) { fail(e); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Add lead'; } }
+  }
+  function flashLead(id) {
+    const tr = $(`#rows tr[data-id="${CSS.escape(id)}"]`); if (!tr) return;
+    tr.classList.add('flash'); setTimeout(() => tr.classList.remove('flash'), 1500);
   }
 
   // ------------------------------------------------------------ drawer
@@ -290,6 +346,7 @@
     try {
       switch (b.dataset.act) {
         case 'close': closeDrawer(); break;
+        case 'new-save': await saveNewRow(); break;
         case 'sync': { b.disabled = true; const r = await api('POST', '/api/leads-admin/sync-now'); toast(`Synced: ${r.changed} changed`); await loadMeta(); b.disabled = false; break; }
         case 'home':
           $('#homeWrap').innerHTML = `<span class="confirm"><span>Copy the latest from Airtable one last time and edit leads here from now on? Turn off the Airtable automations and have your VA use this page afterwards.</span>
@@ -331,6 +388,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('#drawer').classList.contains('hidden')) closeDrawer();
     if (e.key === 'Enter' && e.target.matches('#drawer input[data-k]')) e.target.blur();
+    if (e.key === 'Enter' && e.target.matches('#newrow [data-n]')) { e.preventDefault(); saveNewRow(); }
   });
   let qt; const reload = () => { clearTimeout(qt); qt = setTimeout(() => load().catch(fail), 200); };
   ['q', 'store', 'brand'].forEach((id) => $('#' + id).addEventListener('input', reload));
