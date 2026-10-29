@@ -156,6 +156,9 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     w, a = _where(filters)
     where = ("WHERE " + " AND ".join(w)) if w else ""
     order = SORTS.get(sort, SORTS["date"]).format(d="DESC" if desc else "ASC")
+    if sort != "date":
+        # Leads are shown grouped by day: keep days together (newest first) and sort within each day.
+        order = "l.lead_date DESC NULLS LAST, " + order
     rate, who = await bonus_params()
     bsql, bargs = _bonus_sql(rate, who)
     limit = max(1, min(int(limit), 1000))
@@ -174,7 +177,18 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
             [who, rate] + a,
         )
         totals = jsonable(dict(await cur.fetchone()))
-    return {"leads": rows, "totals": totals, "offset": offset, "limit": limit}
+        days = sorted({r["lead_date"] for r in rows if r.get("lead_date")})
+        day_totals = {}
+        if days:
+            w2 = w + ["l.lead_date = ANY(%s::date[])"]
+            cur = await conn.execute(
+                f"SELECT l.lead_date, count(*) n, count(*) FILTER (WHERE COALESCE(l.qty_ordered,0)>0) bought, "
+                f"COALESCE(sum(l.qty_ordered),0) units, COALESCE(sum(l.actual_spend),0) actual, "
+                f"COALESCE(sum(l.expected_spend),0) expected FROM leads l WHERE {' AND '.join(w2)} GROUP BY l.lead_date",
+                a + [days],
+            )
+            day_totals = {str(r["lead_date"]): jsonable({k: v for k, v in r.items() if k != "lead_date"}) for r in await cur.fetchall()}
+    return {"leads": rows, "totals": totals, "days": day_totals, "offset": offset, "limit": limit}
 
 
 async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -> dict | None:

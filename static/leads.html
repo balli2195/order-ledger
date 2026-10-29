@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div class="wrap">
+<div class="wrap full">
   <header class="top">
     <div>
       <h1 class="brand">Order Ledger</h1>
@@ -48,6 +48,9 @@
     <label class="check"><input type="checkbox" id="left"> Left to buy</label>
     <label class="check"><input type="checkbox" id="unscored"> Not scored</label>
     <button class="btn small ghost" id="clear">Clear</button>
+    <span class="spacer"></span>
+    <span class="muted" style="font-size:12px">Drag column headers to rearrange</span>
+    <button class="btn small ghost" data-act="reset-cols">Reset columns</button>
   </div>
 
   <div class="stats" id="stats"></div>

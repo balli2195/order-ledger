@@ -2,13 +2,45 @@
   'use strict';
   const { $, $$, esc, money, num, pct, fmtDate, api, toast, fail, can } = LG;
   const PAGE = 200;
-  const S = { meta: null, rows: [], byId: new Map(), totals: null, sort: 'date', desc: true, offset: 0, days: 30, openId: null };
+  const S = { meta: null, rows: [], byId: new Map(), totals: null, dayTotals: {}, sort: 'date', desc: true, offset: 0, days: 30, openId: null, order: [] };
 
-  const COLS = [
-    ['date', 'Date', 'tight'], ['asin', 'ASIN', 'tight'], [null, 'Product', 'prod'], [null, 'Store', ''], [null, 'Brand', ''],
-    ['cost', 'Cost', 'num'], ['buy_qty', 'Buy qty', 'num'], ['qty_ordered', 'Ordered', 'num'], ['left', 'Left', 'num'],
-    ['spend', 'Spend', 'num'], ['band', 'Band', 'center'], ['roi', 'Pred ROI', 'num'], ['claude_qty', 'Claude qty', 'num'], [null, 'By', ''],
-  ];
+  // Column definitions: key, header, sort key (or null), cell class, renderer.
+  const band = (b) => b == null ? '<span class="muted">—</span>' : `<span class="band b${b}">${b}</span>`;
+  const safeUrl = (u) => { if (!u) return null; let x = String(u).trim(); if (!/^https?:\/\//i.test(x)) x = 'https://' + x; try { const v = new URL(x); return /^https?:$/.test(v.protocol) ? v.href : null; } catch { return null; } };
+  const storeCell = (r) => {
+    const names = r.stores || []; const url = safeUrl(r.store_link);
+    if (!names.length) return url ? `<a class="store-link" href="${esc(url)}" target="_blank" rel="noopener" data-stop>store ↗</a>` : '<span class="muted">—</span>';
+    return `<span class="pill-list">${names.map((n) => url
+      ? `<a class="pill-link" href="${esc(url)}" target="_blank" rel="noopener" data-stop title="Open the store page">${esc(n)} ↗</a>`
+      : `<span>${esc(n)}</span>`).join('')}</span>`;
+  };
+  const COLS = {
+    asin: ['ASIN', 'asin', 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">—</span>'],
+    product: ['Product', null, 'prod', (r) => `<span title="${esc(r.product_name || '')}">${esc(r.product_name || '')}</span>`],
+    store: ['Store', null, '', storeCell],
+    brand: ['Brand', null, '', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
+    cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
+    buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => num(r.buy_qty)],
+    qty_ordered: ['Ordered', 'qty_ordered', 'num', (r) => num(r.qty_ordered)],
+    left: ['Left', 'left', 'num', (r) => num(r.left_to_buy)],
+    spend: ['Spend', 'spend', 'num', (r) => r.actual_spend ? money(r.actual_spend, 0) : '—'],
+    band: ['Band', 'band', 'center', (r) => band(r.lead_score_band)],
+    roi: ['Pred ROI', 'roi', 'num', (r) => pct(r.lead_score_roi)],
+    claude_qty: ['Claude qty', 'claude_qty', 'num', (r) => num(r.claude_buy_qty)],
+    by: ['By', null, 'tight', (r) => esc(r.sourced_by || '')],
+    promo: ['Promo', null, 'tight', (r) => esc(r.promo_code || '')],
+    notes: ['Notes', null, 'notes', (r) => `<span title="${esc([r.va_notes, r.buyer_notes].filter(Boolean).join(' | '))}">${esc(r.buyer_notes || r.va_notes || '')}</span>`],
+  };
+  const DEFAULT_ORDER = ['asin', 'product', 'store', 'brand', 'cost', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
+  const ORDER_KEY = 'leadColOrder.v1';
+  function loadOrder() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null');
+      if (Array.isArray(saved)) { const ok = saved.filter((k) => COLS[k]); return ok.concat(DEFAULT_ORDER.filter((k) => !ok.includes(k))); }
+    } catch { /* storage blocked */ }
+    return DEFAULT_ORDER.slice();
+  }
+  function saveOrder() { try { localStorage.setItem(ORDER_KEY, JSON.stringify(S.order)); } catch { /* ignore */ } }
 
   const isHome = () => S.meta?.mode === 'home';
   const editable = () => isHome() && can('editor');
@@ -29,6 +61,7 @@
     S.rows = append ? S.rows.concat(res.leads) : res.leads;
     S.byId = new Map(S.rows.map((r) => [r.id, r]));
     S.totals = res.totals;
+    S.dayTotals = append ? { ...S.dayTotals, ...res.days } : (res.days || {});
     render();
   }
 
@@ -61,29 +94,37 @@
       ['Expected spend', money(t.expected, 0)], ['Actual spend', money(t.actual, 0)],
       [`${esc(S.meta?.bonus_sourcer || 'VA')} bonus`, money(t.bonus)],
     ].map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
-    $('#head').innerHTML = COLS.map(([k, label, cls]) => k
-      ? `<th class="sortable ${cls}" data-sort="${k}">${label}${S.sort === k ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : ''}</th>`
-      : `<th class="${cls}">${label}</th>`).join('');
-    $('#rows').innerHTML = S.rows.map(rowHtml).join('');
+    $('#head').innerHTML = S.order.map((k) => {
+      const [label, sk, cls] = COLS[k];
+      const arrow = sk && S.sort === sk ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
+      return `<th draggable="true" data-col="${k}" class="${cls} ${sk ? 'sortable' : ''}" ${sk ? `data-sort="${sk}"` : ''} title="Drag to move${sk ? ', click to sort' : ''}">${label}${arrow}</th>`;
+    }).join('');
+    let html = '', lastDay = null;
+    for (const r of S.rows) {
+      const day = r.lead_date || '';
+      if (day !== lastDay) { html += dayHtml(day); lastDay = day; }
+      html += rowHtml(r);
+    }
+    $('#rows').innerHTML = html;
     $('#empty').classList.toggle('hidden', S.rows.length > 0);
     const left = (t.n || 0) - S.rows.length;
     $('#more').classList.toggle('hidden', left <= 0);
     $('#moreBtn').textContent = `Show more (${num(left)} left)`;
   }
 
-  const band = (b) => b == null ? '<span class="muted">—</span>' : `<span class="band b${b}">${b}</span>`;
-  const pills = (a) => (a || []).length ? `<span class="pill-list">${a.map((x) => `<span>${esc(x)}</span>`).join('')}</span>` : '<span class="muted">—</span>';
+  function dayHtml(day) {
+    const t = S.dayTotals[day] || {};
+    const label = day ? new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'No date';
+    const bits = [`${num(t.n)} lead${t.n === 1 ? '' : 's'}`, `${num(t.bought)} bought`];
+    if (t.units) bits.push(`${num(t.units)} units`);
+    if (t.actual) bits.push(`${money(t.actual, 0)} spent`);
+    if (t.expected) bits.push(`${money(t.expected, 0)} planned`);
+    return `<tr class="day-row"><td colspan="${S.order.length}"><b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
+  }
 
   function rowHtml(r) {
-    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''}">
-      <td class="tight">${esc(fmtDate(r.lead_date))}</td>
-      <td class="mono tight">${r.asin ? esc(r.asin) : '<span class="muted">—</span>'}</td>
-      <td class="prod" title="${esc(r.product_name || '')}">${esc(r.product_name || '')}</td>
-      <td>${pills(r.stores)}</td><td>${pills(r.brands)}</td>
-      <td class="num">${money(r.cost)}</td><td class="num">${num(r.buy_qty)}</td><td class="num">${num(r.qty_ordered)}</td>
-      <td class="num">${num(r.left_to_buy)}</td><td class="num">${r.actual_spend ? money(r.actual_spend, 0) : '—'}</td>
-      <td class="center">${band(r.lead_score_band)}</td><td class="num">${pct(r.lead_score_roi)}</td>
-      <td class="num">${num(r.claude_buy_qty)}</td><td>${esc(r.sourced_by || '')}</td></tr>`;
+    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''}">` +
+      S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') + '</tr>';
   }
 
   // ------------------------------------------------------------ drawer
@@ -231,9 +272,12 @@
   // ------------------------------------------------------------ events
   document.addEventListener('click', async (e) => {
     const t = e.target;
+    if (t.closest('[data-stop]')) return;   // ASIN / store links open in a new tab
+    if (t.closest('[data-act="reset-cols"]')) { S.order = DEFAULT_ORDER.slice(); saveOrder(); render(); toast('Columns reset'); return; }
     const th = t.closest('th[data-sort]');
-    if (th) { const k = th.dataset.sort; if (S.sort === k) S.desc = !S.desc; else { S.sort = k; S.desc = !['asin'].includes(k); } load().catch(fail); return; }
+    if (th && !S.justDragged) { const k = th.dataset.sort; if (S.sort === k) { if (S.desc === !['asin'].includes(k)) S.desc = !S.desc; else { S.sort = 'date'; S.desc = true; } } else { S.sort = k; S.desc = !['asin'].includes(k); } load().catch(fail); return; }
     const tr = t.closest('#rows tr[data-id]'); if (tr) { openLead(tr.dataset.id); return; }
+    if (t.closest('#rows tr.day-row')) return;
     const o = t.closest('[data-open]'); if (o) { openLead(o.dataset.open); return; }
     if (t.id === 'scrim') { closeDrawer(); return; }
     const b = t.closest('[data-act]'); if (!b) return;
@@ -254,6 +298,28 @@
       }
     } catch (err) { fail(err); }
   });
+  let dragCol = null;
+  const head = () => $('#head');
+  document.addEventListener('dragstart', (e) => { const th = e.target.closest?.('#head th[data-col]'); if (!th) return; dragCol = th.dataset.col; th.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', dragCol); } catch { /* ignore */ } });
+  document.addEventListener('dragover', (e) => {
+    const th = e.target.closest?.('#head th[data-col]'); if (!th || !dragCol) return;
+    e.preventDefault(); $$('#head th').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+    const rect = th.getBoundingClientRect(); th.classList.add(e.clientX < rect.left + rect.width / 2 ? 'drop-before' : 'drop-after');
+  });
+  document.addEventListener('drop', (e) => {
+    const th = e.target.closest?.('#head th[data-col]'); if (!th || !dragCol) return;
+    e.preventDefault();
+    const target = th.dataset.col; const before = th.classList.contains('drop-before');
+    if (target !== dragCol) {
+      const order = S.order.filter((k) => k !== dragCol);
+      order.splice(order.indexOf(target) + (before ? 0 : 1), 0, dragCol);
+      S.order = order; saveOrder(); render();
+    }
+  });
+  document.addEventListener('dragend', () => {
+    dragCol = null; $$('#head th').forEach((x) => x.classList.remove('dragging', 'drop-before', 'drop-after'));
+    S.justDragged = true; setTimeout(() => { S.justDragged = false; }, 50);
+  });
   document.addEventListener('focusin', (e) => { if (e.target.matches?.('#drawer [data-k]')) e.target.dataset.orig = e.target.value; });
   document.addEventListener('change', (e) => { if (e.target.matches('#drawer [data-k]')) saveField(e.target); });
   document.addEventListener('keydown', (e) => {
@@ -268,6 +334,7 @@
   $('#moreBtn').addEventListener('click', () => { S.offset += PAGE; load(true).catch(fail); });
   $('#addBtn').addEventListener('click', newLead);
 
+  S.order = loadOrder();
   (async () => {
     await LG.header();
     try {   // coming from the Stores & brands page
