@@ -138,14 +138,11 @@
   // ------------------------------------------------------------ inline entry row (like Airtable's blank row)
   const todayIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const NEW_INPUTS = {
-    product: () => `<input size="4" data-n="product_name" placeholder="Product">`,
     asin: () => `<input size="4" data-n="asin" class="mono" placeholder="ASIN" maxlength="10">`,
     store: () => `<input size="4" data-n="stores" list="dlStores" placeholder="Store">`,
     brand: () => `<input size="4" data-n="brands" list="dlBrands" placeholder="Brand">`,
     cost: () => `<input size="2" data-n="cost" class="num" inputmode="decimal" placeholder="0.00">`,
     promo: () => `<input size="4" data-n="promo_code" placeholder="Promo">`,
-    buy_qty: () => `<input size="2" data-n="buy_qty" class="num" inputmode="numeric" placeholder="0">`,
-    qty_ordered: () => `<input size="2" data-n="qty_ordered" class="num" inputmode="numeric" placeholder="0">`,
     by: () => `<select data-n="sourced_by"><option value=""></option>${(S.meta?.sourcers || []).map((x) => `<option>${esc(x)}</option>`).join('')}</select>`,
     notes: () => `<input size="4" data-n="va_notes" placeholder="VA notes">`,
   };
@@ -155,7 +152,7 @@
     const keep = {}; $$('#newrow [data-n]').forEach((el) => { keep[el.dataset.n] = el.value; });
     const cells = S.order.map((k) => `<td class="${COLS[k][2]}">${NEW_INPUTS[k] ? NEW_INPUTS[k]() : ''}</td>`).join('');
     const notesInline = S.order.includes('notes') ? '' : `<input data-n="va_notes" placeholder="VA notes" style="flex:1 1 220px">`;
-    tb.innerHTML = `<tr class="new-row"><td colspan="${S.order.length}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter</span></td></tr>
+    tb.innerHTML = `<tr class="new-row"><td colspan="${S.order.length}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter. The product name is filled in from Keepa.</span></td></tr>
       <tr class="new-row">${cells}</tr>
       <tr class="new-row new-more"><td colspan="${S.order.length}"><div class="new-more-inner">
         <label class="check">Date <input data-n="lead_date" type="date" style="width:150px"></label>
@@ -163,8 +160,7 @@
         ${notesInline}
         <button class="btn primary small" data-act="new-save">Add lead</button>
       </div></td></tr>`;
-    let lastBy = ''; try { lastBy = localStorage.getItem('leadNewBy') || ''; } catch { /* ignore */ }
-    const defaults = { lead_date: todayIso(), sourced_by: lastBy };
+    const defaults = { lead_date: todayIso(), sourced_by: 'Ariane' };
     $$('#newrow [data-n]').forEach((el) => { const v = keep[el.dataset.n] ?? defaults[el.dataset.n]; if (v != null) el.value = v; });
     S.newRowOrder = S.order.join();
   }
@@ -174,11 +170,10 @@
     const btn = $('#newrow [data-act="new-save"]'); if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
       const lead = await api('POST', '/api/leads', vals);
-      try { if (vals.sourced_by) localStorage.setItem('leadNewBy', vals.sourced_by); } catch { /* ignore */ }
       // Keep date, store, brand and who sourced it for the next entry; clear the rest.
-      ['product_name', 'asin', 'cost', 'promo_code', 'buy_qty', 'qty_ordered', 'store_link', 'va_notes'].forEach((n) => { const el = $(`#newrow [data-n="${n}"]`); if (el) el.value = ''; });
+      ['asin', 'cost', 'promo_code', 'store_link', 'va_notes'].forEach((n) => { const el = $(`#newrow [data-n="${n}"]`); if (el) el.value = ''; });
       toast(`Added ${lead.asin || 'lead'}${isHome() ? '' : ' (saved to Airtable)'}`);
-      (S.order.includes('product') ? $('#newrow [data-n="product_name"]') : $('#newrow [data-n="asin"]'))?.focus();
+      $('#newrow [data-n="asin"]')?.focus();
       await load();
       flashLead(lead.id);
     } catch (e) { fail(e); }

@@ -24,6 +24,7 @@ LEAD_FIELDS = (
 INT_FIELDS = {"buy_qty", "qty_ordered", "lead_score_band", "claude_buy_qty"}
 LIST_FIELDS = {"stores", "brands"}
 
+KEEPA_KEY = os.environ.get("KEEPA_KEY", "")
 LEAD_SCORE_URL = os.environ.get("LEAD_SCORE_URL", "").rstrip("/")
 LEAD_SCORE_KEY = os.environ.get("LEAD_SCORE_KEY", "")
 
@@ -40,6 +41,22 @@ LIST_COLS = (
     "l.promo_code, l.va_notes, l.feedback, l.buy_qty, l.qty_ordered, l.buyer_notes, l.lead_score_band, l.lead_score_roi, "
     "l.claude_buy_qty, l.replen, l.expected_spend, l.actual_spend, l.left_to_buy, l.updated_at, l.created_at"
 )
+
+
+async def keepa_title(asin: str) -> str | None:
+    """Amazon product title for an ASIN from Keepa (about 1 token). None if unavailable."""
+    if not KEEPA_KEY or not asin:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.get("https://api.keepa.com/product",
+                            params={"key": KEEPA_KEY, "domain": 1, "asin": asin, "history": 0})
+        prods = r.json().get("products") or []
+        title = (prods[0].get("title") or "").strip() if prods else ""
+        return title or None
+    except Exception as e:
+        log.warning("keepa title lookup failed for %s: %s", asin, e)
+        return None
 
 
 # ---------------------------------------------------------------- settings
@@ -278,6 +295,10 @@ async def create_lead(actor: Actor, data: dict) -> dict:
     if f.get("asin") and not re.fullmatch(r"[A-Z0-9]{10}", f["asin"]):
         raise LedgerError(f"ASIN should be 10 letters/digits (got {f['asin']!r})")
     f.setdefault("lead_date", date.today())
+    if f.get("asin") and not f.get("product_name"):
+        f["product_name"] = await keepa_title(f["asin"])
+        if not f["product_name"]:
+            f.pop("product_name")
     if await mode() != "home":
         # Airtable is still the home for leads: create it there (its automations score it) and copy it back now.
         from . import airtable_sync
