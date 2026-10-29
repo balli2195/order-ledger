@@ -308,3 +308,9 @@ th .hf-val { display: inline-block; margin-left: 5px; padding: 0 6px; border-rad
 .hp-opt:hover { background: var(--line-2); }
 .hp-opt.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .hp-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 10px 2px; }
+
+/* header filter button (funnel) */
+th .hf-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: -4px 0 -4px 6px; border-radius: 6px; color: var(--muted); vertical-align: middle; border: 1px solid transparent; }
+th[data-hfilter]:hover .hf-btn { background: var(--line-2); color: var(--ink); border-color: var(--line); }
+th .hf-btn.on { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+th .hf-icon { display: none; }

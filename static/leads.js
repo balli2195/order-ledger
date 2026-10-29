@@ -15,7 +15,7 @@
       : `<span>${esc(n)}</span>`).join('')}</span>`;
   };
   const COLS = {
-    asin: ['ASIN', 'asin', 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">—</span>'],
+    asin: ['ASIN', null, 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">—</span>'],
     product: ['Product', null, 'prod', (r) => `<span title="${esc(r.product_name || '')}">${esc(r.product_name || '')}</span>`],
     store: ['Store', null, 'tags', storeCell],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
@@ -81,7 +81,6 @@
     S.meta = await api('GET', '/api/leads-meta');
     $('#dlStores').innerHTML = S.meta.stores.map((s) => `<option value="${esc(s.name)}">`).join('');
     $('#dlBrands').innerHTML = S.meta.brands.map((s) => `<option value="${esc(s.name)}">`).join('');
-    $('#addBtn').classList.toggle('hidden', !can('editor'));
     S.newRowOrder = null;
     renderBanner();
   }
@@ -105,9 +104,9 @@
       const fk = HEADER_FILTERS[k];
       const fval = fk ? $('#' + fk.input).value : '';
       const arrow = sk && S.sort === sk ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
-      const ftag = fk ? (fval ? `<span class="hf-val">${esc(fk.show(fval))}</span>` : `<span class="hf-icon">▾</span>`) : '';
+      const ftag = fk ? `<span class="hf-btn ${fval ? 'on' : ''}" aria-label="Filter">${FUNNEL(!!fval)}</span>` : '';
       const attrs = fk ? `data-hfilter="${k}"` : (sk ? `data-sort="${sk}"` : '');
-      const tip = fk ? 'Click to filter' + (sk ? ' or sort' : '') : (sk ? 'Click to sort' : '');
+      const tip = fk ? (fval ? `Filtered: ${fk.show(fval)} (click to change)` : 'Click to filter' + (sk ? ' or sort' : '')) : (sk ? 'Click to sort' : '');
       return `<th draggable="true" data-col="${k}" class="${cls} ${fk || sk ? 'sortable' : ''} ${fval ? 'hf-on' : ''}" ${attrs} title="${tip}; drag to move">${label}${arrow}${ftag}</th>`;
     }).join('');
     let html = '', lastDay = null;
@@ -140,6 +139,7 @@
   }
 
   // ------------------------------------------------------------ header filters
+  const FUNNEL = (filled) => `<svg width="15" height="15" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h18l-7 8.6V19l-4 2v-7.9z"/></svg>`;
   const HEADER_FILTERS = {
     store: { input: 'store', show: (v) => v },
     brand: { input: 'brand', show: (v) => v },
@@ -508,7 +508,6 @@
   $$('#range .chip').forEach((c) => c.addEventListener('click', () => { $$('#range .chip').forEach((x) => x.classList.toggle('on', x === c)); S.days = Number(c.dataset.days); reload(); }));
   $('#clear').addEventListener('click', () => { ['q', 'store', 'brand', 'sourced', 'band'].forEach((id) => { $('#' + id).value = ''; }); ['ordered', 'left', 'unscored'].forEach((id) => { $('#' + id).checked = false; }); reload(); });
   $('#moreBtn').addEventListener('click', () => { S.offset += PAGE; load(true).catch(fail); });
-  $('#addBtn').addEventListener('click', newLead);
 
   S.order = loadOrder();
   (async () => {
