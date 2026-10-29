@@ -334,7 +334,7 @@ async def update_leads(changes: list[LeadChange]) -> dict:
 
 @mcp.tool()
 async def delete_leads(lead_ids: list[str], confirm: bool = False) -> dict:
-    """Delete leads (site-added ones any time; Airtable-copied ones only after cutover). Ask the user first, then call with confirm=true."""
+    """Delete leads from the site (Airtable isn't changed; deleted Airtable leads aren't copied back). Ask the user first, then call with confirm=true."""
     actor = await _actor("editor")
     if not confirm:
         raise o.LedgerError("Not deleted: confirm with the user, then call again with confirm=true")

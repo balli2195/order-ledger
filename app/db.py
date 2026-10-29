@@ -206,6 +206,14 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE leads ADD COLUMN local_edits text[] NOT NULL DEFAULT '{}';
     """,
+    # 4: leads deleted on the site that came from Airtable; the copy skips them
+    """
+    CREATE TABLE lead_tombstones (
+        airtable_id text PRIMARY KEY,
+        deleted_at  timestamptz NOT NULL DEFAULT now(),
+        user_id     integer REFERENCES users(id) ON DELETE SET NULL
+    );
+    """,
 ]
 
 

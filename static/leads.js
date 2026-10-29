@@ -109,7 +109,7 @@
       const attrs = fk ? `data-hfilter="${k}"` : (sk ? `data-sort="${sk}"` : '');
       const tip = fk ? (fval ? `Filtered: ${fk.show(fval)} (click to change)` : 'Click to filter' + (sk ? ' or sort' : '')) : (sk ? 'Click to sort' : '');
       return `<th draggable="true" data-col="${k}" class="${cls} ${fk || sk ? 'sortable' : ''} ${fval ? 'hf-on' : ''}" ${attrs} title="${tip}; drag to move">${label}${arrow}${ftag}</th>`;
-    }).join('');
+    }).join('') + '<th class="row-act" aria-label="Delete"></th>';
     let html = '', lastDay = null;
     for (const r of S.rows) {
       const day = r.lead_date || '';
@@ -131,13 +131,44 @@
     if (t.units) bits.push(`${num(t.units)} units`);
     if (t.actual) bits.push(`${money(t.actual, 0)} spent`);
     if (t.expected) bits.push(`${money(t.expected, 0)} planned`);
-    return `<tr class="day-row"><td colspan="${S.order.length}"><b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
+    return `<tr class="day-row"><td colspan="${S.order.length + 1}"><b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
   }
 
   function rowHtml(r) {
     return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''}">` +
-      S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') + '</tr>';
+      S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') +
+      `<td class="row-act">${can('editor') ? `<button class="row-del" data-del="${esc(r.id)}" data-stop title="Delete lead" aria-label="Delete lead">${TRASH}</button>` : ''}</td></tr>`;
   }
+
+  // ------------------------------------------------------------ row delete with confirmation
+  const TRASH = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>`;
+  function confirmDelete(id) {
+    const r = S.byId.get(id) || {};
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="cfT">
+      <h3 id="cfT">Delete this lead?</h3>
+      <p><b class="mono">${esc(r.asin || '(no ASIN)')}</b> · ${esc(fmtDate(r.lead_date))}<br><span class="muted">${esc((r.product_name || '').slice(0, 120))}</span></p>
+      <p class="muted" style="font-size:13px">This removes it from Myrddin Hub. It can't be undone here${r.airtable_id ? ', and the copy from Airtable won\'t bring it back (Airtable itself isn\'t changed)' : ''}.</p>
+      <div class="confirm-actions"><button class="btn" data-cf="no">Cancel</button><button class="btn danger-solid" data-cf="yes">Delete</button></div></div>`;
+    document.body.appendChild(wrap);
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    wrap.querySelector('[data-cf="no"]').focus();
+    wrap.addEventListener('click', async (e) => {
+      if (e.target === wrap || e.target.closest('[data-cf="no"]')) { close(); return; }
+      const yes = e.target.closest('[data-cf="yes"]'); if (!yes) return;
+      yes.disabled = true; yes.textContent = 'Deleting…';
+      try {
+        await api('DELETE', '/api/leads/' + id);
+        close();
+        S.rows = S.rows.filter((x) => x.id !== id); S.byId.delete(id);
+        if (S.openId === id) closeDrawer();
+        render(); toast('Lead deleted');
+      } catch (err) { yes.disabled = false; yes.textContent = 'Delete'; fail(err); }
+    });
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-del]'); if (b) { e.preventDefault(); e.stopPropagation(); confirmDelete(b.dataset.del); } }, true);
 
   // ------------------------------------------------------------ header filters
   const FUNNEL = (filled) => `<svg width="15" height="15" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h18l-7 8.6V19l-4 2v-7.9z"/></svg>`;
@@ -330,9 +361,9 @@
       if (i === best.start) { cells += `<td colspan="${best.len}">${extras}</td>`; i += best.len - 1; continue; }
       cells += `<td class="${cls}">${content[i] ?? ''}</td>`;
     }
-    const fallback = best.len ? '' : `<tr class="new-row new-more"><td colspan="${S.order.length}">${extras}</td></tr>`;
-    tb.innerHTML = `<tr class="new-row"><td colspan="${S.order.length}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter. The product name is filled in from Keepa.</span></td></tr>
-      <tr class="new-row new-main">${cells}</tr>${fallback}`;
+    const fallback = best.len ? '' : `<tr class="new-row new-more"><td colspan="${S.order.length + 1}">${extras}</td></tr>`;
+    tb.innerHTML = `<tr class="new-row"><td colspan="${S.order.length + 1}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter. The product name is filled in from Keepa.</span></td></tr>
+      <tr class="new-row new-main">${cells}<td class="row-act"></td></tr>${fallback}`;
     const defaults = { lead_date: todayIso(), sourced_by: 'Ariane' };
     $$('#newrow [data-n]').forEach((el) => { const v = keep[el.dataset.n] ?? defaults[el.dataset.n]; if (v != null) el.value = v; });
     S.newRowOrder = S.order.join();
@@ -387,7 +418,7 @@
         <h2>${esc(l.asin || 'Lead')} <span class="muted" style="font-size:15px">${esc(fmtDate(l.lead_date))}</span></h2>
         ${link ? `<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Open store ↗</a>` : ''}
         ${l.asin ? `<a class="btn small" href="https://www.amazon.com/dp/${esc(l.asin)}" target="_blank" rel="noopener">Amazon ↗</a>` : ''}
-        ${editable() && (isHome() || !l.airtable_id) ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
+        ${editable() ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">

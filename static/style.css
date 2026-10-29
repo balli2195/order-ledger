@@ -327,3 +327,20 @@ th .hf-icon { display: none; }
 .num-edit { all: unset; display: inline-block; min-width: 34px; text-align: right; cursor: text; padding: 3px 6px; margin: -3px -6px; border-radius: 5px; font-variant-numeric: tabular-nums; }
 .num-edit:hover { background: var(--line-2); box-shadow: inset 0 0 0 1px var(--line); }
 .num-input { width: 64px; padding: 3px 6px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* row delete + confirmation */
+th.row-act, td.row-act { width: 34px; padding-left: 2px !important; padding-right: 6px !important; text-align: center; }
+.row-del { border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 6px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: .35; }
+tr:hover .row-del { opacity: 1; }
+.row-del:hover { color: var(--bad); background: var(--warn-soft); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.confirm-back { position: fixed; inset: 0; background: rgba(20, 16, 10, .35); z-index: 90; display: grid; place-items: center; padding: 16px; }
+.confirm-box { background: var(--panel); border-radius: 12px; box-shadow: var(--shadow); padding: 20px 22px; width: min(440px, 100%); }
+.confirm-box h3 { margin: 0 0 8px; font-family: var(--serif); font-weight: 400; font-size: 26px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.btn.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; }
+th.row-act, td.row-act { width: 28px; padding-left: 0 !important; padding-right: 4px !important; }
+.row-del { width: 24px; height: 24px; }
+@media (max-width: 1700px) { td.note-cell { max-width: 5.6vw; } }
+@media (max-width: 1700px) { .wrap.full th { white-space: normal; line-height: 1.2; vertical-align: bottom; } }
+td.note-cell { max-width: min(180px, 7.4vw); }
+@media (max-width: 1700px) { td.note-cell { max-width: 5.6vw; } }

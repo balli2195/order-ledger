@@ -164,7 +164,11 @@ async def sync_once(full: bool) -> dict:
     changed, removed = [], 0
     async with db.pool.connection() as conn:
         async with conn.transaction():
+            cur = await conn.execute("SELECT airtable_id FROM lead_tombstones")
+            gone = {r["airtable_id"] for r in await cur.fetchall()}   # deleted on the site
             for rec in recs:
+                if rec["id"] in gone:
+                    continue
                 cur = await conn.execute(UPSERT, _row(rec, stores, brands))
                 hit = await cur.fetchone()
                 if hit:

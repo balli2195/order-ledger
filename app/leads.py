@@ -354,20 +354,19 @@ async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
 
 
 async def delete_leads(actor: Actor, ids: list[str]) -> int:
-    mirror = await mode() != "home"
     async with db.pool.connection() as conn:
         async with conn.transaction():
             n = 0
             for lid in ids:
-                if mirror:
-                    cur = await conn.execute("SELECT airtable_id FROM leads WHERE id=%s", (lid,))
-                    r = await cur.fetchone()
-                    if r and r["airtable_id"]:
-                        raise LedgerError("This lead comes from Airtable; delete it there (or after switching over)")
                 cur = await conn.execute("DELETE FROM leads WHERE id=%s RETURNING *", (lid,))
                 before = await cur.fetchone()
                 if not before:
                     raise LedgerError(f"Lead {lid} not found")
+                if before["airtable_id"]:
+                    # Airtable still has it; remember the deletion so the copy doesn't bring it back.
+                    await conn.execute(
+                        "INSERT INTO lead_tombstones (airtable_id, user_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                        (before["airtable_id"], actor.user_id))
                 await _audit(conn, actor, "delete", "lead", lid, None, dict(before), None)
                 n += 1
             await _notify(conn, "delete", ids, actor.label, actor.source)
