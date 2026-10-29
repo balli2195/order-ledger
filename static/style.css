@@ -131,7 +131,10 @@ pre.notes { white-space: pre-wrap; font: 12.5px/1.5 var(--mono); background: var
 /* ---------- leads table extras */
 .wrap.full { max-width: none; padding-left: 24px; padding-right: 24px; }
 .wrap.full .table-wrap { width: 100%; }
-.wrap.full td.prod { max-width: 420px; }
+.wrap.full td.prod { max-width: min(420px, 17vw); }
+.wrap.full td.tags { max-width: min(220px, 10vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill-list > a, .pill-list > span { white-space: nowrap; }
+.wrap.full td, .wrap.full th { padding-left: 9px; padding-right: 9px; }
 tr.day-row td { background: var(--panel-2); font-size: 13px; padding-top: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 tr.day-row:hover { background: inherit; }
 #rows tr.day-row { cursor: default; }
@@ -162,10 +165,14 @@ td.promo { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-sp
 .tile .f button { border: 0; background: none; padding: 0; color: inherit; text-decoration: underline dotted; cursor: pointer; }
 
 /* ---------- table */
-.table-wrap { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; }
+.table-wrap {
+  margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow-x: clip;   /* clip (not scroll) so the sticky header pins to the top of the window */
+}
+@media (max-width: 760px) { .table-wrap { overflow-x: auto; } }
 table { border-collapse: collapse; width: 100%; }
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
-th { position: sticky; top: 0; background: var(--panel); font-size: 12px; font-weight: 600; color: var(--muted); z-index: 1; white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--panel); font-size: 12px; font-weight: 600; color: var(--muted); z-index: 2; white-space: nowrap; box-shadow: inset 0 -1px 0 var(--line); }
 tbody tr { cursor: pointer; transition: background .6s; }
 tbody tr:hover { background: var(--panel-2); }
 tbody tr.flash { background: var(--flash); transition: none; }
@@ -241,4 +248,9 @@ ol.steps { padding-left: 20px; } ol.steps li { margin: 6px 0; }
   .grid { grid-template-columns: 1fr 1fr; }
   .grid .wide { grid-column: span 2; }
   td.notes, th.notes, td.email, th.email { display: none; }
+}
+@media (max-width: 1400px) {
+  .wrap.full td, .wrap.full th { padding-left: 6px; padding-right: 6px; font-size: 13px; }
+  .wrap.full .asin-btn { padding: 2px 5px; font-size: 11.5px; }
+  .wrap.full td.prod { max-width: 15vw; }
 }

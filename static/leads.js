@@ -17,8 +17,8 @@
   const COLS = {
     asin: ['ASIN', 'asin', 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">—</span>'],
     product: ['Product', null, 'prod', (r) => `<span title="${esc(r.product_name || '')}">${esc(r.product_name || '')}</span>`],
-    store: ['Store', null, '', storeCell],
-    brand: ['Brand', null, '', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
+    store: ['Store', null, 'tags', storeCell],
+    brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
     cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
     buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => num(r.buy_qty)],
     qty_ordered: ['Ordered', 'qty_ordered', 'num', (r) => num(r.qty_ordered)],
