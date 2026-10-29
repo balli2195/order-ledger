@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leads · Order Ledger</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Order Ledger</h1>
+      <div class="subtitle"><span id="live" class="live-dot"></span><span id="summary">Loading…</span></div>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden"><button data-act="logout">Sign out</button></div>
+    </div>
+  </header>
+
+  <nav class="tabs"><a href="/">Ledger</a><a href="/leads" class="on">Leads</a><a href="/stores">Stores &amp; brands</a></nav>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <div class="toolbar">
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search ASIN, product, store, brand, notes, promo…" autocomplete="off">
+    </div>
+    <div class="chips" id="range">
+      <button class="chip" data-days="7">7 days</button>
+      <button class="chip on" data-days="30">30 days</button>
+      <button class="chip" data-days="90">90 days</button>
+      <button class="chip" data-days="0">All</button>
+    </div>
+    <div class="spacer"></div>
+    <button id="addBtn" class="btn primary hidden">+ Add lead</button>
+  </div>
+  <div class="filters">
+    <input id="store" placeholder="Store" list="dlStores" style="width:160px">
+    <input id="brand" placeholder="Brand" list="dlBrands" style="width:160px">
+    <select id="sourced"><option value="">Anyone</option></select>
+    <select id="band"><option value="">Any band</option><option value="4">Band 4+ (buy line)</option><option value="7">Band 7+</option><option value="9">Band 9+</option></select>
+    <label class="check"><input type="checkbox" id="ordered"> Bought</label>
+    <label class="check"><input type="checkbox" id="left"> Left to buy</label>
+    <label class="check"><input type="checkbox" id="unscored"> Not scored</label>
+    <button class="btn small ghost" id="clear">Clear</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty hidden">No leads match.</div>
+    <div id="more" class="more hidden"><button class="btn" id="moreBtn">Show more</button></div>
+  </div>
+</div>
+
+<div id="scrim" class="scrim hidden"></div>
+<aside id="drawer" class="drawer hidden" role="dialog" aria-modal="true"></aside>
+<div id="toasts" class="toasts"></div>
+<datalist id="dlStores"></datalist>
+<datalist id="dlBrands"></datalist>
+
+<script src="/static/common.js"></script>
+<script src="/static/leads.js"></script>
+</body>
+</html>

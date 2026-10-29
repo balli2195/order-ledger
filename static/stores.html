@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stores &amp; brands · Order Ledger</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Order Ledger</h1>
+      <div class="subtitle"><span id="live" class="live-dot"></span><span id="summary">Loading…</span></div>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden"><button data-act="logout">Sign out</button></div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/">Ledger</a><a href="/leads">Leads</a><a href="/stores" class="on">Stores &amp; brands</a></nav>
+
+  <div class="toolbar">
+    <div class="chips" id="kind"><button class="chip on" data-kind="stores">Stores</button><button class="chip" data-kind="brands">Brands</button></div>
+    <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search names…" autocomplete="off"></div>
+    <div class="chips" id="cs"><button class="chip on" data-cs="">All</button><button class="chip" data-cs="1">Can source</button><button class="chip" data-cs="0">Can't</button></div>
+  </div>
+  <p id="note" class="muted hidden" style="font-size:13px"></p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th class="center">Can source</th><th class="num">Leads</th><th class="num">Units bought</th><th class="num">Total spend</th><th class="num">Last lead</th><th class="num">Days since</th></tr></thead>
+    <tbody id="rows"></tbody></table>
+    <div id="empty" class="empty hidden">Nothing matches.</div>
+  </div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, $$, esc, money, num, fmtDate, api, toast, fail, can } = LG;
+  const S = { kind: 'stores', rows: [], mode: 'mirror', cs: '' };
+  async function load() {
+    const r = await api('GET', `/api/stores?kind=${S.kind}`);
+    S.rows = r.rows; S.mode = r.mode; render();
+  }
+  function render() {
+    const q = $('#q').value.trim().toLowerCase();
+    const rows = S.rows.filter((r) => (!q || r.name.toLowerCase().includes(q)) && (S.cs === '' || (S.cs === '1') === r.can_source));
+    const dis = S.mode === 'home' && can('editor') ? '' : 'disabled';
+    $('#note').classList.toggle('hidden', S.mode === 'home');
+    $('#note').textContent = 'Copied from Airtable — change "Can source" there until leads are switched over.';
+    $('#summary').textContent = `${num(rows.length)} ${S.kind} · ${money(rows.reduce((s, r) => s + (r.spend || 0), 0), 0)} spent`;
+    $('#rows').innerHTML = rows.slice(0, 1500).map((r) => `<tr data-name="${esc(r.name)}" style="cursor:default">
+      <td><a href="/leads#" data-goto="${esc(r.name)}">${esc(r.name)}</a></td>
+      <td class="center"><label class="switch"><input type="checkbox" ${r.can_source ? 'checked' : ''} ${dis}><span></span></label></td>
+      <td class="num">${num(r.leads)}</td><td class="num">${num(r.units)}</td><td class="num">${money(r.spend, 0)}</td>
+      <td class="num">${esc(fmtDate(r.last_date))}</td><td class="num">${r.days_since == null ? '—' : num(r.days_since)}</td></tr>`).join('');
+    $('#empty').classList.toggle('hidden', rows.length > 0);
+  }
+  document.addEventListener('change', async (e) => {
+    if (!e.target.matches('.switch input')) return;
+    const name = e.target.closest('tr').dataset.name;
+    try { await api('PUT', `/api/stores/${S.kind}/${encodeURIComponent(name)}`, { can_source: e.target.checked }); toast(`${name}: ${e.target.checked ? 'can source' : "can't source"}`); }
+    catch (err) { fail(err); e.target.checked = !e.target.checked; }
+  });
+  document.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-goto]');
+    if (g) { e.preventDefault(); sessionStorage.setItem('leadFilter', JSON.stringify({ [S.kind === 'stores' ? 'store' : 'brand']: g.dataset.goto })); location.href = '/leads'; }
+  });
+  $$('#kind .chip').forEach((c) => c.addEventListener('click', () => { $$('#kind .chip').forEach((x) => x.classList.toggle('on', x === c)); S.kind = c.dataset.kind; load().catch(fail); }));
+  $$('#cs .chip').forEach((c) => c.addEventListener('click', () => { $$('#cs .chip').forEach((x) => x.classList.toggle('on', x === c)); S.cs = c.dataset.cs; render(); }));
+  $('#q').addEventListener('input', render);
+  (async () => { await LG.header(); await load(); LG.live((m) => { if (m.t === 'store' || (m.t === 'lead' && (m.op === 'reload' || m.op === 'mode'))) load(); }); })().catch(fail);
+})();
+</script>
+</body>
+</html>

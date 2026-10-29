@@ -13,11 +13,13 @@ from fastapi import Body, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, live
+from . import airtable_sync, auth, db, live
+from . import leads as L
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("ledger")
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -29,9 +31,11 @@ mcp_app = mcp.streamable_http_app()
 async def lifespan(app: FastAPI):
     await db.open_pool()
     listener = asyncio.create_task(live.listener())
+    syncer = asyncio.create_task(airtable_sync.loop())
     async with mcp.session_manager.run():
         yield
     listener.cancel()
+    syncer.cancel()
     await db.close_pool()
 
 
@@ -69,6 +73,20 @@ async def index(request: Request):
     if not await auth.current_user(request):
         return RedirectResponse("/login", 302)
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/leads", include_in_schema=False)
+async def leads_page(request: Request):
+    if not await auth.current_user(request):
+        return RedirectResponse("/login", 302)
+    return FileResponse(STATIC / "leads.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/stores", include_in_schema=False)
+async def stores_page(request: Request):
+    if not await auth.current_user(request):
+        return RedirectResponse("/login", 302)
+    return FileResponse(STATIC / "stores.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/login", include_in_schema=False)
@@ -200,9 +218,94 @@ async def api_daily_target(request: Request, body: dict = Body(...)):
 
 
 @app.get("/api/activity")
-async def api_activity(request: Request, limit: int = 100, order_id: str | None = None):
+async def api_activity(request: Request, limit: int = 100, order_id: str | None = None, entity_id: str | None = None):
     await auth.require(request)
-    return {"changes": await o.recent_changes(min(limit, 500), order_id)}
+    return {"changes": await o.recent_changes(min(limit, 500), order_id, entity_id)}
+
+
+# ---------------------------------------------------------------- leads API
+
+LEAD_FILTERS = ("q", "asin", "store", "brand", "date_from", "date_to", "sourced_by", "ordered", "left", "unscored", "band_min", "replen")
+
+
+@app.get("/api/leads")
+async def api_leads(request: Request, sort: str = "date", desc: bool = True, limit: int = 200, offset: int = 0):
+    await auth.require(request)
+    f = {k: request.query_params.get(k) for k in LEAD_FILTERS if request.query_params.get(k) not in (None, "")}
+    return await L.list_leads(f, sort, desc, limit, offset)
+
+
+@app.get("/api/leads-meta")
+async def api_leads_meta(request: Request):
+    await auth.require(request)
+    meta = await L.lead_choices()
+    meta["sync"] = airtable_sync.status
+    return meta
+
+
+@app.get("/api/leads/{lead_id}")
+async def api_lead(lead_id: str, request: Request):
+    await auth.require(request)
+    found = await L.get_lead(lead_id)
+    if not found:
+        raise HTTPException(404, "Lead not found")
+    return found
+
+
+@app.post("/api/leads")
+async def api_create_lead(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor")
+    return await L.create_lead(web_actor(user), body)
+
+
+@app.patch("/api/leads")
+async def api_update_leads(request: Request, body: Any = Body(...)):
+    user = await auth.require(request, "editor")
+    return {"leads": await L.update_leads(web_actor(user), body if isinstance(body, list) else [body])}
+
+
+@app.delete("/api/leads/{lead_id}")
+async def api_delete_lead(lead_id: str, request: Request):
+    user = await auth.require(request, "editor")
+    return {"deleted": await L.delete_leads(web_actor(user), [lead_id])}
+
+
+@app.post("/api/leads/{lead_id}/score")
+async def api_score_lead(lead_id: str, request: Request):
+    await auth.require(request, "editor")
+    await L.require_home()
+    return await L.score_lead(lead_id)
+
+
+@app.post("/api/leads-admin/make-home")
+async def api_make_home(request: Request):
+    user = await auth.require(request, "owner")
+    if await L.mode() == "home":
+        return {"mode": "home"}
+    await airtable_sync.sync_once(full=True)   # final catch-up copy first
+    await L.make_home(web_actor(user))
+    return {"mode": "home", "final_sync": airtable_sync.status.get("last_counts")}
+
+
+@app.post("/api/leads-admin/sync-now")
+async def api_sync_now(request: Request, full: bool = False):
+    await auth.require(request, "owner")
+    if await L.mode() != "mirror":
+        raise HTTPException(400, "Leads already live here; Airtable sync is off")
+    return await airtable_sync.sync_once(full=full)
+
+
+@app.get("/api/stores")
+async def api_stores(request: Request, kind: str = "stores", q: str | None = None):
+    await auth.require(request)
+    return {"rows": await L.store_stats(kind, q), "mode": await L.mode()}
+
+
+@app.put("/api/stores/{kind}/{name}")
+async def api_set_can_source(kind: str, name: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor")
+    await L.set_can_source(web_actor(user), kind, name, bool(body.get("can_source")))
+    return {"ok": True}
 
 
 @app.get("/api/events")

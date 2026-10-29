@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 
+from . import leads as L
 from . import orders as o
 from .auth import User, user_by_id
 from .oauth import LedgerOAuthProvider
@@ -26,7 +27,16 @@ Discrepancy = sum(qty*cost_per_unit) differs from order_total by more than 1 cen
 Missing info = an item lacks ASIN, title, cost, set type, shade or qty, or the order has no items.
 Every change you make appears live on the ledger website and is logged with your user's name.
 Look orders up before editing (search_orders / get_order), confirm destructive changes with the user,
-and use run_sql for totals and analysis instead of paging through search results."""
+and use run_sql for totals and analysis instead of paging through search results.
+
+It also holds Nick's sourcing leads (formerly the Airtable "VA Leads" base): one row per product lead with asin,
+lead_date, product_name, sourced_by (VA name), stores[], brands[], store_link, cost (per unit), promo_code, va_notes,
+buyer_notes, feedback, buy_qty (planned), qty_ordered (actually bought), lead_score_band (1-10) / lead_score_roi
+(predicted ROI) / lead_score_notes from the Lead Score server, claude_buy_qty / claude_buy_note, replen.
+expected_spend = cost*buy_qty, actual_spend = cost*qty_ordered, left_to_buy = buy_qty-qty_ordered.
+The VA bonus is 1.2% of actual spend on leads sourced by the bonus sourcer (see get_lead_choices).
+Stores and brands have a can_source flag. While leads mode is "mirror" the leads are copied live from Airtable
+and are read-only here; after the owner's cutover ("home") they're edited here."""
 
 mcp = FastMCP(
     "Order Ledger",
@@ -224,7 +234,145 @@ async def recent_changes(limit: int = 30, order_id: str | None = None) -> dict:
 async def run_sql(sql: Annotated[str, Field(description="One read-only SELECT/WITH statement")]) -> dict:
     """Read-only SQL for analysis. Tables: orders(id, order_date, store, email, order_total, order_ref,
     notes, created_at, updated_at), order_items(id, order_id, asin, product_title, shade, set_type,
-    qty_ordered, cost_per_unit), audit_log(at, user_id, source, action, entity, order_id, before, after),
-    users(id, email, name, role), settings(key, value). Max 500 rows, 15s."""
+    qty_ordered, cost_per_unit), leads(id, airtable_id, asin, lead_date, product_name, sourced_by, stores text[],
+    brands text[], store_link, cost, promo_code, va_notes, feedback, buy_qty, qty_ordered, buyer_notes,
+    lead_score_band, lead_score_roi, lead_score_notes, claude_buy_qty, claude_buy_note, replen, extra jsonb,
+    expected_spend, actual_spend, left_to_buy, created_at, updated_at), stores(name, can_source),
+    brands(name, can_source), audit_log(at, user_id, source, action, entity, entity_id, order_id, before, after),
+    users(id, email, name, role), settings(key, value). Use unnest(stores) to group by store. Max 500 rows, 15s."""
     await _actor()
     return await o.run_readonly_sql(sql)
+
+
+# ---------------------------------------------------------------- leads
+
+class LeadIn(BaseModel):
+    asin: str | None = None
+    lead_date: str | None = Field(None, description="YYYY-MM-DD; defaults to today")
+    product_name: str | None = None
+    sourced_by: str | None = Field(None, description="Who found it (see get_lead_choices sourcers)")
+    stores: list[str] | None = None
+    brands: list[str] | None = None
+    store_link: str | None = None
+    cost: float | None = Field(None, description="Cost per unit at the store")
+    promo_code: str | None = None
+    va_notes: str | None = None
+    feedback: str | None = None
+    buy_qty: int | None = Field(None, description="Planned units to buy")
+    qty_ordered: int | None = Field(None, description="Units actually ordered")
+    buyer_notes: str | None = None
+    claude_buy_qty: int | None = None
+    claude_buy_note: str | None = None
+    replen: bool | None = None
+
+
+class LeadChange(LeadIn):
+    id: str = Field(description="Lead id from search_leads")
+    lead_score_band: int | None = None
+    lead_score_roi: float | None = None
+    lead_score_notes: str | None = None
+
+
+def _lead_compact(r: dict) -> dict:
+    keep = ("id", "lead_date", "asin", "product_name", "sourced_by", "stores", "brands", "cost", "buy_qty", "qty_ordered",
+            "left_to_buy", "actual_spend", "lead_score_band", "lead_score_roi", "claude_buy_qty", "promo_code",
+            "va_notes", "buyer_notes", "store_link")
+    return {k: r.get(k) for k in keep}
+
+
+@mcp.tool()
+async def search_leads(
+    query: Annotated[str | None, Field(description="Free text across ASIN, product, store, brand, notes, promo, link")] = None,
+    asin: str | None = None,
+    store: str | None = None,
+    brand: str | None = None,
+    date_from: Annotated[str | None, Field(description="YYYY-MM-DD")] = None,
+    date_to: Annotated[str | None, Field(description="YYYY-MM-DD")] = None,
+    sourced_by: str | None = None,
+    ordered_only: bool = False,
+    left_to_buy_only: bool = False,
+    unscored_only: bool = False,
+    band_min: int | None = None,
+    sort: Literal["date", "cost", "band", "roi", "spend", "left", "claude_qty", "updated"] = "date",
+    limit: int = 50,
+) -> dict:
+    """Find leads, newest first by default. Returns totals for everything matching (count, expected/actual spend, bonus)."""
+    await _actor()
+    f = {"q": query, "asin": asin, "store": store, "brand": brand, "date_from": date_from, "date_to": date_to,
+         "sourced_by": sourced_by, "ordered": ordered_only, "left": left_to_buy_only, "unscored": unscored_only,
+         "band_min": band_min}
+    f = {k: v for k, v in f.items() if v not in (None, False, "")}
+    res = await L.list_leads(f, sort, True, min(max(limit, 1), 500), 0)
+    return {"totals": res["totals"], "leads": [_lead_compact(r) for r in res["leads"]]}
+
+
+@mcp.tool()
+async def get_lead(lead_id: str) -> dict:
+    """One lead with every field, Lead Score notes, and other leads of the same ASIN."""
+    await _actor()
+    found = await L.get_lead(lead_id)
+    if not found:
+        raise o.LedgerError("No such lead")
+    return found
+
+
+@mcp.tool()
+async def create_lead(lead: LeadIn) -> dict:
+    """Add a lead (after cutover). It is scored automatically once it has an ASIN, cost and store link."""
+    actor = await _actor("editor")
+    return await L.create_lead(actor, lead.model_dump(exclude_none=True))
+
+
+@mcp.tool()
+async def update_leads(changes: list[LeadChange]) -> dict:
+    """Edit one or more leads (after cutover). Only the fields you pass change."""
+    actor = await _actor("editor")
+    ids = await L.update_leads(actor, [c.model_dump(exclude_none=True) for c in changes])
+    return {"updated": len(ids), "ids": ids}
+
+
+@mcp.tool()
+async def delete_leads(lead_ids: list[str], confirm: bool = False) -> dict:
+    """Delete leads (after cutover). Ask the user first, then call with confirm=true."""
+    actor = await _actor("editor")
+    if not confirm:
+        raise o.LedgerError("Not deleted: confirm with the user, then call again with confirm=true")
+    return {"deleted": await L.delete_leads(actor, lead_ids)}
+
+
+@mcp.tool()
+async def score_lead(lead_id: str) -> dict:
+    """(Re)score a lead with the Lead Score server and save the band, predicted ROI and notes (after cutover)."""
+    await _actor("editor")
+    await L.require_home()
+    return await L.score_lead(lead_id)
+
+
+@mcp.tool()
+async def list_stores_or_brands(
+    kind: Literal["stores", "brands"] = "stores",
+    query: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Stores or brands with can_source flag, lead count, total actual spend, units and days since last lead."""
+    await _actor()
+    rows = await L.store_stats(kind, query)
+    return {"total": len(rows), "rows": rows[: max(1, min(limit, 1000))]}
+
+
+@mcp.tool()
+async def set_can_source(kind: Literal["stores", "brands"], name: str, can_source: bool) -> dict:
+    """Mark a store or brand as OK (or not) to source from (after cutover)."""
+    actor = await _actor("editor")
+    await L.set_can_source(actor, kind, name, can_source)
+    return {"kind": kind, "name": name, "can_source": can_source}
+
+
+@mcp.tool()
+async def get_lead_choices() -> dict:
+    """Known stores, brands, sourcers, bonus settings, and whether leads are still mirrored from Airtable."""
+    await _actor()
+    c = await L.lead_choices()
+    c["stores"] = [s["name"] for s in c["stores"]]
+    c["brands"] = [b["name"] for b in c["brands"]]
+    return c

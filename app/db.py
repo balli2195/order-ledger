@@ -141,6 +141,67 @@ MIGRATIONS: list[str] = [
         used_at    timestamptz
     );
     """,
+    # 2: leads (from the Airtable "VA Leads" base), stores, brands
+    """
+    CREATE TABLE stores (
+        name        text PRIMARY KEY,
+        can_source  boolean NOT NULL DEFAULT false,
+        airtable_id text UNIQUE,
+        created_at  timestamptz NOT NULL DEFAULT now(),
+        updated_at  timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE brands (
+        name        text PRIMARY KEY,
+        can_source  boolean NOT NULL DEFAULT false,
+        airtable_id text UNIQUE,
+        created_at  timestamptz NOT NULL DEFAULT now(),
+        updated_at  timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE leads (
+        id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        airtable_id      text UNIQUE,
+        asin             text,
+        lead_date        date,
+        product_name     text,
+        sourced_by       text,
+        stores           text[] NOT NULL DEFAULT '{}',
+        brands           text[] NOT NULL DEFAULT '{}',
+        store_link       text,
+        cost             numeric(12,2),
+        promo_code       text,
+        va_notes         text,
+        feedback         text,
+        buy_qty          integer,
+        qty_ordered      integer,
+        buyer_notes      text,
+        lead_score_band  integer,
+        lead_score_roi   numeric(8,4),
+        lead_score_notes text,
+        claude_buy_qty   integer,
+        claude_buy_note  text,
+        replen           boolean NOT NULL DEFAULT false,
+        extra            jsonb NOT NULL DEFAULT '{}',
+        created_at       timestamptz NOT NULL DEFAULT now(),
+        updated_at       timestamptz NOT NULL DEFAULT now(),
+        created_by       integer REFERENCES users(id) ON DELETE SET NULL,
+        updated_by       integer REFERENCES users(id) ON DELETE SET NULL,
+        expected_spend   numeric(14,2) GENERATED ALWAYS AS (cost * buy_qty) STORED,
+        actual_spend     numeric(14,2) GENERATED ALWAYS AS (cost * qty_ordered) STORED,
+        left_to_buy      integer GENERATED ALWAYS AS (buy_qty - qty_ordered) STORED
+    );
+    CREATE INDEX leads_date_idx   ON leads (lead_date DESC NULLS LAST, created_at DESC);
+    CREATE INDEX leads_asin_idx   ON leads (upper(asin));
+    CREATE INDEX leads_stores_idx ON leads USING gin (stores);
+    CREATE INDEX leads_brands_idx ON leads USING gin (brands);
+    CREATE INDEX audit_log_entity_idx ON audit_log (entity_id, at DESC);
+
+    INSERT INTO settings (key, value) VALUES
+      ('leads_mode', '"mirror"'),
+      ('bonus_rate', '0.012'),
+      ('bonus_sourcer', '"Ariane"'),
+      ('sourcers', '["Ariane", "Nick"]');
+    """,
 ]
 
 

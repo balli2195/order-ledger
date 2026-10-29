@@ -75,6 +75,7 @@
   }
 
   async function onLive(m) {
+    if (m.t && m.t !== 'order') return;
     if (m.op === 'reload') { await loadOrders(); loadMeta(); if (S.openId) refreshDrawer(); return; }
     if (m.op === 'settings') { loadMeta(); return; }
     const mine = m.by && S.me && (m.by === (S.me.name || S.me.email)) && m.src === 'web';

@@ -486,13 +486,16 @@ async def set_daily_target(actor: Actor, amount: float) -> None:
             await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"op": "settings"}),))
 
 
-async def recent_changes(limit: int = 50, order_id=None) -> list[dict]:
+async def recent_changes(limit: int = 50, order_id=None, entity_id=None) -> list[dict]:
     where, args = "", []
     if order_id:
         where, args = "WHERE a.order_id=%s", [order_id]
+    elif entity_id:
+        where, args = "WHERE a.entity_id=%s", [entity_id]
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             f"SELECT a.id, a.at, a.source, a.action, a.entity, a.entity_id, a.order_id, a.before, a.after, "
+            f"(SELECT COALESCE(ld.asin, '') FROM leads ld WHERE a.entity='lead' AND ld.id=a.entity_id) AS lead_asin, "
             f"COALESCE(NULLIF(u.name,''), u.email) AS who, o.store, o.order_ref "
             f"FROM audit_log a LEFT JOIN users u ON u.id=a.user_id LEFT JOIN orders o ON o.id=a.order_id "
             f"{where} ORDER BY a.id DESC LIMIT %s",
