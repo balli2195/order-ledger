@@ -308,10 +308,25 @@ async def admin_stats(request: Request):
         return o.jsonable(await cur.fetchone())
 
 
+@app.post("/api/admin/import-raw")
+async def admin_import_raw(request: Request):
+    """TEMPORARY: same as /api/admin/import, but takes text/plain with the key in the body,
+    so the old app's page can send its data without a CORS preflight. Remove after migration."""
+    import hmac as _h
+    data = json.loads(await request.body())
+    if not auth.ADMIN_KEY or not _h.compare_digest(str(data.pop("admin_key", "")), auth.ADMIN_KEY):
+        raise HTTPException(401, "Bad admin key")
+    return await _do_import(data)
+
+
 @app.post("/api/admin/import")
 async def admin_import(request: Request, body: dict = Body(...)):
     """Upsert orders/items from the old app, keyed by their old ids (safe to re-run)."""
     auth.require_admin_key(request)
+    return await _do_import(body)
+
+
+async def _do_import(body: dict):
     orders_in = body.get("orders") or []
     items_in = body.get("items") or []
     set_types = body.get("set_types") or []
