@@ -81,8 +81,6 @@
     S.meta = await api('GET', '/api/leads-meta');
     $('#dlStores').innerHTML = S.meta.stores.map((s) => `<option value="${esc(s.name)}">`).join('');
     $('#dlBrands').innerHTML = S.meta.brands.map((s) => `<option value="${esc(s.name)}">`).join('');
-    const cur = $('#sourced').value;
-    $('#sourced').innerHTML = '<option value="">Anyone</option>' + (S.meta.sourcers || []).map((s) => `<option ${s === cur ? 'selected' : ''}>${esc(s)}</option>`).join('');
     $('#addBtn').classList.toggle('hidden', !can('editor'));
     S.newRowOrder = null;
     renderBanner();
@@ -104,8 +102,13 @@
     $('#summary').textContent = `${num(t.n)} leads match · ${num(t.bought)} bought`;
     $('#head').innerHTML = S.order.map((k) => {
       const [label, sk, cls] = COLS[k];
+      const fk = HEADER_FILTERS[k];
+      const fval = fk ? $('#' + fk.input).value : '';
       const arrow = sk && S.sort === sk ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
-      return `<th draggable="true" data-col="${k}" class="${cls} ${sk ? 'sortable' : ''}" ${sk ? `data-sort="${sk}"` : ''} title="Drag to move${sk ? ', click to sort' : ''}">${label}${arrow}</th>`;
+      const ftag = fk ? (fval ? `<span class="hf-val">${esc(fk.show(fval))}</span>` : `<span class="hf-icon">▾</span>`) : '';
+      const attrs = fk ? `data-hfilter="${k}"` : (sk ? `data-sort="${sk}"` : '');
+      const tip = fk ? 'Click to filter' + (sk ? ' or sort' : '') : (sk ? 'Click to sort' : '');
+      return `<th draggable="true" data-col="${k}" class="${cls} ${fk || sk ? 'sortable' : ''} ${fval ? 'hf-on' : ''}" ${attrs} title="${tip}; drag to move">${label}${arrow}${ftag}</th>`;
     }).join('');
     let html = '', lastDay = null;
     for (const r of S.rows) {
@@ -135,6 +138,56 @@
     return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''}">` +
       S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') + '</tr>';
   }
+
+  // ------------------------------------------------------------ header filters
+  const HEADER_FILTERS = {
+    store: { input: 'store', show: (v) => v },
+    brand: { input: 'brand', show: (v) => v },
+    by: { input: 'sourced', show: (v) => v },
+    band: { input: 'band', show: (v) => v + '+' },
+  };
+  let hPop = null;
+  function closeHeaderFilter() { const el = hPop; hPop = null; if (el) el.remove(); }
+  function setHeaderFilter(key, val) {
+    $('#' + HEADER_FILTERS[key].input).value = val;
+    load().catch(fail);
+  }
+  function openHeaderFilter(th) {
+    const key = th.dataset.hfilter;
+    if (hPop && hPop.dataset.key === key) { closeHeaderFilter(); return; }
+    closeHeaderFilter();
+    const fk = HEADER_FILTERS[key]; const cur = $('#' + fk.input).value;
+    const el = document.createElement('div'); el.className = 'hpop'; el.dataset.key = key;
+    const opt = (v, label) => `<button class="hp-opt ${cur === v ? 'on' : ''}" data-hp-val="${esc(v)}">${esc(label)}</button>`;
+    if (key === 'store' || key === 'brand') {
+      el.innerHTML = `<input class="hp-text" list="${key === 'store' ? 'dlStores' : 'dlBrands'}" placeholder="Type a ${key} name" value="${esc(cur)}">
+        <div class="hp-foot"><button class="btn small ghost" data-hp-val="">Clear</button><button class="btn small primary" data-hp-apply>Apply</button></div>`;
+    } else if (key === 'by') {
+      el.innerHTML = opt('', 'Anyone') + (S.meta?.sourcers || []).map((x) => opt(x, x)).join('');
+    } else if (key === 'band') {
+      el.innerHTML = `<div class="hp-label">Show</div>${opt('', 'Any band')}${opt('4', 'Band 4+ (buy line)')}${opt('7', 'Band 7+')}${opt('9', 'Band 9+')}
+        <div class="hp-label">Sort</div><button class="hp-opt ${S.sort === 'band' && S.desc ? 'on' : ''}" data-hp-sort="desc">High → low</button>
+        <button class="hp-opt ${S.sort === 'band' && !S.desc ? 'on' : ''}" data-hp-sort="asc">Low → high</button>`;
+    }
+    document.body.appendChild(el);
+    const r = th.getBoundingClientRect();
+    el.style.left = Math.max(8, Math.min(r.left + window.scrollX, window.scrollX + window.innerWidth - el.offsetWidth - 8)) + 'px';
+    el.style.top = (r.bottom + window.scrollY + 4) + 'px';
+    hPop = el;
+    const txt = el.querySelector('.hp-text');
+    if (txt) {
+      txt.focus(); txt.select();
+      txt.addEventListener('keydown', (e) => { if (e.key === 'Enter') { setHeaderFilter(key, txt.value.trim()); closeHeaderFilter(); } });
+      txt.addEventListener('change', () => { if (hPop !== el) return; if (S.meta && [...(key === 'store' ? S.meta.stores : S.meta.brands)].some((x) => x.name === txt.value)) { setHeaderFilter(key, txt.value.trim()); closeHeaderFilter(); } });
+    }
+    el.addEventListener('click', (e) => {
+      const v = e.target.closest('[data-hp-val]'); if (v) { setHeaderFilter(key, v.dataset.hpVal); closeHeaderFilter(); return; }
+      if (e.target.closest('[data-hp-apply]')) { setHeaderFilter(key, txt.value.trim()); closeHeaderFilter(); return; }
+      const so = e.target.closest('[data-hp-sort]'); if (so) { S.sort = 'band'; S.desc = so.dataset.hpSort === 'desc'; closeHeaderFilter(); load().catch(fail); }
+    });
+  }
+  document.addEventListener('mousedown', (e) => { if (hPop && !hPop.contains(e.target) && !e.target.closest('th[data-hfilter]')) closeHeaderFilter(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && hPop) { e.stopPropagation(); closeHeaderFilter(); } }, true);
 
   // ------------------------------------------------------------ note cells + pop-up editor
   function noteCell(r, field) {
@@ -393,6 +446,8 @@
     const t = e.target;
     if (t.closest('[data-stop]')) return;   // ASIN / store links open in a new tab
     if (t.closest('[data-act="reset-cols"]')) { S.order = DEFAULT_ORDER.slice(); saveOrder(); render(); toast('Columns reset'); return; }
+    const hf = t.closest('th[data-hfilter]');
+    if (hf && !S.justDragged) { openHeaderFilter(hf); return; }
     const th = t.closest('th[data-sort]');
     if (th && !S.justDragged) { const k = th.dataset.sort; if (S.sort === k) { if (S.desc === !['asin'].includes(k)) S.desc = !S.desc; else { S.sort = 'date'; S.desc = true; } } else { S.sort = k; S.desc = !['asin'].includes(k); } load().catch(fail); return; }
     const tr = t.closest('#rows tr[data-id]'); if (tr) { openLead(tr.dataset.id); return; }
@@ -448,8 +503,8 @@
     if (e.key === 'Enter' && e.target.matches('#newrow [data-n]')) { e.preventDefault(); saveNewRow(); }
   });
   let qt; const reload = () => { clearTimeout(qt); qt = setTimeout(() => load().catch(fail), 200); };
-  ['q', 'store', 'brand'].forEach((id) => $('#' + id).addEventListener('input', reload));
-  ['sourced', 'band', 'ordered', 'left', 'unscored'].forEach((id) => $('#' + id).addEventListener('change', reload));
+  $('#q').addEventListener('input', reload);
+  ['ordered', 'left', 'unscored'].forEach((id) => $('#' + id).addEventListener('change', reload));
   $$('#range .chip').forEach((c) => c.addEventListener('click', () => { $$('#range .chip').forEach((x) => x.classList.toggle('on', x === c)); S.days = Number(c.dataset.days); reload(); }));
   $('#clear').addEventListener('click', () => { ['q', 'store', 'brand', 'sourced', 'band'].forEach((id) => { $('#' + id).value = ''; }); ['ordered', 'left', 'unscored'].forEach((id) => { $('#' + id).checked = false; }); reload(); });
   $('#moreBtn').addEventListener('click', () => { S.offset += PAGE; load(true).catch(fail); });

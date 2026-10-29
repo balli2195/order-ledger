@@ -42,10 +42,9 @@
     <button id="addBtn" class="btn primary hidden">+ Add lead</button>
   </div>
   <div class="filters">
-    <input id="store" placeholder="Store" list="dlStores" style="width:160px">
-    <input id="brand" placeholder="Brand" list="dlBrands" style="width:160px">
-    <select id="sourced"><option value="">Anyone</option></select>
-    <select id="band"><option value="">Any band</option><option value="4">Band 4+ (buy line)</option><option value="7">Band 7+</option><option value="9">Band 9+</option></select>
+    <span class="hidden" aria-hidden="true"><!-- set from the column header filters -->
+      <input id="store"><input id="brand"><input id="sourced"><input id="band">
+    </span>
     <label class="check"><input type="checkbox" id="ordered"> Bought</label>
     <label class="check"><input type="checkbox" id="left"> Left to buy</label>
     <label class="check"><input type="checkbox" id="unscored"> Not scored</label>

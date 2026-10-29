@@ -295,3 +295,16 @@ td.note-cell { overflow: hidden; white-space: nowrap; max-width: min(200px, 8vw)
   td.note-cell { max-width: 7vw; }
   .wrap.full td.promo { max-width: 7vw; }
 }
+
+/* ---------- header filters */
+th[data-hfilter] { cursor: pointer; }
+th .hf-icon { font-size: 10px; margin-left: 4px; opacity: .55; }
+th.hf-on { color: var(--accent); }
+th .hf-val { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-weight: 600; max-width: 110px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.hpop { position: absolute; z-index: 75; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; min-width: 190px; display: grid; gap: 2px; }
+.hpop .hp-text { width: 240px; }
+.hp-foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.hp-opt { border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.hp-opt:hover { background: var(--line-2); }
+.hp-opt.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.hp-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 10px 2px; }
