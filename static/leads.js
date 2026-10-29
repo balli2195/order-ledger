@@ -31,8 +31,9 @@
     promo: ['Promo', null, 'promo', (r) => r.promo_code ? `<span class="promo-code" title="${esc(r.promo_code)}">${esc(r.promo_code)}</span>` : '<span class="muted">—</span>'],
     va_notes: ['VA notes', null, 'note-cell', (r) => noteCell(r, 'va_notes')],
     buyer_notes: ['Buyer notes', null, 'note-cell', (r) => noteCell(r, 'buyer_notes')],
+    feedback: ['Feedback', null, 'note-cell', (r) => noteCell(r, 'feedback')],
   };
-  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
+  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'feedback', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
   const ORDER_KEY = 'leadColOrder.v2';
   function loadOrder() {
     try {
@@ -212,7 +213,7 @@
     closeNote(true);
     const tr = btn.closest('tr[data-id]'); const id = tr.dataset.id; const field = btn.dataset.note;
     const row = S.byId.get(id) || {}; const orig = row[field] || '';
-    const label = field === 'va_notes' ? 'VA notes' : 'Buyer notes';
+    const label = { va_notes: 'VA notes', buyer_notes: 'Buyer notes', feedback: 'Feedback' }[field] || field;
     const el = document.createElement('div');
     el.className = 'note-pop';
     el.innerHTML = `<div class="note-pop-head"><b>${label}</b> <span class="muted mono">${esc(row.asin || '')}</span></div>

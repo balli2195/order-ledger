@@ -314,3 +314,11 @@ th .hf-btn { display: inline-flex; align-items: center; justify-content: center;
 th[data-hfilter]:hover .hf-btn { background: var(--line-2); color: var(--ink); border-color: var(--line); }
 th .hf-btn.on { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 th .hf-icon { display: none; }
+@media (max-width: 1700px) {
+  .wrap.full td.prod { max-width: 11vw; }
+  td.note-cell { max-width: 6vw; }
+}
+@media (max-width: 1500px) {
+  .wrap.full th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
+  .wrap.full th .hf-btn { margin-left: 3px; }
+}
