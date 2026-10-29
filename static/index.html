@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order Ledger</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Order Ledger</h1>
+      <div class="subtitle"><span id="live" class="live-dot" title="Connecting…"></span><span id="summary">Loading…</span></div>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost" aria-haspopup="true">Menu ▾</button>
+      <div id="menu" class="menu hidden" role="menu">
+        <button data-act="activity">Activity log</button>
+        <button data-act="connect">Connect Claude</button>
+        <button data-act="users" class="owner-only">Users &amp; logins</button>
+        <button data-act="export">Download CSV</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search store, email, order ID, ASIN, title…" autocomplete="off">
+    </div>
+    <div class="chips" role="tablist">
+      <button class="chip on" data-filter="all">All</button>
+      <button class="chip" data-filter="discrepancy">Discrepancy<span class="count" id="cDisc"></span></button>
+      <button class="chip" data-filter="missing">Missing info<span class="count" id="cMiss"></span></button>
+    </div>
+    <div class="spacer"></div>
+    <button id="addBtn" class="btn primary editor-only">+ Add order</button>
+  </div>
+
+  <div id="tiles" class="tiles"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Store</th><th class="email">Email</th><th class="num">Order total</th>
+          <th>Order ID</th><th class="notes">Notes</th><th class="center">Discrepancy</th><th class="center">Missing info</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty hidden">No orders match.</div>
+    <div id="more" class="more hidden"><button class="btn" id="moreBtn">Show more</button></div>
+  </div>
+</div>
+
+<div id="scrim" class="scrim hidden"></div>
+<aside id="drawer" class="drawer hidden" aria-modal="true" role="dialog"></aside>
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true"></div>
+<div id="toasts" class="toasts"></div>
+
+<datalist id="dlStores"></datalist>
+<datalist id="dlEmails"></datalist>
+<datalist id="dlSets"></datalist>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set your password · Order Ledger</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="auth-body">
+<main class="auth-card">
+  <h1 class="brand">Order Ledger</h1>
+  <div id="bad" class="hidden"><p>This link has expired or was already used. Ask the ledger owner for a new one.</p></div>
+  <form id="f" class="stack hidden">
+    <p id="hello" class="muted"></p>
+    <label>New password (10+ characters)<input name="pw" type="password" autocomplete="new-password" minlength="10" required></label>
+    <label>Repeat it<input name="pw2" type="password" autocomplete="new-password" minlength="10" required></label>
+    <p id="err" class="err hidden"></p>
+    <button class="btn primary" type="submit">Set password and open the ledger</button>
+  </form>
+</main>
+<script>
+const token = location.pathname.split('/').pop();
+(async () => {
+  const r = await fetch('/api/invite/' + encodeURIComponent(token));
+  if (!r.ok) { document.getElementById('bad').classList.remove('hidden'); return; }
+  const info = await r.json();
+  document.getElementById('hello').textContent = 'Setting the password for ' + (info.name ? info.name + ' (' + info.email + ')' : info.email) + '.';
+  document.getElementById('f').classList.remove('hidden');
+})();
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target), err = document.getElementById('err');
+  err.classList.add('hidden');
+  if (fd.get('pw') !== fd.get('pw2')) { err.textContent = "The passwords don't match"; err.classList.remove('hidden'); return; }
+  const r = await fetch('/api/invite/' + encodeURIComponent(token), {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: fd.get('pw')})});
+  if (r.ok) { location.href = '/'; return; }
+  err.textContent = (await r.json().catch(() => ({}))).detail || 'Something went wrong';
+  err.classList.remove('hidden');
+});
+</script>
+</body>
+</html>
