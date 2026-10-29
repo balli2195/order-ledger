@@ -305,18 +305,11 @@ async def admin_stats(request: Request):
             "(SELECT count(*) FROM users) users, (SELECT min(order_date) FROM orders) first_date, "
             "(SELECT max(order_date) FROM orders) last_date"
         )
-        return o.jsonable(await cur.fetchone())
-
-
-@app.post("/api/admin/import-raw")
-async def admin_import_raw(request: Request):
-    """TEMPORARY: same as /api/admin/import, but takes text/plain with the key in the body,
-    so the old app's page can send its data without a CORS preflight. Remove after migration."""
-    import hmac as _h
-    data = json.loads(await request.body())
-    if not auth.ADMIN_KEY or not _h.compare_digest(str(data.pop("admin_key", "")), auth.ADMIN_KEY):
-        raise HTTPException(401, "Bad admin key")
-    return await _do_import(data)
+        stats = o.jsonable(await cur.fetchone())
+    rows = await o.list_orders()
+    stats["discrepancy_orders"] = sum(1 for r in rows if r["discrepancy"])
+    stats["missing_info_orders"] = sum(1 for r in rows if r["missing"])
+    return stats
 
 
 @app.post("/api/admin/import")
