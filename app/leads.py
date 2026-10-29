@@ -426,7 +426,7 @@ async def score_lead(lead_id: str) -> dict:
     if not (r["asin"] and r["cost"] and r["store_link"]):
         raise LedgerError("Scoring needs an ASIN, a cost and a store link")
     params = {"asin": r["asin"], "cost": str(r["cost"]), "url": r["store_link"],
-              "date": (r["lead_date"] or date.today()).isoformat()}
+              "date": (r["lead_date"] or date.today()).isoformat(), "lead_id": str(lead_id)}
     try:
         async with httpx.AsyncClient(timeout=180) as c:
             resp = await c.get(f"{LEAD_SCORE_URL}/preview", params=params, headers={"X-Key": LEAD_SCORE_KEY})
