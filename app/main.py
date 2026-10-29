@@ -1,4 +1,4 @@
-"""Order Ledger web app: website + JSON API + live events + Claude connector."""
+"""Myrddin Hub web app: website + JSON API + live events + Claude connector."""
 from __future__ import annotations
 
 import asyncio
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     await db.close_pool()
 
 
-app = FastAPI(title="Order Ledger", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.exception_handler(o.LedgerError)
@@ -484,9 +484,9 @@ async def _do_import(body: dict):
 def _oauth_page(body: str) -> HTMLResponse:
     return HTMLResponse(
         f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Claude · Order Ledger</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Claude · Myrddin Hub</title>
 <link rel="stylesheet" href="/static/style.css"></head>
-<body class="auth-body"><main class="auth-card"><h1 class="brand">Order Ledger</h1>{body}</main></body></html>""",
+<body class="auth-body"><main class="auth-card"><h1 class="brand">Myrddin Hub</h1>{body}</main></body></html>""",
         headers={"Cache-Control": "no-store"},
     )
 
@@ -501,13 +501,13 @@ async def oauth_login_page(request: Request, req: str = "", error: str = ""):
     r = html.escape(req)
     if user:
         return _oauth_page(f"""
-<p>Let <b>Claude</b> read and edit the ledger as <b>{html.escape(user.label)}</b> ({user.role})?</p>
+<p>Let <b>Claude</b> read and edit Myrddin Hub as <b>{html.escape(user.label)}</b> ({user.role})?</p>
 <p class="muted">Changes it makes show up live and are logged as "{html.escape(user.label)} via Claude".</p>{err}
 <form method="post" class="row"><input type="hidden" name="req" value="{r}">
 <button name="action" value="deny" class="btn ghost">Cancel</button>
 <button name="action" value="allow" class="btn primary">Allow</button></form>""")
     return _oauth_page(f"""
-<p>Sign in to connect Claude to the ledger.</p>{err}
+<p>Sign in to connect Claude to Myrddin Hub.</p>{err}
 <form method="post" class="stack"><input type="hidden" name="req" value="{r}">
 <label>Email<input name="email" type="email" autocomplete="username" required></label>
 <label>Password<input name="password" type="password" autocomplete="current-password" required></label>

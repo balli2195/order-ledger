@@ -1,4 +1,4 @@
-# Order Ledger
+# Myrddin Hub
 
 Nick's Amazon purchase ledger: one row per store checkout, with line items, live on the web and editable from Claude chat.
 

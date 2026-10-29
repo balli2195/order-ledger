@@ -1,4 +1,4 @@
-/* Order Ledger front end. Plain JS, no build step. */
+/* Myrddin Hub front end. Plain JS, no build step. */
 (() => {
   'use strict';
 
@@ -371,7 +371,7 @@
       <p>Once connected, you can say things like <i>"add a Sephora order from today, #12345, $86.40, 2× B0XXXXXXX at $43.20"</i> in any Claude chat and it shows up here instantly.</p>
       <ol class="steps">
         <li>In Claude, open <b>Customize → Connectors</b> and choose <b>Add → Add custom connector</b>.</li>
-        <li>Name it <b>Order Ledger</b> and paste this URL:
+        <li>Name it <b>Myrddin Hub</b> and paste this URL:
           <div class="copybox"><input readonly value="${esc(S.connectorUrl)}" id="cu"><button class="btn" data-act="copy" data-target="cu">Copy</button></div></li>
         <li>Click <b>Connect</b>. You'll land on this site's sign-in page; sign in and click <b>Allow</b>.</li>
       </ol>

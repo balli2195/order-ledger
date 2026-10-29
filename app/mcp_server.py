@@ -40,7 +40,7 @@ Stores and brands have a can_source flag. While leads mode is "mirror", leads ar
 the copy. After the owner's cutover ("home") the copy stops."""
 
 mcp = FastMCP(
-    "Order Ledger",
+    "Myrddin Hub",
     instructions=INSTRUCTIONS,
     auth_server_provider=provider,
     auth=AuthSettings(
