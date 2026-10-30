@@ -292,6 +292,10 @@ MIGRATIONS: list[str] = [
         WHEN '4-pack' THEN 5 WHEN '5-pack' THEN 6 WHEN 'bundle' THEN 7 ELSE position END;
     UPDATE order_items i SET set_type = t.name FROM set_types t
         WHERE lower(btrim(i.set_type)) = lower(t.name) AND i.set_type IS DISTINCT FROM t.name;
+    """,    # 13: which lead an order item came from (Create order on Leads); its qty is added to / taken off the lead's Ordered
+    """
+    ALTER TABLE order_items ADD COLUMN lead_id uuid REFERENCES leads(id) ON DELETE SET NULL;
+    CREATE INDEX order_items_lead_idx ON order_items (lead_id) WHERE lead_id IS NOT NULL;
     """,
 ]
 

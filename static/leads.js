@@ -233,19 +233,11 @@
       const body = Object.fromEntries(new FormData(form).entries());
       const rows = $$('#coItems tr').map((tr) => ({ lead: tr.dataset.lead, it: Object.fromEntries($$('input', tr).map((i) => [i.dataset.f, i.value.trim()])) }))
         .filter((x) => x.it.asin || x.it.product_title);
-      body.items = rows.map((x) => Object.fromEntries(Object.entries(x.it).filter(([, v]) => v !== '')));
+      body.items = rows.map((x) => ({ ...Object.fromEntries(Object.entries(x.it).filter(([, v]) => v !== '')), lead_id: x.lead }));   // the server adds each qty to its lead's Ordered
       if (!body.items.length) { toast('Add at least one item', true); return; }
       const btn = form.querySelector('[type="submit"]'); btn.disabled = true; btn.textContent = 'Creating…';
       try {
         const o = await api('POST', '/api/orders', body);
-        // Add each item's qty to its lead's Ordered (on top of anything already ordered)
-        btn.textContent = 'Updating leads…';
-        const add = new Map(); rows.forEach((x) => add.set(x.lead, (add.get(x.lead) || 0) + (parseInt(x.it.qty_ordered, 10) || 0)));
-        try {
-          const changes = [];
-          for (const [id, q] of add) { if (!q) continue; const cur = await api('GET', '/api/leads/' + id); changes.push({ id, qty_ordered: (cur.qty_ordered || 0) + q }); }
-          if (changes.length) await api('PATCH', '/api/leads', changes);
-        } catch (err) { alert(`The order was created, but the leads' Ordered numbers couldn't be updated (${err.message || err}). Please fill them in by hand.`); }
         close(); S.sel.clear();
         location.href = '/#order=' + encodeURIComponent(o.id);   // open it on the Orders page
       } catch (err) { btn.disabled = false; btn.textContent = 'Create order'; fail(err); }

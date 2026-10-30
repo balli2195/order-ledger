@@ -279,7 +279,7 @@ async def get_order(order_id=None, order_ref: str | None = None) -> dict | None:
         if not o:
             return None
         cur = await conn.execute(
-            "SELECT id, asin, product_title, shade, set_type, qty_ordered, cost_per_unit, created_at, updated_at "
+            "SELECT id, asin, product_title, shade, set_type, qty_ordered, cost_per_unit, lead_id, created_at, updated_at "
             "FROM order_items WHERE order_id=%s ORDER BY created_at, id",
             (order_id,),
         )
@@ -345,7 +345,9 @@ async def monthly_spend(months: int = 6) -> list[dict]:
 
 async def create_order(actor: Actor, data: dict, items: Iterable[dict] = ()) -> dict:
     fields = clean_order(data, partial=False)
+    items = list(items)
     clean_items = [clean_item(i, partial=False) for i in items]
+    lead_ids = [i.get("lead_id") if isinstance(i, dict) else None for i in items]
     async with db.pool.connection() as conn:
         async with conn.transaction():
             cols = list(fields) + ["created_by", "updated_by"]
@@ -357,8 +359,8 @@ async def create_order(actor: Actor, data: dict, items: Iterable[dict] = ()) -> 
             order = await cur.fetchone()
             oid = order["id"]
             await _audit(conn, actor, "create", "order", oid, oid, None, order)
-            for it in clean_items:
-                await _insert_item(conn, actor, oid, it)
+            for it, lid in zip(clean_items, lead_ids):
+                await _insert_item(conn, actor, oid, it, lid)
             await _notify(conn, "upsert", oid, actor.label, actor.source)
     return await get_order(oid)
 
@@ -375,7 +377,7 @@ async def duplicate_order(actor: Actor, order_id, count: int) -> list[str]:
     if not src:
         raise LedgerError("Order not found")
     keep = ("asin", "product_title", "shade", "set_type", "qty_ordered", "cost_per_unit")
-    items = [{k: i.get(k) for k in keep} for i in src.get("items") or []]
+    items = [({k: i.get(k) for k in keep}, i.get("lead_id")) for i in src.get("items") or []]
     new_ids = []
     async with db.pool.connection() as conn:
         async with conn.transaction():
@@ -388,8 +390,8 @@ async def duplicate_order(actor: Actor, order_id, count: int) -> list[str]:
                 order = await cur.fetchone()
                 oid = order["id"]
                 await _audit(conn, actor, "create", "order", oid, oid, None, dict(order, duplicated_from=src.get("order_ref") or str(src["id"])))
-                for it in items:
-                    await _insert_item(conn, actor, oid, it)
+                for it, lid in items:
+                    await _insert_item(conn, actor, oid, it, lid)
                 await _notify(conn, "upsert", oid, actor.label, actor.source)
                 new_ids.append(str(oid))
     return new_ids
@@ -429,12 +431,40 @@ async def delete_order(actor: Actor, order_id) -> dict:
             await conn.execute("DELETE FROM orders WHERE id=%s", (order_id,))
             await _audit(conn, actor, "delete", "order", order_id, order_id,
                          {"order": before, "items": items}, None)
+            for it in items:
+                await _bump_lead(conn, actor, it.get("lead_id"), -(it["qty_ordered"] or 0))
             await _notify(conn, "delete", order_id, actor.label, actor.source)
     return jsonable({"deleted": str(order_id), "store": before["store"], "order_ref": before["order_ref"],
                      "items_removed": len(items)})
 
 
-async def _insert_item(conn, actor: Actor, order_id, it: dict) -> dict:
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+async def _bump_lead(conn, actor: Actor, lead_id, delta: int) -> None:
+    """Keep a lead's Ordered in step with the order items made from it (Nick, Oct 30 2026)."""
+    if not lead_id or not delta:
+        return
+    cur = await conn.execute("SELECT id, qty_ordered FROM leads WHERE id=%s FOR UPDATE", (lead_id,))
+    r = await cur.fetchone()
+    if not r:
+        return
+    new = max((r["qty_ordered"] or 0) + delta, 0) or None
+    await conn.execute(
+        "UPDATE leads SET qty_ordered=%s, updated_at=now(), "
+        "local_edits = CASE WHEN 'qty_ordered' = ANY(local_edits) THEN local_edits ELSE array_append(local_edits, 'qty_ordered') END "
+        "WHERE id=%s", (new, lead_id))
+    await _audit(conn, actor, "update", "lead", lead_id, None, {"qty_ordered": r["qty_ordered"]}, {"qty_ordered": new})
+    await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps(
+        {"t": "lead", "op": "upsert", "ids": [str(lead_id)], "by": actor.label, "src": actor.source}),))
+
+
+async def _insert_item(conn, actor: Actor, order_id, it: dict, lead_id=None) -> dict:
+    it = dict(it)
+    if lead_id and UUID_RE.match(str(lead_id)):
+        cur = await conn.execute("SELECT 1 FROM leads WHERE id=%s", (str(lead_id),))
+        if await cur.fetchone():
+            it["lead_id"] = str(lead_id)
     cols = ["order_id"] + list(it)
     cur = await conn.execute(
         f"INSERT INTO order_items ({', '.join(cols)}, created_at) VALUES ({', '.join(['%s'] * len(cols))}, clock_timestamp()) RETURNING *",  # lines keep the order they were added in
@@ -442,6 +472,7 @@ async def _insert_item(conn, actor: Actor, order_id, it: dict) -> dict:
     )
     row = await cur.fetchone()
     await _audit(conn, actor, "create", "item", row["id"], order_id, None, row)
+    await _bump_lead(conn, actor, row.get("lead_id"), row["qty_ordered"] or 0)
     return row
 
 
@@ -450,7 +481,9 @@ async def _touch(conn, actor: Actor, order_id) -> None:
 
 
 async def add_items(actor: Actor, order_id, items: Iterable[dict]) -> dict:
+    items = list(items)
     clean_items = [clean_item(i, partial=False) for i in items]
+    lead_ids = [i.get("lead_id") if isinstance(i, dict) else None for i in items]
     if not clean_items:
         raise LedgerError("No items given")
     async with db.pool.connection() as conn:
@@ -458,8 +491,8 @@ async def add_items(actor: Actor, order_id, items: Iterable[dict]) -> dict:
             cur = await conn.execute("SELECT id FROM orders WHERE id=%s FOR UPDATE", (order_id,))
             if not await cur.fetchone():
                 raise LedgerError("Order not found")
-            for it in clean_items:
-                await _insert_item(conn, actor, order_id, it)
+            for it, lid in zip(clean_items, lead_ids):
+                await _insert_item(conn, actor, order_id, it, lid)
             await _touch(conn, actor, order_id)
             await _notify(conn, "upsert", order_id, actor.label, actor.source)
     return await get_order(order_id)
@@ -487,6 +520,8 @@ async def update_items(actor: Actor, changes: list[dict]) -> list[str]:
                 after = await cur.fetchone()
                 await _audit(conn, actor, "update", "item", item_id, before["order_id"],
                              {k: before[k] for k in fields}, {k: after[k] for k in fields})
+                if "qty_ordered" in fields:
+                    await _bump_lead(conn, actor, before.get("lead_id"), (after["qty_ordered"] or 0) - (before["qty_ordered"] or 0))
                 touched.add(before["order_id"])
             for oid in touched:
                 await _touch(conn, actor, oid)
@@ -505,6 +540,7 @@ async def delete_items(actor: Actor, item_ids: list) -> list[str]:
                     raise LedgerError(f"Item {item_id} not found")
                 await _audit(conn, actor, "delete", "item", item_id, before["order_id"], before, None)
                 touched.add(before["order_id"])
+                await _bump_lead(conn, actor, before.get("lead_id"), -(before["qty_ordered"] or 0))
             for oid in touched:
                 await _touch(conn, actor, oid)
                 await _notify(conn, "upsert", oid, actor.label, actor.source)
