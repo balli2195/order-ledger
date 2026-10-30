@@ -15,9 +15,9 @@
       : `<span>${esc(n)}</span>`).join('')}</span>`;
   };
   const COLS = {
-    asin: ['ASIN', null, 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>${hazBadge(r)}` : '<span class="muted">—</span>'],
-    product: ['Product', null, 'prod', (r) => `<span>${esc(r.product_name || '')}</span>`],
-    store: ['Store', null, 'tags', storeCell],
+    // Title on top; ASIN (with its warning badge) and store link underneath (Nick, Oct 30 2026)
+    product: ['Product · Store', null, 'prod', (r) => `<div class="prod-title">${esc(r.product_name || '') || '<span class="muted">—</span>'}</div>`
+      + `<div class="prod-sub">${r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>${hazBadge(r)}` : '<span class="muted">no ASIN</span>'}${storeCell(r)}</div>`],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
     cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
     buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => numEditCell(r, 'buy_qty')],
@@ -33,11 +33,12 @@
     buyer_notes: ['Buyer notes', null, 'note-cell', (r) => noteCell(r, 'buyer_notes')],
     feedback: ['Feedback', null, 'note-cell', (r) => noteCell(r, 'feedback')],
   };
-  const DEFAULT_ORDER = ['product', 'asin', 'store', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'feedback', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
-  const ORDER_KEY = 'leadColOrder.v2';
+  const DEFAULT_ORDER = ['product', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'feedback', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
+  const ORDER_KEY = 'leadColOrder.v3';
   function loadOrder() {
     try {
       let saved = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null');
+      if (!saved) saved = JSON.parse(localStorage.getItem('leadColOrder.v2') || 'null');   // ASIN and Store now sit under the title; dropped below
       if (!saved) {   // carry over an older arrangement, with ASIN moved next to Store
         const old = JSON.parse(localStorage.getItem('leadColOrder.v1') || 'null');
         if (Array.isArray(old) && old.includes('store')) {
@@ -112,10 +113,10 @@
       const [label, sk, cls] = COLS[k];
       const fk = HEADER_FILTERS[k];
       const fval = fk ? $('#' + fk.input).value : '';
-      const arrow = (sk && S.sort === sk) || (fk && S.sort === k) ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
+      const arrow = (sk && S.sort === sk) || (fk && S.sort === (fk.as || k)) ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
       const ftag = fk ? `<span class="hf-btn ${fval ? 'on' : ''}" aria-label="Filter">${FUNNEL(!!fval)}</span>` : '';
       const attrs = fk ? `data-hfilter="${k}"` : (sk ? `data-sort="${sk}"` : '');
-      const tip = fk ? (fval ? `Filtered: ${fk.show(fval)} (click to change)` : 'Click to filter' + (sk ? ' or sort' : '')) : (sk ? 'Click to sort' : '');
+      const tip = fk ? (fval ? `Filtered: ${fk.show(fval)} (click to change)` : (fk.as ? `Click to filter or sort by ${fk.as}` : 'Click to filter' + (sk ? ' or sort' : ''))) : (sk ? 'Click to sort' : '');
       return `<th draggable="true" data-col="${k}" class="${cls} ${fk || sk ? 'sortable' : ''} ${fval ? 'hf-on' : ''}" ${attrs} title="${tip}; drag to move">${label}${arrow}${ftag}</th>`;
     }).join('') + '<th class="row-act" aria-label="Delete"></th>';
     let html = '', lastDay = null;
@@ -343,6 +344,7 @@
   // ------------------------------------------------------------ header filters
   const FUNNEL = (filled) => `<svg width="15" height="15" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h18l-7 8.6V19l-4 2v-7.9z"/></svg>`;
   const HEADER_FILTERS = {
+    product: { input: 'store', show: (v) => v, as: 'store' },   // the Store filter / sort, on the Product · Store header
     store: { input: 'store', show: (v) => v },
     brand: { input: 'brand', show: (v) => v },
     by: { input: 'sourced', show: (v) => v },
@@ -355,7 +357,7 @@
     load().catch(fail);
   }
   function openHeaderFilter(th) {
-    const key = th.dataset.hfilter;
+    const key = HEADER_FILTERS[th.dataset.hfilter]?.as || th.dataset.hfilter;
     if (hPop && hPop.dataset.key === key) { closeHeaderFilter(); return; }
     closeHeaderFilter();
     const fk = HEADER_FILTERS[key]; const cur = $('#' + fk.input).value;
@@ -571,13 +573,16 @@
     if (!can('editor')) { tb.innerHTML = ''; return; }
     const keep = {}; $$('#newrow [data-n]').forEach((el) => { keep[el.dataset.n] = el.value; });
     // One line: date sits in the Product column; link, notes and the Add button fill the longest run of empty columns.
-    const content = S.order.map((k) => k === 'product' ? `<input data-n="lead_date" type="date" style="width:150px">` : (NEW_INPUTS[k] ? NEW_INPUTS[k]() : null));
+    const content = S.order.map((k) => k === 'product'
+      ? `<div class="new-prod"><input data-n="lead_date" type="date">${NEW_INPUTS.asin()}</div>`
+      : (NEW_INPUTS[k] ? NEW_INPUTS[k]() : null));
     let best = { start: -1, len: 0 };
     for (let i = 0, start = -1; i <= content.length; i++) {
       if (i < content.length && content[i] === null) { if (start < 0) start = i; }
       else if (start >= 0) { if (i - start > best.len) best = { start, len: i - start }; start = -1; }
     }
     const extras = `<div class="new-inline">
+        <input size="4" data-n="stores" list="dlStores" placeholder="Store" class="new-store" title="Store">
         <input size="4" data-n="store_link" type="url" placeholder="Store link" class="new-link" title="Store link">
         <input size="4" data-n="va_notes" placeholder="VA notes" class="new-notes">
         <button class="btn primary small" data-act="new-save">Add</button></div>`;

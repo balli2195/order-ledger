@@ -432,3 +432,19 @@ tbody tr.picked { background: var(--accent-soft); }
 .hz-ok { color: var(--ok); font-weight: 600; }
 .hz-banner.warn { border-color: color-mix(in srgb, #c27a12 45%, transparent); background: color-mix(in srgb, #c27a12 10%, transparent); }
 .hz-banner.warn b { color: #a4660c; }
+
+/* Product column: title on top, ASIN + warning badge + store link underneath (Oct 30, 2026). Two columns fewer, so it gets more room. */
+td.prod .prod-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.prod .prod-sub { display: flex; align-items: center; gap: 6px; margin-top: 3px; white-space: nowrap; overflow: hidden; }
+td.prod .prod-sub .asin-btn { padding: 1px 6px; font-size: 11.5px; }
+td.prod .prod-sub .hz-badge, td.prod .prod-sub .ok-badge { margin-left: -2px; }
+td.prod .prod-sub .pill-list { overflow: hidden; text-overflow: ellipsis; }
+.wrap.full td.prod { max-width: min(560px, 24vw); }
+@media (max-width: 1700px) { .wrap.full td.prod { max-width: 21vw; } }
+@media (max-width: 1500px) { .wrap.full td.prod { max-width: 19vw; } }
+@media (max-width: 1400px) { .wrap.full td.prod { max-width: 22vw; } }
+#newrow td.prod .new-prod { display: flex; gap: 6px; }
+#newrow td.prod .new-prod input { width: auto; flex: 1 1 0; min-width: 0; }
+#newrow td.prod .new-prod input[type=date] { flex: 0 0 128px; padding-left: 6px; padding-right: 4px; }
+#newrow td.prod .new-prod input[data-n=asin] { flex: 1 1 104px; max-width: 130px; }
+#newrow .new-inline .new-store { flex: 0 1 150px; min-width: 90px; }
