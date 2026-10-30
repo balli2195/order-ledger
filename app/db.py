@@ -266,6 +266,20 @@ MIGRATIONS: list[str] = [
     INSERT INTO set_types (name) VALUES ('2-pack'), ('3-pack'), ('4-pack'), ('5-pack'), ('6-pack') ON CONFLICT DO NOTHING;
     ALTER TABLE prepos_sends ADD COLUMN multipack integer;
     """,
+    # 9: per-person tabs (owners see everything). Existing users keep the tabs they could already see.
+    """
+    ALTER TABLE users ADD COLUMN tabs text[] NOT NULL DEFAULT '{}';
+    UPDATE users SET tabs = ARRAY['leads','orders','stores','prepos'] WHERE role <> 'owner';
+    """,
+    # 10: documents written by the scheduled analysis runs (Inventory health etc.), same paths as the old Inventory Hub db
+    """
+    CREATE TABLE hub_docs (
+        path       text PRIMARY KEY,
+        data       jsonb NOT NULL,
+        version    integer NOT NULL DEFAULT 1,
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    """,
 ]
 
 

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inventory health · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap full" style="padding-bottom:0">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health" class="on">Inventory health</a></nav>
+
+  </div>
+<iframe id="ihFrame" src="/inventory-health/frame" title="Inventory health" style="display:block;width:100%;border:0;background:transparent"></iframe>
+<div id="toasts" class="toasts"></div>
+<script src="/static/common.js"></script>
+<script>
+(async () => {
+  const f = document.getElementById('ihFrame');
+  const fit = () => { f.style.height = Math.max(500, window.innerHeight - f.getBoundingClientRect().top) + 'px'; };
+  addEventListener('resize', fit); fit();
+  try { await LG.header(); } catch (e) { if (String(e.message || e).includes('401')) location.href = '/login'; }
+  fit();
+})();
+</script>
+</body>
+</html>

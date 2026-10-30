@@ -392,3 +392,6 @@ td.store-name { font-weight: 600; }
 .ok-tag { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .bad-tag { background: var(--warn-soft); color: var(--bad); }
 .bad-text { color: var(--bad); }
+.tabboxes { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+.tabboxes label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-weight: 400; }
+nav.tabs a[hidden] { display: none !important; }

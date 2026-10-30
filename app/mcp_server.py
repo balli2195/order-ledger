@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from . import leads as L
 from . import orders as o
-from .auth import User, user_by_id
+from .auth import TABS, User, user_by_id
 from .oauth import LedgerOAuthProvider
 
 BASE_URL = (os.environ.get("BASE_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "http://localhost:8000").rstrip("/")
@@ -75,7 +75,7 @@ class ItemChange(BaseModel):
     cost_per_unit: float | None = None
 
 
-async def _actor(need: str = "viewer") -> o.Actor:
+async def _actor(need: str = "viewer", tab: str | tuple | None = None) -> o.Actor:
     tok = get_access_token()
     if not tok or not tok.subject:
         raise o.LedgerError("Not signed in")
@@ -85,6 +85,11 @@ async def _actor(need: str = "viewer") -> o.Actor:
     user: User = found[0]
     if not user.can(need):
         raise o.LedgerError(f"Your login ({user.role}) can't make changes; ask the owner for editor access")
+    if tab == "_all":   # run_sql reads every table: owners, or someone with every tab
+        if user.role != "owner" and set(user.allowed_tabs()) != set(TABS):
+            raise o.LedgerError("run_sql needs access to every tab; ask the owner")
+    elif tab and not any(user.can_tab(t) for t in ((tab,) if isinstance(tab, str) else tab)):
+        raise o.LedgerError("Your login doesn't have access to this tab; ask the owner")
     return o.Actor(user.id, f"{user.label} via Claude", "chat")
 
 
@@ -106,7 +111,7 @@ async def search_orders(
     limit: int = 50,
 ) -> dict:
     """Find orders. Returns summaries newest first (no line items; use get_order for those)."""
-    await _actor()
+    await _actor(tab="orders")
     rows = await o.list_orders(query=query, store=store, date_from=date_from, date_to=date_to,
                                asin=asin, order_ref=order_ref, problem=problem)
     limit = max(1, min(limit, 500))
@@ -119,7 +124,7 @@ async def get_order(
     order_ref: Annotated[str | None, Field(description="Or the store's order number (exact)")] = None,
 ) -> dict:
     """Get one order with all its line items (item ids are needed to edit items)."""
-    await _actor()
+    await _actor(tab="orders")
     if not order_id and not order_ref:
         raise o.LedgerError("Give order_id or order_ref")
     found = await o.get_order(order_id, order_ref)
@@ -139,7 +144,7 @@ async def create_order(
     items: list[ItemIn] | None = None,
 ) -> dict:
     """Add a new order, optionally with its line items. Check first that the order_ref isn't already logged."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="orders")
     data = {"order_date": order_date, "store": store, "order_total": order_total,
             "order_ref": order_ref, "email": email, "notes": notes}
     return await o.create_order(actor, data, [i.model_dump(exclude_unset=True) for i in (items or [])])
@@ -158,7 +163,7 @@ async def update_order(
                             Field(description="Fields to blank out")] = None,
 ) -> dict:
     """Change order-level fields. Only the fields you pass are changed."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="orders")
     data: dict[str, Any] = {k: v for k, v in {
         "order_date": order_date, "store": store, "order_total": order_total,
         "order_ref": order_ref, "email": email, "notes": notes}.items() if v is not None}
@@ -170,7 +175,7 @@ async def update_order(
 @mcp.tool()
 async def delete_order(order_id: str, confirm: Annotated[bool, Field(description="Must be true; ask the user first")] = False) -> dict:
     """Delete an order and its items. Ask the user before calling with confirm=true."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="orders")
     if not confirm:
         raise o.LedgerError("Not deleted: confirm with the user, then call again with confirm=true")
     return await o.delete_order(actor, order_id)
@@ -179,14 +184,14 @@ async def delete_order(order_id: str, confirm: Annotated[bool, Field(description
 @mcp.tool()
 async def add_items(order_id: str, items: list[ItemIn]) -> dict:
     """Add line items to an existing order."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="orders")
     return await o.add_items(actor, order_id, [i.model_dump(exclude_unset=True) for i in items])
 
 
 @mcp.tool()
 async def update_items(changes: list[ItemChange]) -> dict:
     """Edit one or more line items (can span orders). Only fields you pass change."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="orders")
     payload = [c.model_dump(exclude_none=True) for c in changes]
     touched = await o.update_items(actor, payload)
     return {"updated_items": len(payload), "orders": [await o.get_order(t) for t in touched][:20]}
@@ -195,7 +200,7 @@ async def update_items(changes: list[ItemChange]) -> dict:
 @mcp.tool()
 async def delete_items(item_ids: list[str], confirm: bool = False) -> dict:
     """Remove line items. Ask the user before calling with confirm=true."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="orders")
     if not confirm:
         raise o.LedgerError("Not deleted: confirm with the user, then call again with confirm=true")
     touched = await o.delete_items(actor, item_ids)
@@ -205,14 +210,14 @@ async def delete_items(item_ids: list[str], confirm: bool = False) -> dict:
 @mcp.tool()
 async def monthly_spend(months: int = 6) -> dict:
     """Spent vs the daily purchasing target, per month (same as the tiles on the site)."""
-    await _actor()
+    await _actor(tab="orders")
     return {"months": await o.monthly_spend(months)}
 
 
 @mcp.tool()
 async def set_daily_target(amount: float) -> dict:
     """Change the daily spend target used for 'Need to spend' (owner only)."""
-    actor = await _actor("owner")
+    actor = await _actor("owner", tab="orders")
     await o.set_daily_target(actor, amount)
     return {"daily_target": amount}
 
@@ -220,15 +225,18 @@ async def set_daily_target(amount: float) -> dict:
 @mcp.tool()
 async def get_choices() -> dict:
     """Known stores, purchase emails and set types, to keep new entries consistent."""
-    await _actor()
+    await _actor(tab="orders")
     return await o.suggestions()
 
 
 @mcp.tool()
 async def recent_changes(limit: int = 30, order_id: str | None = None) -> dict:
     """The change log: who changed what, from the site or from chat."""
-    await _actor()
-    return {"changes": await o.recent_changes(min(limit, 200), order_id)}
+    actor = await _actor()
+    user = (await user_by_id(actor.user_id))[0]
+    tab_of = {"order": "orders", "item": "orders", "batch": "orders", "lead": "leads", "store": "stores", "brand": "stores", "prepos": "prepos"}
+    rows = await o.recent_changes(min(limit, 200), order_id)
+    return {"changes": [c for c in rows if user.can_tab(tab_of.get(c.get("entity"), "_owner"))]}
 
 
 @mcp.tool()
@@ -241,7 +249,7 @@ async def run_sql(sql: Annotated[str, Field(description="One read-only SELECT/WI
     expected_spend, actual_spend, left_to_buy, created_at, updated_at), stores(name, can_source),
     brands(name, can_source), audit_log(at, user_id, source, action, entity, entity_id, order_id, before, after),
     users(id, email, name, role), settings(key, value). Use unnest(stores) to group by store. Max 500 rows, 15s."""
-    await _actor()
+    await _actor(tab="_all")
     return await o.run_readonly_sql(sql)
 
 
@@ -298,7 +306,7 @@ async def search_leads(
     limit: int = 50,
 ) -> dict:
     """Find leads, newest first by default. Returns totals for everything matching (count, expected/actual spend, bonus)."""
-    await _actor()
+    await _actor(tab="leads")
     f = {"q": query, "asin": asin, "store": store, "brand": brand, "date_from": date_from, "date_to": date_to,
          "sourced_by": sourced_by, "ordered": ordered_only, "left": left_to_buy_only, "unscored": unscored_only,
          "band_min": band_min}
@@ -310,7 +318,7 @@ async def search_leads(
 @mcp.tool()
 async def get_lead(lead_id: str) -> dict:
     """One lead with every field, Lead Score notes, and other leads of the same ASIN."""
-    await _actor()
+    await _actor(tab="leads")
     found = await L.get_lead(lead_id)
     if not found:
         raise o.LedgerError("No such lead")
@@ -320,14 +328,14 @@ async def get_lead(lead_id: str) -> dict:
 @mcp.tool()
 async def create_lead(lead: LeadIn) -> dict:
     """Add a lead (stays on this site; Airtable isn't changed). It is scored automatically once it has an ASIN, cost and store link."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="leads")
     return await L.create_lead(actor, lead.model_dump(exclude_none=True))
 
 
 @mcp.tool()
 async def update_leads(changes: list[LeadChange]) -> dict:
     """Edit one or more leads on this site (Airtable isn't changed). Only the fields you pass change."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="leads")
     ids = await L.update_leads(actor, [c.model_dump(exclude_none=True) for c in changes])
     return {"updated": len(ids), "ids": ids}
 
@@ -335,7 +343,7 @@ async def update_leads(changes: list[LeadChange]) -> dict:
 @mcp.tool()
 async def delete_leads(lead_ids: list[str], confirm: bool = False) -> dict:
     """Delete leads from the site (Airtable isn't changed; deleted Airtable leads aren't copied back). Ask the user first, then call with confirm=true."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="leads")
     if not confirm:
         raise o.LedgerError("Not deleted: confirm with the user, then call again with confirm=true")
     return {"deleted": await L.delete_leads(actor, lead_ids)}
@@ -344,7 +352,7 @@ async def delete_leads(lead_ids: list[str], confirm: bool = False) -> dict:
 @mcp.tool()
 async def score_lead(lead_id: str) -> dict:
     """(Re)score a lead with the Lead Score server and save the band, predicted ROI and notes on this site."""
-    await _actor("editor")
+    await _actor("editor", tab="leads")
     return await L.score_lead(lead_id)
 
 
@@ -355,7 +363,7 @@ async def list_stores_or_brands(
     limit: int = 100,
 ) -> dict:
     """Stores or brands with can_source flag, lead count, total actual spend, units and days since last lead."""
-    await _actor()
+    await _actor(tab=("stores", "leads"))
     rows = await L.store_stats(kind, query)
     return {"total": len(rows), "rows": rows[: max(1, min(limit, 1000))]}
 
@@ -363,7 +371,7 @@ async def list_stores_or_brands(
 @mcp.tool()
 async def set_can_source(kind: Literal["stores", "brands"], name: str, can_source: bool) -> dict:
     """Mark a store or brand as OK (or not) to source from (after cutover)."""
-    actor = await _actor("editor")
+    actor = await _actor("editor", tab="stores")
     await L.set_can_source(actor, kind, name, can_source)
     return {"kind": kind, "name": name, "can_source": can_source}
 
@@ -371,7 +379,7 @@ async def set_can_source(kind: Literal["stores", "brands"], name: str, can_sourc
 @mcp.tool()
 async def get_lead_choices() -> dict:
     """Known stores, brands, sourcers, bonus settings, and whether leads are still mirrored from Airtable."""
-    await _actor()
+    await _actor(tab="leads")
     c = await L.lead_choices()
     c["stores"] = [s["name"] for s in c["stores"]]
     c["brands"] = [b["name"] for b in c["brands"]]

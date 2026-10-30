@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from . import airtable_sync, auth, db, live
 from . import leads as L
 from . import prepos
+from . import docs as hubdocs
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
 
@@ -82,25 +83,52 @@ async def healthz():
     return {"ok": True, "orders": n}
 
 
+async def _page(request: Request, tab: str, file: str):
+    user = await auth.current_user(request)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not user.can_tab(tab):
+        home = user.home()
+        return RedirectResponse(home if home != request.url.path else "/no-access", 302)
+    return FileResponse(STATIC / file, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/", include_in_schema=False)
 async def index(request: Request):
-    if not await auth.current_user(request):
-        return RedirectResponse("/login", 302)
-    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+    return await _page(request, "orders", "index.html")
 
 
 @app.get("/leads", include_in_schema=False)
 async def leads_page(request: Request):
-    if not await auth.current_user(request):
-        return RedirectResponse("/login", 302)
-    return FileResponse(STATIC / "leads.html", headers={"Cache-Control": "no-cache"})
+    return await _page(request, "leads", "leads.html")
 
 
 @app.get("/stores", include_in_schema=False)
 async def stores_page(request: Request):
-    if not await auth.current_user(request):
+    return await _page(request, "stores", "stores.html")
+
+
+@app.get("/inventory-health", include_in_schema=False)
+async def inventory_health_page(request: Request):
+    return await _page(request, "inventory_health", "inventory-health.html")
+
+
+@app.get("/inventory-health/frame", include_in_schema=False)
+async def inventory_health_frame(request: Request):
+    return await _page(request, "inventory_health", "inventory-health-frame.html")
+
+
+@app.get("/no-access", include_in_schema=False)
+async def no_access(request: Request):
+    user = await auth.current_user(request)
+    if not user:
         return RedirectResponse("/login", 302)
-    return FileResponse(STATIC / "stores.html", headers={"Cache-Control": "no-cache"})
+    if user.home() != "/no-access":
+        return RedirectResponse(user.home(), 302)
+    return HTMLResponse(f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Myrddin Hub</title><link rel="stylesheet" href="/static/style.css"><body><div class="wrap" style="padding-top:60px">
+<h1 style="font-family:var(--serif);font-weight:400">Myrddin Hub</h1><p>Hi {html.escape(user.label)}: your login doesn't have any tabs yet.
+Ask the owner to give you access.</p><p><a href="#" onclick="fetch('/api/logout',{{method:'POST',headers:{{'X-Requested-With':'ledger'}}}}).then(()=>location.href='/login')">Sign out</a></p></div></body>""")
 
 
 @app.get("/login", include_in_schema=False)
@@ -160,13 +188,13 @@ async def api_me(request: Request):
 
 @app.get("/api/orders")
 async def api_orders(request: Request):
-    await auth.require(request)
+    await auth.require(request, tab="orders")
     return {"orders": await o.list_orders()}
 
 
 @app.get("/api/orders/{order_id}")
 async def api_order(order_id: str, request: Request):
-    await auth.require(request)
+    await auth.require(request, tab="orders")
     found = await o.get_order(order_id)
     if not found:
         raise HTTPException(404, "Order not found")
@@ -175,14 +203,14 @@ async def api_order(order_id: str, request: Request):
 
 @app.post("/api/orders")
 async def api_create_order(request: Request, body: dict = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="orders")
     items = body.pop("items", []) or []
     return await o.create_order(web_actor(user), body, items)
 
 
 @app.get("/api/prepos")
 async def api_prepos(request: Request, through: str | None = None):
-    await auth.require(request)
+    await auth.require(request, tab="prepos")
     cfg = await prepos.config()
     try:
         t = date.fromisoformat(through) if through else cfg["default_through"]
@@ -199,7 +227,7 @@ async def api_prepos(request: Request, through: str | None = None):
 
 @app.post("/api/prepos/send")
 async def api_prepos_send(request: Request, body: dict = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="prepos")
     try:
         t = date.fromisoformat(str(body.get("through")))
     except ValueError:
@@ -212,25 +240,25 @@ async def api_prepos_send(request: Request, body: dict = Body(...)):
 
 @app.post("/api/orders/{order_id}/duplicate")
 async def api_duplicate_order(order_id: str, request: Request, body: dict = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="orders")
     return {"ids": await o.duplicate_order(web_actor(user), order_id, body.get("count", 1))}
 
 
 @app.patch("/api/orders/{order_id}")
 async def api_update_order(order_id: str, request: Request, body: dict = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="orders")
     return await o.update_order(web_actor(user), order_id, body)
 
 
 @app.delete("/api/orders/{order_id}")
 async def api_delete_order(order_id: str, request: Request):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="orders")
     return await o.delete_order(web_actor(user), order_id)
 
 
 @app.post("/api/orders/{order_id}/items")
 async def api_add_items(order_id: str, request: Request, body: Any = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="orders")
     items = body if isinstance(body, list) else [body]
     for it in items:   # fill a blank title from Keepa
         if isinstance(it, dict) and it.get("asin") and not str(it.get("product_title") or "").strip():
@@ -241,20 +269,20 @@ async def api_add_items(order_id: str, request: Request, body: Any = Body(...)):
 
 @app.patch("/api/items")
 async def api_update_items(request: Request, body: Any = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="orders")
     changes = body if isinstance(body, list) else [body]
     return {"orders": await o.update_items(web_actor(user), changes)}
 
 
 @app.delete("/api/items/{item_id}")
 async def api_delete_item(item_id: str, request: Request):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="orders")
     return {"orders": await o.delete_items(web_actor(user), [item_id])}
 
 
 @app.get("/api/meta")
 async def api_meta(request: Request):
-    await auth.require(request)
+    await auth.require(request, tab="orders")
     meta = await o.suggestions()
     meta["months"] = await o.monthly_spend(24)
     return meta
@@ -273,9 +301,13 @@ async def api_daily_target(request: Request, body: dict = Body(...)):
 
 @app.get("/api/activity")
 async def api_activity(request: Request, limit: int = 100, order_id: str | None = None, entity_id: str | None = None):
-    await auth.require(request)
-    return {"changes": await o.recent_changes(min(limit, 500), order_id, entity_id)}
+    user = await auth.require(request)
+    rows = await o.recent_changes(min(limit, 500), order_id, entity_id)
+    return {"changes": [c for c in rows if user.can_tab(ENTITY_TAB.get(c.get("entity"), "_owner"))]}
 
+
+ENTITY_TAB = {"order": "orders", "item": "orders", "batch": "orders", "lead": "leads", "store": "stores", "brand": "stores",
+              "prepos": "prepos"}   # anything else (settings, users) is owner-only
 
 # ---------------------------------------------------------------- leads API
 
@@ -284,7 +316,7 @@ LEAD_FILTERS = ("q", "asin", "store", "brand", "date_from", "date_to", "sourced_
 
 @app.get("/api/leads")
 async def api_leads(request: Request, sort: str = "date", desc: bool = True, limit: int = 200, offset: int = 0):
-    await auth.require(request)
+    await auth.require(request, tab="leads")
     f = {k: request.query_params.get(k) for k in LEAD_FILTERS if request.query_params.get(k) not in (None, "")}
     dl = []
     for d in (request.query_params.get("day_totals") or "").split(","):
@@ -295,7 +327,7 @@ async def api_leads(request: Request, sort: str = "date", desc: bool = True, lim
 
 @app.get("/api/leads-meta")
 async def api_leads_meta(request: Request):
-    await auth.require(request)
+    await auth.require(request, tab="leads")
     meta = await L.lead_choices()
     meta["sync"] = airtable_sync.status
     return meta
@@ -303,7 +335,7 @@ async def api_leads_meta(request: Request):
 
 @app.get("/api/leads/{lead_id}")
 async def api_lead(lead_id: str, request: Request):
-    await auth.require(request)
+    await auth.require(request, tab="leads")
     found = await L.get_lead(lead_id)
     if not found:
         raise HTTPException(404, "Lead not found")
@@ -312,25 +344,25 @@ async def api_lead(lead_id: str, request: Request):
 
 @app.post("/api/leads")
 async def api_create_lead(request: Request, body: dict = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="leads")
     return await L.create_lead(web_actor(user), body)
 
 
 @app.patch("/api/leads")
 async def api_update_leads(request: Request, body: Any = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="leads")
     return {"leads": await L.update_leads(web_actor(user), body if isinstance(body, list) else [body])}
 
 
 @app.delete("/api/leads/{lead_id}")
 async def api_delete_lead(lead_id: str, request: Request):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="leads")
     return {"deleted": await L.delete_leads(web_actor(user), [lead_id])}
 
 
 @app.post("/api/leads/{lead_id}/score")
 async def api_score_lead(lead_id: str, request: Request):
-    await auth.require(request, "editor")
+    await auth.require(request, "editor", tab="leads")
     return await L.score_lead(lead_id)
 
 
@@ -354,21 +386,32 @@ async def api_sync_now(request: Request, full: bool = False):
 
 @app.get("/api/stores")
 async def api_stores(request: Request, kind: str = "stores", q: str | None = None):
-    await auth.require(request)
+    await auth.require(request, tab=("stores", "leads"))
     return {"rows": await L.store_stats(kind, q), "mode": await L.mode()}
 
 
 @app.put("/api/stores/{kind}/{name}")
 async def api_set_can_source(kind: str, name: str, request: Request, body: dict = Body(...)):
-    user = await auth.require(request, "editor")
+    user = await auth.require(request, "editor", tab="stores")
     await L.set_can_source(web_actor(user), kind, name, bool(body.get("can_source")))
     return {"ok": True}
 
 
 @app.get("/api/events")
 async def api_events(request: Request):
-    await auth.require(request)
+    user = await auth.require(request)
     q = live.subscribe()
+    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health"}
+
+    def allowed(payload: str) -> bool:
+        try:
+            t = json.loads(payload).get("t") or "order"
+        except Exception:
+            return True
+        need = kinds.get(t)
+        if need is None:
+            return True
+        return any(user.can_tab(x) for x in ((need,) if isinstance(need, str) else need))
 
     async def stream():
         try:
@@ -378,7 +421,8 @@ async def api_events(request: Request):
                     break
                 try:
                     payload = await asyncio.wait_for(q.get(), timeout=20)
-                    yield f"data: {payload}\n\n"
+                    if allowed(payload):
+                        yield f"data: {payload}\n\n"
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
         finally:
@@ -397,16 +441,18 @@ async def api_users(request: Request):
     await auth.require(request, "owner")
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT id, email, name, role, active, (password_hash IS NOT NULL) AS has_password, created_at "
+            "SELECT id, email, name, role, tabs, active, (password_hash IS NOT NULL) AS has_password, created_at "
             "FROM users ORDER BY id"
         )
-        return {"users": [o.jsonable(dict(r)) for r in await cur.fetchall()]}
+        return {"users": [o.jsonable(dict(r)) for r in await cur.fetchall()],
+                "tabs": [{"key": k, "label": v[0]} for k, v in auth.TABS.items()]}
 
 
 @app.post("/api/users")
 async def api_invite(request: Request, body: dict = Body(...)):
     await auth.require(request, "owner")
-    token = await auth.invite_user(str(body.get("email", "")), str(body.get("name", "")), str(body.get("role", "viewer")))
+    token = await auth.invite_user(str(body.get("email", "")), str(body.get("name", "")), str(body.get("role", "viewer")),
+                                   body.get("tabs") or [])
     return {"link": f"{BASE_URL}/invite/{token}"}
 
 
@@ -427,6 +473,8 @@ async def api_update_user(user_id: int, request: Request, body: dict = Body(...)
         sets.append("session_ver=session_ver+1")
     if "name" in body:
         sets.append("name=%s"); args.append(str(body["name"]).strip())
+    if "tabs" in body:
+        sets.append("tabs=%s"); args.append(auth.clean_tabs(body["tabs"]))
     if not sets:
         raise HTTPException(400, "Nothing to change")
     async with db.pool.connection() as conn:
@@ -444,6 +492,59 @@ async def api_reset_user(user_id: int, request: Request):
         async with conn.transaction():
             token = await auth.create_invite(conn, user_id)
     return {"link": f"{BASE_URL}/invite/{token}"}
+
+
+# ---------------------------------------------------------------- analysis docs (Inventory health, ...)
+
+@app.get("/api/docs")
+async def api_docs_list(request: Request, collection: str):
+    user = await auth.require(request)
+    if not user.can_tab(hubdocs.tab_for(collection + "/x") or "_owner"):
+        raise HTTPException(403, "You don't have access to this tab; ask the owner")
+    try:
+        return {"docs": await hubdocs.list_prefix(collection)}
+    except hubdocs.DocError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/docs/{path:path}")
+async def api_doc(path: str, request: Request):
+    user = await auth.require(request)
+    if not user.can_tab(hubdocs.tab_for(path) or "_owner"):
+        raise HTTPException(403, "You don't have access to this tab; ask the owner")
+    try:
+        d = await hubdocs.get(path)
+    except hubdocs.DocError as e:
+        raise HTTPException(400, str(e))
+    return d or {"path": path, "data": None, "version": 0}
+
+
+@app.get("/api/engine/docs/{path:path}")
+async def api_engine_doc(path: str, request: Request):
+    """For the scheduled runs: read a document (or, with a path ending in '/', list a collection)."""
+    auth.require_engine_key(request)
+    try:
+        if path.endswith("/"):
+            return {"docs": await hubdocs.list_prefix(path.rstrip("/"))}
+        return (await hubdocs.get(path)) or {"path": path, "data": None, "version": 0}
+    except hubdocs.DocError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/engine/docs/{path:path}")
+async def api_engine_put_doc(path: str, request: Request, if_version: int | None = None):
+    """For the scheduled runs: replace a document with the JSON body (optional ?if_version= guard)."""
+    auth.require_engine_key(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Body must be JSON")
+    if isinstance(body, dict) and set(body) == {"data"} and isinstance(body["data"], dict):
+        body = body["data"]   # also accept the {"data": {...}} shape ArtifactData files use
+    try:
+        return await hubdocs.put(path, body, if_version)
+    except hubdocs.DocError as e:
+        raise HTTPException(409 if "version" in str(e) else 400, str(e))
 
 
 # ---------------------------------------------------------------- engine API (X-Engine-Key): lead scoring / buy qty jobs

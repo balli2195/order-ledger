@@ -28,10 +28,18 @@ window.LG = (() => {
   }
   const fail = (e) => toast(e.message || String(e), true);
 
+
+  function applyTabs(me) {   // hide tabs this login can't open
+    const ok = new Set(me.tabs || []);
+    document.querySelectorAll('nav.tabs a[data-tab]').forEach((a) => { a.hidden = !ok.has(a.dataset.tab); });
+    document.querySelectorAll('[data-needs-tab]').forEach((el) => { el.hidden = !ok.has(el.dataset.needsTab); });
+  }
+
   async function header() {
     const me = await api('GET', '/api/me');
     st.me = me.user; st.connectorUrl = me.connector_url;
     $('#whoami').textContent = st.me.name || st.me.email;
+    applyTabs(st.me);
     $$('.owner-only').forEach((el) => el.classList.toggle('hidden', st.me.role !== 'owner'));
     $('#menuBtn').addEventListener('click', () => $('#menu').classList.toggle('hidden'));
     document.addEventListener('click', async (e) => {

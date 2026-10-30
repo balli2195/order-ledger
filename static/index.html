@@ -27,7 +27,7 @@
     </div>
   </header>
 
-  <nav class="tabs"><a href="/leads">Leads</a><a href="/" class="on">Orders</a><a href="/stores">Stores &amp; brands</a></nav>
+  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders" class="on">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a></nav>
 
   <div class="toolbar">
     <div class="search">
@@ -40,7 +40,7 @@
       <button class="chip" data-filter="missing">Missing info<span class="count" id="cMiss"></span></button>
     </div>
     <div class="spacer"></div>
-    <button id="preposBtn" class="btn" title="Send order items to Network Prep (PrepOS)">PrepOS</button>
+    <button id="preposBtn" class="btn" data-needs-tab="prepos" title="Send order items to Network Prep (PrepOS)">PrepOS</button>
     <button id="addBtn" class="btn primary editor-only">+ Add order</button>
   </div>
 

@@ -37,10 +37,18 @@
   const fail = (e) => toast(e.message || String(e), true);
 
   // ------------------------------------------------------------ load
+
+  function applyTabs(me) {   // hide tabs this login can't open
+    const ok = new Set(me.tabs || []);
+    document.querySelectorAll('nav.tabs a[data-tab]').forEach((a) => { a.hidden = !ok.has(a.dataset.tab); });
+    document.querySelectorAll('[data-needs-tab]').forEach((el) => { el.hidden = !ok.has(el.dataset.needsTab); });
+  }
+
   async function boot() {
     const me = await api('GET', '/api/me');
     S.me = me.user; S.connectorUrl = me.connector_url;
     $('#whoami').textContent = S.me.name || S.me.email;
+    applyTabs(S.me);
     document.body.classList.toggle('is-viewer', !can('editor'));
     $$('.owner-only').forEach((el) => el.classList.toggle('hidden', !can('owner')));
     $$('.editor-only').forEach((el) => el.classList.toggle('hidden', !can('editor')));
@@ -603,11 +611,14 @@
   }
 
   async function showUsers() {
-    const { users } = await api('GET', '/api/users');
+    const { users, tabs } = await api('GET', '/api/users');
+    const tabBoxes = (u) => u.role === 'owner' ? '<span class="muted">all tabs (owner)</span>'
+      : `<div class="tabboxes">${tabs.map((t) => `<label><input type="checkbox" data-act="utab" value="${t.key}" ${(u.tabs || []).includes(t.key) ? 'checked' : ''}> ${esc(t.label)}</label>`).join('')}</div>`;
     openModal(`<h2>Users &amp; logins</h2>
-      <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
+      <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Tabs</th><th>Status</th><th></th></tr></thead><tbody>
       ${users.map((u) => `<tr data-user="${u.id}"><td><input data-act="uname" value="${esc(u.name || '')}" placeholder="Name" style="min-width:120px"></td><td>${esc(u.email)}</td>
-        <td><select data-act="role" ${u.id === S.me.id ? 'disabled' : ''}>${['owner', 'editor', 'viewer'].map((r) => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+        <td><select data-act="role" style="min-width:92px" ${u.id === S.me.id ? 'disabled' : ''}>${['owner', 'editor', 'viewer'].map((r) => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+        <td>${tabBoxes(u)}</td>
         <td>${!u.active ? '<span class="tag">disabled</span>' : u.has_password ? 'active' : '<span class="tag">invite sent</span>'}</td>
         <td style="white-space:nowrap"><button class="btn small" data-act="reset">New link</button>
           ${u.id !== S.me.id ? `<button class="btn small ${u.active ? 'danger' : ''}" data-act="toggle">${u.active ? 'Disable' : 'Enable'}</button>` : ''}</td></tr>`).join('')}
@@ -617,14 +628,19 @@
         <label>Name<input name="name" placeholder="e.g. Rayven (prep)"></label>
         <label>Email<input name="email" type="email" required></label>
         <label>Role<select name="role"><option value="editor">editor — add &amp; edit orders</option><option value="viewer">viewer — read only</option><option value="owner">owner — everything + users</option></select></label>
+        <div class="wide"><div class="muted" style="font-size:12px;margin-bottom:4px">Tabs they can open (owners see everything)</div>
+          <div class="tabboxes">${tabs.map((t) => `<label><input type="checkbox" name="tabs" value="${t.key}"> ${esc(t.label)}</label>`).join('')}</div></div>
         <div class="wide"><button class="btn primary">Create invite link</button></div>
       </form>
       <div id="inviteOut"></div>
       <p class="muted">Send the link to the person yourself; they set their own password with it. Links expire in 7 days.</p>`);
+    $('#modal').classList.add('wide');
     $('#inviteForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const { link } = await api('POST', '/api/users', Object.fromEntries(new FormData(e.target).entries()));
+        const fd = new FormData(e.target); const body = Object.fromEntries(fd.entries()); body.tabs = fd.getAll('tabs');
+        if (body.role !== 'owner' && !body.tabs.length && !confirm('No tabs are ticked, so this person will see nothing until you give them some. Create the link anyway?')) return;
+        const { link } = await api('POST', '/api/users', body);
         showLink(link); e.target.reset();
       } catch (err) { fail(err); }
     });
@@ -708,11 +724,15 @@
     const i = e.target;
     if (i.matches('#drawer [data-o]')) await saveOrderField(i);
     else if (i.matches('#drawer tr[data-item] input')) await saveItemField(i);
+    else if (i.matches('input[data-act="utab"]')) {
+      const tr = i.closest('tr'); const tabsOn = $$('input[data-act="utab"]', tr).filter((x) => x.checked).map((x) => x.value);
+      try { await api('PATCH', `/api/users/${tr.dataset.user}`, { tabs: tabsOn }); toast('Tabs updated'); } catch (err) { fail(err); i.checked = !i.checked; }
+    }
     else if (i.matches('input[data-act="uname"]')) {
       try { await api('PATCH', `/api/users/${i.closest('tr').dataset.user}`, { name: i.value }); toast('Name updated'); } catch (err) { fail(err); }
     }
     else if (i.matches('select[data-act="role"]')) {
-      try { await api('PATCH', `/api/users/${i.closest('tr').dataset.user}`, { role: i.value }); toast('Role updated'); } catch (err) { fail(err); }
+      try { await api('PATCH', `/api/users/${i.closest('tr').dataset.user}`, { role: i.value }); toast('Role updated'); await showUsers(); } catch (err) { fail(err); }
     }
   });
 

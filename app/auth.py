@@ -26,6 +26,16 @@ _signer = URLSafeTimedSerializer(SECRET_KEY, salt="ol-session")
 ROLES = ("owner", "editor", "viewer")
 ROLE_RANK = {"viewer": 1, "editor": 2, "owner": 3}
 
+# Tabs a person can be given. Owners always see every tab; everyone else sees only the tabs ticked for them.
+TABS = {
+    "leads": ("Leads", "/leads"),
+    "orders": ("Orders", "/"),
+    "stores": ("Stores & brands", "/stores"),
+    "prepos": ("PrepOS", "/"),
+    "inventory_health": ("Inventory health", "/inventory-health"),
+}
+PAGE_TABS = ("leads", "orders", "stores", "inventory_health")   # tabs that are their own page, in menu order
+
 
 @dataclass
 class User:
@@ -33,6 +43,7 @@ class User:
     email: str
     name: str
     role: str
+    tabs: tuple = ()
 
     @property
     def label(self) -> str:
@@ -41,8 +52,21 @@ class User:
     def can(self, need: str) -> bool:
         return ROLE_RANK[self.role] >= ROLE_RANK[need]
 
+    def can_tab(self, tab: str) -> bool:
+        return self.role == "owner" or tab in (self.tabs or ())
+
+    def allowed_tabs(self) -> list[str]:
+        return [t for t in TABS if self.can_tab(t)]
+
+    def home(self) -> str:
+        """First page this person can open."""
+        for t in PAGE_TABS:
+            if self.can_tab(t):
+                return TABS[t][1]
+        return "/no-access"
+
     def public(self) -> dict:
-        return {"id": self.id, "email": self.email, "name": self.name, "role": self.role}
+        return {"id": self.id, "email": self.email, "name": self.name, "role": self.role, "tabs": self.allowed_tabs()}
 
 
 def hash_password(pw: str) -> str:
@@ -69,13 +93,17 @@ def make_cookie(user_id: int, session_ver: int) -> str:
 async def user_by_id(user_id: int) -> tuple[User, int] | None:
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT id, email, name, role, session_ver FROM users WHERE id=%s AND active",
+            "SELECT id, email, name, role, tabs, session_ver FROM users WHERE id=%s AND active",
             (user_id,),
         )
         r = await cur.fetchone()
     if not r:
         return None
-    return User(r["id"], r["email"], r["name"], r["role"]), r["session_ver"]
+    return _user(r), r["session_ver"]
+
+
+def _user(r) -> User:
+    return User(r["id"], r["email"], r["name"], r["role"], tuple(r.get("tabs") or ()))
 
 
 async def current_user(request: Request) -> User | None:
@@ -95,12 +123,15 @@ async def current_user(request: Request) -> User | None:
     return user
 
 
-async def require(request: Request, role: str = "viewer") -> User:
+async def require(request: Request, role: str = "viewer", tab: str | tuple | None = None) -> User:
+    """tab: the tab this data belongs to (or a tuple: any one of them is enough)."""
     user = await current_user(request)
     if not user:
         raise HTTPException(401, "Sign in required")
     if not user.can(role):
         raise HTTPException(403, f"Needs {role} access")
+    if tab and not any(user.can_tab(t) for t in ((tab,) if isinstance(tab, str) else tab)):
+        raise HTTPException(403, "You don't have access to this tab; ask the owner")
     # Basic CSRF guard: writes must come from our own page's fetch() calls.
     if request.method not in ("GET", "HEAD") and request.headers.get("x-requested-with") != "ledger":
         raise HTTPException(403, "Bad request origin")
@@ -123,14 +154,14 @@ def require_engine_key(request: Request) -> None:
 async def authenticate(email: str, password: str) -> tuple[User, int] | None:
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT id, email, name, role, session_ver, password_hash FROM users "
+            "SELECT id, email, name, role, tabs, session_ver, password_hash FROM users "
             "WHERE lower(email)=lower(%s) AND active",
             (email.strip(),),
         )
         r = await cur.fetchone()
     if not r or not check_password(password, r["password_hash"]):
         return None
-    return User(r["id"], r["email"], r["name"], r["role"]), r["session_ver"]
+    return _user(r), r["session_ver"]
 
 
 async def create_invite(conn, user_id: int, days: int = 7) -> str:
@@ -142,7 +173,11 @@ async def create_invite(conn, user_id: int, days: int = 7) -> str:
     return token
 
 
-async def invite_user(email: str, name: str, role: str) -> str:
+def clean_tabs(tabs) -> list[str]:
+    return [t for t in TABS if t in set(tabs or [])]
+
+
+async def invite_user(email: str, name: str, role: str, tabs: list[str] | None = None) -> str:
     """Create (or re-invite) a user and return a one-time link token to set a password."""
     if role not in ROLES:
         raise HTTPException(400, "Role must be owner, editor or viewer")
@@ -150,10 +185,10 @@ async def invite_user(email: str, name: str, role: str) -> str:
     async with db.pool.connection() as conn:
         async with conn.transaction():
             cur = await conn.execute(
-                "INSERT INTO users (email, name, role) VALUES (%s,%s,%s) "
+                "INSERT INTO users (email, name, role, tabs) VALUES (%s,%s,%s,%s) "
                 "ON CONFLICT (email) DO UPDATE SET name=COALESCE(NULLIF(EXCLUDED.name,''), users.name), "
-                "role=EXCLUDED.role, active=true RETURNING id",
-                (email, name.strip(), role),
+                "role=EXCLUDED.role, tabs=EXCLUDED.tabs, active=true RETURNING id",
+                (email, name.strip(), role, clean_tabs(tabs)),
             )
             uid = (await cur.fetchone())["id"]
             return await create_invite(conn, uid)
@@ -174,11 +209,11 @@ async def redeem_invite(token: str, password: str) -> tuple[User, int]:
             await conn.execute("UPDATE invites SET used_at=now() WHERE token_hash=%s", (sha(token),))
             cur = await conn.execute(
                 "UPDATE users SET password_hash=%s, session_ver=session_ver+1 WHERE id=%s "
-                "RETURNING id, email, name, role, session_ver",
+                "RETURNING id, email, name, role, tabs, session_ver",
                 (hash_password(password), r["user_id"]),
             )
             u = await cur.fetchone()
-    return User(u["id"], u["email"], u["name"], u["role"]), u["session_ver"]
+    return _user(u), u["session_ver"]
 
 
 async def invite_valid(token: str) -> dict | None:
