@@ -381,3 +381,14 @@ td.row-act .icon-act { width: 28px; height: 28px; }
 .table-wrap tbody tr:last-child td:last-child { border-bottom-right-radius: calc(var(--radius) - 1px); }
 .table-wrap tbody tr:last-child td { border-bottom: 0; }
 td.store-name { font-weight: 600; }
+.modal.wide { width: min(1080px, calc(100vw - 32px)); }
+.pp-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pp-bar label { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-weight: 600; font-size: 13px; }
+.pp td.pp-title { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp td.pp-refs { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.pp-batch { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); margin-bottom: 8px; }
+.pp-batch summary { padding: 9px 12px; cursor: pointer; }
+.pp-batch table { border-top: 1px solid var(--line); }
+.ok-tag { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.bad-tag { background: var(--warn-soft); color: var(--bad); }
+.bad-text { color: var(--bad); }

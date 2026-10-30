@@ -232,6 +232,35 @@ MIGRATIONS: list[str] = [
     """
     UPDATE users SET name = 'Ariane' WHERE name = 'Araine';
     """,
+    # 7: lines sent to the PrepOS (Network Prep) API, and which order items each line covered
+    """
+    CREATE TABLE prepos_sends (
+        id          bigserial PRIMARY KEY,
+        batch       uuid NOT NULL,
+        sent_at     timestamptz NOT NULL DEFAULT now(),
+        send_day    date NOT NULL,
+        kind        text NOT NULL,
+        user_id     integer REFERENCES users(id) ON DELETE SET NULL,
+        asin        text NOT NULL,
+        title       text,
+        qty         integer NOT NULL,
+        unit_cost   numeric(12,2),
+        sell        numeric(12,2),
+        supplier    text,
+        order_refs  text,
+        first_date  date,
+        last_date   date,
+        status      text NOT NULL,
+        response    jsonb
+    );
+    CREATE INDEX prepos_sends_day_idx ON prepos_sends (send_day, asin);
+    CREATE TABLE prepos_sent_items (
+        item_id uuid PRIMARY KEY,
+        send_id bigint NOT NULL REFERENCES prepos_sends(id) ON DELETE CASCADE
+    );
+    INSERT INTO settings (key, value) VALUES ('prepos_start', '"2026-10-29"'), ('prepos_lag_days', '2')
+    ON CONFLICT (key) DO NOTHING;
+    """,
 ]
 
 

@@ -458,6 +458,7 @@
     const fields = (obj) => Object.keys(obj || {}).filter((k) => !['id', 'order_id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'legacy_id'].includes(k));
     if (c.entity === 'batch') return `imported ${c.after?.orders ?? ''} orders, ${c.after?.items ?? ''} items`;
     if (c.entity === 'setting') return c.after?.daily_target != null ? `set daily target to ${moneyWhole(c.after.daily_target)}` : c.after?.leads_mode === 'home' ? 'made Myrddin Hub the home for leads' : 'changed a setting';
+    if (c.entity === 'prepos') return `${c.after?.ok === false ? 'tried to send' : 'sent'} ${c.after?.lines} line${c.after?.lines === 1 ? '' : 's'} (${c.after?.units} units) to PrepOS${c.after?.kind === 'nightly' ? ' (nightly)' : ''}`;
     if (c.entity === 'store' || c.entity === 'brand') return `marked ${c.entity} ${esc(c.after?.name || '')} as ${c.after?.can_source ? 'OK to source' : "can't source"}`;
     let what;
     if (c.entity === 'lead') {
@@ -473,7 +474,7 @@
   function changeLine(c) {
     const when = new Date(c.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const tag = `<span class="tag ${c.source === 'chat' ? 'chat' : ''}">${esc(c.source)}</span>`;
-    return `<li>${tag} <b>${esc(c.who || (c.source === 'import' ? 'Import' : c.source === 'system' ? 'Cleanup' : 'Someone'))}</b> ${describe(c)} <span class="muted">· ${esc(when)}</span></li>`;
+    return `<li>${tag} <b>${esc(c.who || (c.source === 'import' ? 'Import' : c.source === 'system' ? (c.entity === 'prepos' ? 'Myrddin Hub' : 'Cleanup') : 'Someone'))}</b> ${describe(c)} <span class="muted">· ${esc(when)}</span></li>`;
   }
 
   // field saves
@@ -530,7 +531,55 @@
 
   // ------------------------------------------------------------ modals
   function openModal(html) { $('#modal').innerHTML = html; $('#modal').classList.remove('hidden'); $('#scrim').classList.remove('hidden'); }
-  function closeModal() { $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if ($('#drawer').classList.contains('hidden')) $('#scrim').classList.add('hidden'); }
+  function closeModal() { $('#modal').classList.remove('wide'); $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if ($('#drawer').classList.contains('hidden')) $('#scrim').classList.add('hidden'); }
+
+  // ------------------------------------------------------------ PrepOS (Network Prep)
+  async function showPrepos(through) {
+    const d = await api('GET', '/api/prepos' + (through ? '?through=' + encodeURIComponent(through) : ''));
+    const p = d.pending, lines = p.lines;
+    const units = lines.reduce((s, x) => s + x.qty, 0);
+    const cost = lines.reduce((s, x) => s + x.qty * (x.unit_cost || 0), 0);
+    const day = (iso) => fmtDate(iso);
+    const span = (x) => x.first_date === x.last_date ? day(x.first_date) : `${day(x.first_date)} – ${day(x.last_date)}`;
+    const lineRow = (x) => `<tr><td class="mono"><a href="https://www.amazon.com/dp/${esc(x.asin)}" target="_blank" rel="noopener">${esc(x.asin)}</a></td>
+      <td class="pp-title" title="${esc(x.title || '')}">${esc(x.title || '—')}</td><td class="num">${x.qty}</td>
+      <td class="num">${x.unit_cost == null ? '<span class="bad-text">no cost</span>' : money(x.unit_cost)}${x.cost_missing_units ? `<br><span class="muted" style="font-size:11px">${x.cost_missing_units} u no cost</span>` : ''}</td>
+      <td>${esc(x.supplier)}</td><td class="muted" style="white-space:nowrap">${x.orders} order${x.orders === 1 ? '' : 's'} · ${esc(span(x))}</td></tr>`;
+    const batches = []; const byB = new Map();
+    for (const h of d.history) { if (!byB.has(h.batch)) { const b = { ...h, rows: [] }; byB.set(h.batch, b); batches.push(b); } byB.get(h.batch).rows.push(h); }
+    const hist = batches.slice(0, 30).map((b) => {
+      const u = b.rows.reduce((s, x) => s + x.qty, 0);
+      const when = new Date(b.sent_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      return `<details class="pp-batch"><summary><b>${esc(when)}</b> · ${b.kind === 'nightly' ? 'nightly' : 'button' + (b.who ? ' (' + esc(b.who) + ')' : '')} · ${b.rows.length} line${b.rows.length === 1 ? '' : 's'}, ${u} units
+        ${b.status === 'sent' ? '<span class="tag ok-tag">sent</span>' : '<span class="tag bad-tag">refused</span>'}</summary>
+        <table><thead><tr><th>ASIN</th><th>Title</th><th class="num">Qty</th><th class="num">Cost</th><th class="num">Sell</th><th>Store</th><th>Order IDs</th></tr></thead><tbody>
+        ${b.rows.map((x) => `<tr><td class="mono">${esc(x.asin)}</td><td class="pp-title" title="${esc(x.title || '')}">${esc(x.title || '')}</td><td class="num">${x.qty}</td>
+          <td class="num">${money(x.unit_cost)}</td><td class="num">${x.sell == null ? '—' : money(x.sell)}</td><td>${esc(x.supplier || '')}</td><td class="mono pp-refs" title="${esc(x.order_refs || '')}">${esc(x.order_refs || '')}</td></tr>`).join('')}
+        </tbody></table></details>`;
+    }).join('');
+    openModal(`<div class="pp">
+      <div style="display:flex;align-items:center;gap:10px"><h2 style="flex:1;margin:0">PrepOS <span class="muted" style="font-size:18px">Network Prep</span></h2>
+        <button class="icon-btn" data-act="close-modal" title="Close (Esc)" style="font-size:20px">✕</button></div>
+      ${d.enabled ? '' : '<p class="recon bad">PrepOS isn\'t connected yet (no API token on the server), so nothing can be sent.</p>'}
+      ${d.last_error ? `<p class="recon bad">Last problem: ${esc(d.last_error)}</p>` : ''}
+      <p class="muted" style="margin:8px 0 14px">Every night at 11:45 PM the Hub sends order items from orders dated ${d.lag_days} days earlier or before (from ${esc(day(d.start))} on), so cancelled orders can be deleted first.
+        Items of the same ASIN are combined into one line (total qty, average cost; Sell = Buy Box or last Buy Box + 10%). An ASIN gets at most one line a day.
+        ${d.last_nightly ? `Last nightly run: ${esc(day(d.last_nightly))}.` : ''}</p>
+      <div class="pp-bar"><label>Orders through <input type="date" id="ppThrough" value="${esc(p.through)}" min="${esc(d.start)}" max="${esc(d.today)}"></label>
+        <span class="muted">${p.through === d.default_through ? '(tonight\'s cutoff)' : ''}</span><span class="spacer"></span>
+        <span id="ppSendWrap">${can('editor') && d.enabled && lines.length ? `<button class="btn primary" data-act="pp-send">Send ${lines.length} line${lines.length === 1 ? '' : 's'} now</button>` : ''}</span></div>
+      <div class="section-title">Waiting to send · ${lines.length} line${lines.length === 1 ? '' : 's'} · ${units} units · ${money(cost)}</div>
+      ${lines.length ? `<div class="items"><table><thead><tr><th>ASIN</th><th>Title</th><th class="num">Qty</th><th class="num">Avg cost</th><th>Store</th><th>Orders</th></tr></thead><tbody>${lines.map(lineRow).join('')}</tbody></table></div>`
+        : '<p class="muted">Nothing waiting for orders through this date.</p>'}
+      ${p.held.length ? `<p class="muted" style="margin-top:10px">Already sent today, so these wait for the next run: ${p.held.map((x) => `${esc(x.asin)} (${x.qty})`).join(', ')}.</p>` : ''}
+      ${p.no_asin.length ? `<p class="recon bad" style="margin-top:10px">${p.no_asin.length} item line${p.no_asin.length === 1 ? '' : 's'} can't be sent without an ASIN: ${p.no_asin.slice(0, 8).map((x) => `${esc(x.store)} ${esc(x.order_ref || '')} (${esc(day(x.order_date))})`).join('; ')}${p.no_asin.length > 8 ? '…' : ''}</p>` : ''}
+      <div class="section-title">Sent</div>
+      ${hist || '<p class="muted">Nothing sent yet.</p>'}
+    </div>`);
+    $('#modal').classList.add('wide');
+    $('#ppThrough').addEventListener('change', (e) => showPrepos(e.target.value).catch(fail));
+    S.ppThrough = p.through; S.ppCount = lines.length; S.ppUnits = units;
+  }
 
   async function showActivity() {
     openModal('<h2>Activity log</h2><div class="history" id="act"><span class="muted">Loading…</span></div>');
@@ -630,6 +679,18 @@
         }
         case 'del-order': confirmDeleteOrder(S.openId); break;
         case 'dup-order': duplicateOrder(S.openId); break;
+        case 'close-modal': closeModal(); break;
+        case 'pp-send':
+          $('#ppSendWrap').innerHTML = `<span class="confirm"><span class="muted">Send ${S.ppCount} line${S.ppCount === 1 ? '' : 's'} (${S.ppUnits} units) to PrepOS? Lines can't be changed there afterwards.</span>
+            <button class="btn small" data-act="pp-cancel">Cancel</button><button class="btn small primary" data-act="pp-yes">Send</button></span>`;
+          break;
+        case 'pp-cancel': await showPrepos(S.ppThrough); break;
+        case 'pp-yes': {
+          btn.disabled = true; btn.textContent = 'Sending…';
+          try { const r = await api('POST', '/api/prepos/send', { through: S.ppThrough }); toast(`Sent ${r.sent} line${r.sent === 1 ? '' : 's'} (${r.units} units) to PrepOS`); }
+          finally { await showPrepos(S.ppThrough); }
+          break;
+        }
         case 'del-cancel': $('#delWrap').innerHTML = `<button class="btn small danger" data-act="del-order">Delete order</button>`; break;
         case 'del-yes': { const id = S.openId; await api('DELETE', '/api/orders/' + id); closeDrawer(); toast('Order deleted'); break; }
         case 'reset': { const { link } = await api('POST', `/api/users/${btn.closest('tr').dataset.user}/reset`); if (!$('#inviteOut')) break; showLink(link); toast('New sign-in link created below'); break; }
@@ -677,6 +738,7 @@
   }));
   $('#moreBtn').addEventListener('click', () => { S.shown += PAGE; render(); });
   $('#addBtn').addEventListener('click', newOrder);
+  $('#preposBtn').addEventListener('click', () => showPrepos().catch(fail));
   $('#menuBtn').addEventListener('click', () => $('#menu').classList.toggle('hidden'));
   window.addEventListener('hashchange', () => { const m = location.hash.match(/^#order=(.+)$/); if (m && m[1] !== S.openId) openOrder(m[1]); });
 

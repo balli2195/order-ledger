@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import airtable_sync, auth, db, live
 from . import leads as L
+from . import prepos
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
 
@@ -33,10 +34,12 @@ async def lifespan(app: FastAPI):
     await db.open_pool()
     listener = asyncio.create_task(live.listener())
     syncer = asyncio.create_task(airtable_sync.loop())
+    prepos_task = asyncio.create_task(prepos.nightly_loop())
     async with mcp.session_manager.run():
         yield
     listener.cancel()
     syncer.cancel()
+    prepos_task.cancel()
     await db.close_pool()
 
 
@@ -175,6 +178,36 @@ async def api_create_order(request: Request, body: dict = Body(...)):
     user = await auth.require(request, "editor")
     items = body.pop("items", []) or []
     return await o.create_order(web_actor(user), body, items)
+
+
+@app.get("/api/prepos")
+async def api_prepos(request: Request, through: str | None = None):
+    await auth.require(request)
+    cfg = await prepos.config()
+    try:
+        t = date.fromisoformat(through) if through else cfg["default_through"]
+    except ValueError:
+        raise HTTPException(400, "through should be a date like 2026-10-29")
+    p = await prepos.pending(t)
+    for x in p["lines"] + p["held"]:
+        x.pop("item_ids", None)
+    return {"enabled": cfg["enabled"], "start": cfg["start"].isoformat(), "lag_days": cfg["lag"],
+            "default_through": cfg["default_through"].isoformat(), "today": prepos.today().isoformat(),
+            "last_nightly": await L.get_setting("prepos_last_nightly", None), "last_error": prepos.status.get("last_error"),
+            "pending": p, "history": await prepos.history(200)}
+
+
+@app.post("/api/prepos/send")
+async def api_prepos_send(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor")
+    try:
+        t = date.fromisoformat(str(body.get("through")))
+    except ValueError:
+        raise HTTPException(400, "through should be a date like 2026-10-29")
+    try:
+        return await prepos.send(t, "button", user.id)
+    except prepos.PreposError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/orders/{order_id}/duplicate")
