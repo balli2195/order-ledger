@@ -360,3 +360,10 @@ tr.day-row .day-claude b { color: var(--ink); margin-left: 4px; }
 .oe-input.num { text-align: right; } .oe-input[type=date] { min-width: 140px; }
 .row-open { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; height: 26px; padding: 0 8px; font-size: 12px; cursor: pointer; margin-right: 4px; vertical-align: middle; }
 .row-open:hover { color: var(--ink); border-color: var(--ink); }
+/* ---------- row icon buttons (one style everywhere) */
+.icon-act { border: 0; background: transparent; color: var(--ink); width: 30px; height: 30px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; vertical-align: middle; padding: 0; }
+.icon-act + .icon-act { margin-left: 4px; }
+.icon-act:hover { background: var(--line-2); }
+.icon-act.danger:hover { color: var(--bad); background: var(--warn-soft); }
+.icon-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+td.row-act .icon-act { width: 28px; height: 28px; }

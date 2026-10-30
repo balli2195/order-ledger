@@ -218,12 +218,14 @@
       <td class="notes" title="${esc(o.notes || '')}">${oeCell(o, 'notes', esc(o.notes || '—'))}</td>
       <td class="center"><span class="dot ${o.discrepancy ? 'bad' : ''}" title="${esc(discTitle)}"></span></td>
       <td class="center"><span class="dot ${o.missing.length ? 'bad' : ''}" title="${esc(missTitle)}"></span></td>
-      <td class="order-act"><button class="row-open" data-open-row="${esc(o.id)}" title="Open order">Open</button>${can('editor') ? `<button class="row-add" data-add-items="${esc(o.id)}" title="Add items to this order">+ Items</button><button class="row-del row-dup" data-dup-order="${esc(o.id)}" title="Duplicate order" aria-label="Duplicate order">${COPY}</button><button class="row-del" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${TRASH}</button>` : ''}</td></tr>`;
+      <td class="order-act">${can('editor') ? `<button class="icon-act" data-add-items="${esc(o.id)}" title="Add items" aria-label="Add items">${I_BOX}</button>` : ''}<button class="icon-act" data-open-row="${esc(o.id)}" title="${can('editor') ? 'Open / edit order' : 'Open order'}" aria-label="Open order">${I_PEN}</button>${can('editor') ? `<button class="icon-act" data-dup-order="${esc(o.id)}" title="Duplicate order" aria-label="Duplicate order">${I_COPY}</button><button class="icon-act danger" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${I_TRASH}</button>` : ''}</td></tr>`;
   }
 
-  const TRASH = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>`;
+  const I_BOX = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`;
+  const I_PEN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></svg>`;
+  const I_COPY = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+  const I_TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
 
-  const COPY = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>`;
 
   async function duplicateOrder(id) {
     let o = S.orders.find((x) => x.id === id);
