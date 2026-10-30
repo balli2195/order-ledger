@@ -742,7 +742,7 @@
     if (m.t === 'store') { loadMeta(); return; }
     if (m.t !== 'lead') return;
     if (m.op === 'mode') { await loadMeta(); await load(); return; }
-    if (m.op === 'reload') { await load(); loadMeta(); return; }
+    if (m.op === 'reload') { await load().catch(() => {}); loadMeta().catch(() => {}); return; }
     if (m.op === 'delete') { await load(); if (m.ids?.includes(S.openId)) closeDrawer(); return; }
     if (m.op === 'upsert') {
       let changedVisible = false;
@@ -757,7 +757,7 @@
           } catch { /* gone */ }
         }
       }
-      if (!changedVisible && S.offset === 0 && S.sort === 'date') await load();   // probably a new lead at the top
+      if (!changedVisible && S.offset === 0 && S.sort === 'date') await load().catch(() => setTimeout(() => load().catch(() => {}), 3000));   // probably a new lead at the top
       else {
         const ds = [...new Set((m.ids || []).map((id) => S.byId.get(id)?.lead_date).filter(Boolean))];
         const p = new URLSearchParams({ ...filters(), limit: 1, day_totals: ds.join(',') });
@@ -843,7 +843,16 @@
       if (pre) { sessionStorage.removeItem('leadFilter'); if (pre.store) $('#store').value = pre.store; if (pre.brand) $('#brand').value = pre.brand;
         S.days = 0; $$('#range .chip').forEach((x) => x.classList.toggle('on', x.dataset.days === '0')); }
     } catch { /* storage blocked */ }
-    await loadMeta(); await load();
+    // If the server is restarting (a deploy) or slow, keep trying instead of leaving an empty page.
+    for (let i = 0; ; i++) {
+      try { await loadMeta(); await load(); $('#loadErr')?.remove(); break; }
+      catch (e) {
+        if (e.message === 'Signed out') throw e;
+        let n = $('#loadErr'); if (!n) { n = document.createElement('div'); n.id = 'loadErr'; n.className = 'banner'; $('#rows').closest('table').before(n); }
+        n.textContent = `Couldn't load leads (${e.message}). Trying again…`;
+        await new Promise((r) => setTimeout(r, Math.min(15000, 2000 * (i + 1))));
+      }
+    }
     LG.live(onLive);
     const m = location.hash.match(/^#lead=(.+)$/); if (m) openLead(m[1]);
     setInterval(() => { if (!isHome()) loadMeta().catch(() => {}); }, 60000);

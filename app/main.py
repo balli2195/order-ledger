@@ -6,7 +6,7 @@ import contextlib
 import html
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -359,6 +359,33 @@ async def api_transparency(request: Request):
     """ASINs Amazon has emailed Nick about as enrolled in Transparency (units need Transparency codes)."""
     await auth.require(request, tab=("leads", "orders"))
     return await transparency.list_all()
+
+
+@app.get("/api/engine/diag")
+async def engine_diag(request: Request):
+    """Server-side timings of the Leads page requests (to check live speed without a login)."""
+    auth.require_engine_key(request)
+    import time as _t
+    out = {}
+    t = _t.perf_counter(); lst = await L.list_leads({"date_from": (date.today() - timedelta(days=30)).isoformat()}, "date", True, 200, 0, [])
+    out["list_30d_ms"] = round((_t.perf_counter() - t) * 1000)
+    rows = lst["leads"]
+    if rows:
+        t = _t.perf_counter(); await L.get_lead(rows[0]["id"]); out["get_lead_ms"] = round((_t.perf_counter() - t) * 1000)
+        a = rows[0].get("asin") or ""
+        t = _t.perf_counter(); await transparency.brand_matches(a); await transparency.get(a); await hazmat.get(a)
+        out["popup_lookups_ms"] = round((_t.perf_counter() - t) * 1000)
+        t = _t.perf_counter(); await L.list_leads({"asin": a, "date_from": rows[0]["lead_date"], "date_to": rows[0]["lead_date"]}, "date", False, 50, 0, [])
+        out["same_day_ms"] = round((_t.perf_counter() - t) * 1000)
+    st = db.pool.get_stats()
+    out["pool"] = {k: st.get(k) for k in ("pool_size", "pool_available", "requests_waiting", "requests_num", "requests_wait_ms", "requests_errors", "connections_lost")}
+    async with db.pool.connection() as conn:
+        out["schema_version"] = (await (await conn.execute("SELECT max(version) v FROM schema_version")).fetchone())["v"]
+        out["brands_filled"] = (await (await conn.execute("SELECT count(*) n FROM asin_flags WHERE brand IS NOT NULL")).fetchone())["n"]
+        out["brand_pending"] = (await (await conn.execute(
+            "SELECT count(DISTINCT upper(btrim(l.asin))) n FROM leads l LEFT JOIN asin_flags f ON f.asin = upper(btrim(l.asin)) "
+            "WHERE l.lead_date >= current_date - 60 AND length(btrim(l.asin)) = 10 AND f.brand_checked_at IS NULL")).fetchone())["n"]
+    return out
 
 
 @app.get("/api/engine/transparency")
