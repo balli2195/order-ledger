@@ -155,31 +155,36 @@
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
   // ------------------------------------------------------------ hazmat warning (flags from Keepa, cached per ASIN)
   function hazBadge(r) {
-    const dup = (r.same_day_n || 0) > 1, bad = r.fba_eligible === false, tp = !!r.transparency;
-    if (bad || dup || tp) {
-      const tip = [tp ? 'Enrolled in Transparency: units need Transparency codes' : '', bad ? "Amazon says you can't send this to FBA right now" : '', dup ? `Entered ${r.same_day_n} times on this day` : ''].filter(Boolean).join(' · ');
-      return `<button class="hz-badge ${bad || tp ? '' : 'warn'}" data-hz="${esc(r.asin)}" data-hz-day="${esc(r.lead_date || '')}" data-stop title="${esc(tip)}. Click for details." aria-label="Warnings">${tp && !bad ? 'T' : dup && !bad ? r.same_day_n + '×' : '!'}</button>`;
+    const dup = (r.same_day_n || 0) > 1, bad = r.fba_eligible === false, tp = !!r.transparency, tb = (r.tp_brand_asins || []).length;
+    if (bad || dup || tp || tb) {
+      const tip = [tp ? 'Enrolled in Transparency: units need Transparency codes' : '', tb && !tp ? `Same brand as ${tb} Transparency ASIN${tb === 1 ? '' : 's'}` : '',
+        bad ? "Amazon says you can't send this to FBA right now" : '', dup ? `Entered ${r.same_day_n} times on this day` : ''].filter(Boolean).join(' · ');
+      const label = tp && !bad ? 'T' : bad ? '!' : dup ? r.same_day_n + '×' : 'B';
+      return `<button class="hz-badge ${bad || tp ? '' : 'warn'}" data-hz="${esc(r.asin)}" data-hz-day="${esc(r.lead_date || '')}" data-stop title="${esc(tip)}. Click for details." aria-label="Warnings">${label}</button>`;
     }
     if (r.fba_eligible === true) return `<span class="ok-badge" title="Amazon says you can send this to FBA${r.fba_checked_at ? ' (checked ' + new Date(r.fba_checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')' : ''}" aria-label="Can sell via FBA">✓</span>`;
     return '';
   }
   async function hazPopup(asin, intro, day) {
-    let f = null, tp = null; try { const h = await api('GET', '/api/hazmat/' + encodeURIComponent(asin)); f = h.flag; tp = h.transparency; } catch { /* show the general text */ }
+    let f = null, tp = null, tbm = []; try { const h = await api('GET', '/api/hazmat/' + encodeURIComponent(asin)); f = h.flag; tp = h.transparency; tbm = h.tp_brand || []; } catch { /* show the general text */ }
     let same = [];
     if (day) { try { same = (await api('GET', '/api/leads?' + new URLSearchParams({ asin, date_from: day, date_to: day, sort: 'date', desc: 'false', limit: 50 }))).leads; } catch { /* skip */ } }
     const bad = f?.fba_eligible === false, dup = same.length > 1;
-    const nWarn = [bad, dup, !!tp].filter(Boolean).length;
+    const tb = !tp && tbm.length > 0;
+    const nWarn = [bad, dup, !!tp, tb].filter(Boolean).length;
     const shortD = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     const reasons = f?.reason_text || [];
     const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name'];
     const kinfo = (f?.hazmat_info || []).filter((x) => KEEP.includes(x.aspect)).map((x) => `${esc(String(x.aspect).replace(/_/g, ' '))}: ${esc(x.value)}`).join(' · ');
     const wrap = document.createElement('div'); wrap.className = 'confirm-back';
     wrap.innerHTML = `<div class="confirm-box hz-box" role="alertdialog" aria-modal="true" aria-labelledby="hzT">
-      <h3 id="hzT"><span class="hz-icon ${bad || tp ? '' : 'warn'}">!</span> ${nWarn > 1 ? nWarn + ' warnings' : tp ? 'Enrolled in Transparency' : bad ? (f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now") : 'Entered more than once today'}</h3>
+      <h3 id="hzT"><span class="hz-icon ${bad || tp ? '' : 'warn'}">!</span> ${nWarn > 1 ? nWarn + ' warnings' : tp ? 'Enrolled in Transparency' : tb ? 'Brand uses Transparency' : bad ? (f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now") : 'Entered more than once today'}</h3>
       ${intro ? `<p>${intro}</p>` : ''}
       <p><a class="mono" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener">${esc(asin)}</a>${f?.title ? ` · ${esc(f.title)}` : ''}</p>
       ${tp ? `<div class="hz-sec"><p><b>Amazon told you this ASIN is enrolled in Transparency.</b> Every unit needs the brand's Transparency (or serial number) code from the manufacturer. Units without one are marked unfulfillable at the warehouse, so <b>don't buy it to send to FBA</b>.</p>
         <ul class="hz-reasons">${(tp.emails || []).map((m) => `<li>${m.kind === 'rejected' ? `<b>${m.units_rejected ? num(m.units_rejected) + ' units' : 'Units'} rejected</b> at Amazon warehouses (email of ${esc(shortD(m.email_date))})` : m.kind === 'removed' ? `<b>Listing removed / inventory set aside</b> for missing Transparency codes (email of ${esc(shortD(m.email_date))})` : `Enrollment notice emailed ${esc(shortD(m.email_date))}${m.effective_date ? `; units without codes can't be sold after ${esc(shortD(m.effective_date))}` : ''}`}</li>`).join('')}</ul></div>` : ''}
+      ${tb ? `<div class="hz-sec"><p><b>Same brand as ${tbm.length} ASIN${tbm.length === 1 ? '' : 's'} Amazon told you ${tbm.length === 1 ? 'is' : 'are'} enrolled in Transparency</b> (${esc([...new Set(tbm.map((m) => m.brand))].join(', '))}). Brands usually add more of their products over time, and Amazon only emails you about ASINs you've listed, so this one may need Transparency codes too. Check the packaging or listing for a Transparency code before buying a lot.</p>
+        <ul class="hz-reasons">${tbm.slice(0, 8).map((m) => `<li><a class="mono" href="https://www.amazon.com/dp/${esc(m.asin)}" target="_blank" rel="noopener">${esc(m.asin)}</a> ${esc((m.title || '').slice(0, 70))} <span class="muted">· ${m.units_rejected ? num(m.units_rejected) + ' units rejected · ' : ''}since ${esc(shortD(m.first_email))}</span></li>`).join('')}${tbm.length > 8 ? `<li class="muted">and ${tbm.length - 8} more</li>` : ''}</ul></div>` : ''}
       ${dup ? `<div class="hz-sec"><p><b>This ASIN was entered ${same.length} times on ${esc(fmtDate(day))}.</b> Check you're not buying the same thing twice (it can be fine if it's from different stores).</p>
         <table class="hz-dups"><thead><tr><th>Added</th><th>Store</th><th class="num">Cost</th><th class="num">Buy qty</th><th class="num">Ordered</th><th>By</th></tr></thead><tbody>
         ${same.map((x) => `<tr><td>${esc(new Date(x.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</td><td>${esc((x.stores || []).join(', ') || '—')}</td><td class="num">${x.cost == null ? '—' : money(x.cost)}</td><td class="num">${num(x.buy_qty)}</td><td class="num">${num(x.qty_ordered)}</td><td>${esc(x.sourced_by || '')}</td></tr>`).join('')}
@@ -202,7 +207,7 @@
   function hazAfterAdd(lead) {
     if (!lead || !lead.asin) return;
     const bad = lead.fba_eligible === false, dup = (lead.same_day_n || 0) > 1;
-    if (bad || dup || lead.transparency) hazPopup(lead.asin, `Check the lead you just added (<b>${esc(lead.asin)}</b>) before buying.`, lead.lead_date);
+    if (bad || dup || lead.transparency || (lead.tp_brand || []).length) hazPopup(lead.asin, `Check the lead you just added (<b>${esc(lead.asin)}</b>) before buying.`, lead.lead_date);
   }
 
   // ------------------------------------------------------------ select rows -> create an order
@@ -640,6 +645,7 @@
       </div>
       <div class="drawer-body">
         ${l.transparency ? `<div class="hz-banner"><b>! Enrolled in Transparency.</b> Units need Transparency codes from the manufacturer; without them Amazon marks them unfulfillable${l.transparency.units_rejected ? ` (${num(l.transparency.units_rejected)} of your units already rejected)` : ''}. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Details</button></div>` : ''}
+        ${!l.transparency && (l.tp_brand || []).length ? `<div class="hz-banner warn"><b>This brand uses Transparency.</b> Amazon told you ${l.tp_brand.length} other ASIN${l.tp_brand.length === 1 ? ' of this brand is' : 's of this brand are'} enrolled (${esc([...new Set(l.tp_brand.map((m) => m.brand))].join(', '))}). Check this one has Transparency codes before buying. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Which ones</button></div>` : ''}
         ${l.fba_eligible === false ? `<div class="hz-banner"><b>! You can't send this to FBA right now.</b> Amazon's eligibility check says it isn't eligible${(l.fba_reasons || []).length ? ` (${(l.fba_reasons || []).map(esc).join(', ')})` : ''}. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Why?</button></div>`
           : l.fba_eligible === true && !l.transparency ? `<div class="hz-banner ok"><b>✓ Amazon says you can send this to FBA.</b></div>` : ''}
         ${(l.same_day_n || 0) > 1 ? `<div class="hz-banner warn"><b>Entered ${l.same_day_n} times on ${esc(fmtDate(l.lead_date))}.</b> Check it's not a duplicate. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">See them</button></div>` : ''}

@@ -332,7 +332,8 @@ async def create_lead(lead: LeadIn) -> dict:
     and give the reasons (fba_reasons codes, e.g. FBA_INB_0007 = under Dangerous Goods (hazmat) review, needs an SDS or
     exemption sheet; FBA_INB_0050 = no US fulfillment center can receive it). If transparency is set, Amazon has told the
     user the ASIN is enrolled in Transparency: units without Transparency codes are rejected at the warehouse, so warn
-    them not to buy it for FBA."""
+    them not to buy it for FBA. If tp_brand lists ASINs, the brand has other ASINs enrolled in Transparency: warn that this
+    one may be enrolled too (check the product for a Transparency code before buying)."""
     actor = await _actor("editor", tab="leads")
     return await L.create_lead(actor, lead.model_dump(exclude_none=True))
 

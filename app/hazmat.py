@@ -67,6 +67,7 @@ async def keepa_products(asins: list[str]) -> tuple[dict, int | None]:
         hz = p.get("hazardousMaterials") or []
         out[p.get("asin")] = {
             "title": (p.get("title") or "").strip() or None,
+            "brand": (p.get("brand") or "").strip() or None,
             "hazmat": bool(hz), "hazmat_info": hz,
             "fba_ever": _ever(csv[34] if len(csv) > 34 else None) or _ever(csv[10] if len(csv) > 10 else None),
             "amazon_ever": _ever(csv[0] if len(csv) > 0 else None),
@@ -84,11 +85,12 @@ async def save(infos: dict) -> None:
             for asin, x in infos.items():
                 lv = level_of(x["hazmat"], x["fba_ever"], x["amazon_ever"])
                 await conn.execute(
-                    "INSERT INTO asin_flags (asin, hazmat, hazmat_info, fba_ever, amazon_ever, level, title, checked_at) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,now()) ON CONFLICT (asin) DO UPDATE SET hazmat=EXCLUDED.hazmat, "
+                    "INSERT INTO asin_flags (asin, hazmat, hazmat_info, fba_ever, amazon_ever, level, title, brand, checked_at, brand_checked_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,now(),now()) ON CONFLICT (asin) DO UPDATE SET hazmat=EXCLUDED.hazmat, "
                     "hazmat_info=EXCLUDED.hazmat_info, fba_ever=EXCLUDED.fba_ever, amazon_ever=EXCLUDED.amazon_ever, "
-                    "level=EXCLUDED.level, title=COALESCE(EXCLUDED.title, asin_flags.title), checked_at=now()",
-                    (asin, x["hazmat"], json.dumps(x["hazmat_info"]), x["fba_ever"], x["amazon_ever"], lv, x["title"]))
+                    "level=EXCLUDED.level, title=COALESCE(EXCLUDED.title, asin_flags.title), "
+                    "brand=COALESCE(EXCLUDED.brand, asin_flags.brand), checked_at=now(), brand_checked_at=now()",
+                    (asin, x["hazmat"], json.dumps(x["hazmat_info"]), x["fba_ever"], x["amazon_ever"], lv, x["title"], x.get("brand")))
             ids = []
             cur = await conn.execute("SELECT id FROM leads WHERE upper(btrim(asin)) = ANY(%s) LIMIT 200", (list(infos),))
             ids = [str(r["id"]) for r in await cur.fetchall()]
@@ -185,3 +187,46 @@ async def backfill_loop() -> None:
             status["last_error"] = str(e)
             log.exception("hazmat backfill failed")
         await asyncio.sleep(90 if n else 900)   # keep going batch by batch while there's work; else check every 15 min
+
+
+# ---------------------------------------------------------------- Keepa brand fill (for the Transparency brand warning)
+async def brand_backfill_once() -> int:
+    """Keepa brand for Transparency ASINs and recent-lead ASINs that have never had one looked up (1 token each)."""
+    now = datetime.now(TZ)
+    if QUIET_HOURS[0] <= now.hour < QUIET_HOURS[1]:
+        return 0
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT a FROM (SELECT DISTINCT asin a, 0 p FROM transparency_notices "
+            "UNION ALL SELECT DISTINCT upper(btrim(asin)), 1 FROM leads WHERE lead_date >= %s AND length(btrim(asin)) = 10) x "
+            "LEFT JOIN asin_flags f ON f.asin = x.a WHERE f.brand_checked_at IS NULL GROUP BY a ORDER BY min(p), a LIMIT %s",
+            (now.date() - timedelta(days=LOOKBACK_DAYS), BATCH))
+        asins = [r["a"] for r in await cur.fetchall()]
+    if not asins:
+        return 0
+    tl = await _tokens()
+    if tl is None or tl < TOKEN_FLOOR + len(asins):
+        log.info("brand fill waiting for Keepa tokens (%s left)", tl)
+        return 0
+    infos, tl = await keepa_products(asins)
+    await save(infos)
+    if len(infos) < len(asins):   # Keepa didn't know some ASINs: don't ask again
+        async with db.pool.connection() as conn:
+            await conn.execute("INSERT INTO asin_flags (asin, brand_checked_at) SELECT unnest(%s::text[]), now() "
+                               "ON CONFLICT (asin) DO UPDATE SET brand_checked_at=now()", ([a for a in asins if a not in infos],))
+            await conn.commit()
+    log.info("brand fill: %s ASINs, %s brands, %s tokens left", len(asins), sum(1 for x in infos.values() if x.get("brand")), tl)
+    return len(asins)
+
+
+async def brand_backfill_loop() -> None:
+    if not KEEPA_KEY:
+        return
+    await asyncio.sleep(75)
+    while True:
+        try:
+            n = await brand_backfill_once()
+        except Exception:
+            n = 0
+            log.exception("brand fill failed")
+        await asyncio.sleep(90 if n else 1800)

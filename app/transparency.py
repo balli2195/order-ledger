@@ -111,3 +111,19 @@ async def list_all() -> dict:
         cur = await conn.execute("SELECT max(email_date) d, count(DISTINCT ref) n FROM transparency_notices WHERE source='email'")
         m = await cur.fetchone()
     return {"asins": rows, "latest_email": m["d"].isoformat() if m["d"] else None, "emails": m["n"]}
+
+
+async def brand_matches(asin: str) -> list[dict]:
+    """Transparency ASINs (other than this one) whose brand matches this ASIN's Hub lead brand or Keepa brand."""
+    a = (asin or "").strip().upper()
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            "WITH mine AS (SELECT brand_key(b) k FROM leads l, unnest(l.brands) b WHERE upper(btrim(l.asin)) = %s "
+            "  UNION SELECT brand_key(brand) FROM asin_flags WHERE asin = %s), "
+            "hit AS (SELECT tb.asin, string_agg(DISTINCT tb.name, ' / ') AS brand FROM transparency_brands tb "
+            "  WHERE tb.key IN (SELECT k FROM mine WHERE length(k) >= 3) AND tb.asin <> %s GROUP BY tb.asin) "
+            "SELECT h.asin, h.brand, s.title, s.first_email, s.last_email, s.effective_date, s.units_rejected "
+            "FROM hit h JOIN (" + SUMMARY_SQL + " GROUP BY asin) s ON s.asin = h.asin "
+            "ORDER BY s.last_email DESC NULLS LAST, h.asin LIMIT 50",
+            (a, a, a))
+        return [_j(r) for r in await cur.fetchall()]

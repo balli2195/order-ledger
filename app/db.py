@@ -17,7 +17,8 @@ async def open_pool() -> AsyncConnectionPool:
         DATABASE_URL,
         min_size=1,
         max_size=int(os.environ.get("DB_POOL_MAX", "8")),
-        kwargs={"row_factory": dict_row, "autocommit": False},
+        # JIT compiling made the Leads list ~30x slower (0.8 s vs 30 ms) once it got the Transparency brand columns
+        kwargs={"row_factory": dict_row, "autocommit": False, "options": "-c jit=off"},
         open=False,
     )
     await pool.open(wait=True, timeout=30)
@@ -332,6 +333,20 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE transparency_notices DROP CONSTRAINT transparency_notices_kind_check;
     ALTER TABLE transparency_notices ADD CONSTRAINT transparency_notices_kind_check CHECK (kind IN ('enrolled', 'rejected', 'removed'));
+    """,    # 18: Keepa brand per ASIN, and the brands of Transparency ASINs (Hub lead brands + Keepa brand), so leads of the
+            #     same brand get a warning (Nick, Oct 30 2026)
+    r"""
+    ALTER TABLE asin_flags ADD COLUMN brand text, ADD COLUMN brand_checked_at timestamptz;
+    CREATE FUNCTION brand_key(t text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+        SELECT NULLIF(regexp_replace(regexp_replace(regexp_replace(lower(COALESCE(t, '')), '&', 'and', 'g'),
+               '\m(the|beauty|cosmetics|skincare|new york)\M', ' ', 'g'), '[^a-z0-9]', '', 'g'), '')
+    $$;
+    CREATE VIEW transparency_brands AS
+        SELECT DISTINCT t.asin, k.key, k.name FROM (SELECT DISTINCT asin FROM transparency_notices) t
+        CROSS JOIN LATERAL (
+            SELECT brand_key(b) AS key, b AS name FROM leads l, unnest(l.brands) b WHERE upper(btrim(l.asin)) = t.asin
+            UNION SELECT brand_key(f.brand), f.brand FROM asin_flags f WHERE f.asin = t.asin
+        ) k WHERE length(k.key) >= 3;
     """,
 ]
 

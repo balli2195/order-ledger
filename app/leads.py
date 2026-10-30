@@ -177,10 +177,13 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     limit = max(1, min(int(limit), 1000))
     async with db.pool.connection() as conn:
         cur = await conn.execute(
+            f"WITH tb AS MATERIALIZED (SELECT asin, key FROM transparency_brands) "
             f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, "
             f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
             f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
-            f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency FROM leads l "
+            f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency, "
+            f"(SELECT array_agg(DISTINCT tb.asin) FROM tb WHERE tb.asin <> upper(btrim(l.asin)) AND tb.key IN "
+            f"(SELECT brand_key(b) FROM unnest(l.brands) b UNION SELECT brand_key(hf.brand))) AS tp_brand_asins FROM leads l "
             f"LEFT JOIN asin_flags hf ON hf.asin = upper(btrim(l.asin)) {where} ORDER BY {order} LIMIT %s OFFSET %s",
             bargs + a + [limit, int(offset)],
         )
@@ -245,6 +248,7 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
             lead["same_day_n"] = (await cur.fetchone())["n"]
     if lead.get("asin"):
         lead["transparency"] = await transparency.get(lead["asin"])
+        lead["tp_brand"] = await transparency.brand_matches(lead["asin"])
     return lead
 
 

@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
     listener = asyncio.create_task(live.listener())
     syncer = asyncio.create_task(airtable_sync.loop())
     prepos_task = asyncio.create_task(prepos.nightly_loop())
+    brand_task = asyncio.create_task(hazmat.brand_backfill_loop())   # Keepa brands for the Transparency brand warning
     hazmat_task = asyncio.create_task(sellable.backfill_loop())   # Amazon FBA eligibility (Keepa hazmat comes with title lookups)
     async with mcp.session_manager.run():
         yield
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     syncer.cancel()
     prepos_task.cancel()
     hazmat_task.cancel()
+    brand_task.cancel()
     await db.close_pool()
 
 
@@ -348,7 +350,8 @@ async def api_hazmat(asin: str, request: Request):
                 f[k] = f[k].isoformat()
         f["reason_text"] = [{"code": c, "text": sellable.REASONS.get(c, "")} for c in (f.get("fba_reasons") or [])]
         f["hazmat_reason"] = bool(set(f.get("fba_reasons") or []) & sellable.HAZMAT_CODES)
-    return {"flag": f, "status": sellable.status, "transparency": await transparency.get(asin)}
+    return {"flag": f, "status": sellable.status, "transparency": await transparency.get(asin),
+            "tp_brand": await transparency.brand_matches(asin)}
 
 
 @app.get("/api/transparency")
