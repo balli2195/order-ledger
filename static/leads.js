@@ -53,6 +53,8 @@
     } catch { /* storage blocked */ }
     return DEFAULT_ORDER.slice();
   }
+  function saveSort() { try { localStorage.setItem('leadSort', JSON.stringify({ sort: S.sort, desc: S.desc })); } catch { /* ignore */ } }
+  try { const v = JSON.parse(localStorage.getItem('leadSort') || 'null'); if (v && v.sort) { S.sort = v.sort; S.desc = !!v.desc; } } catch { /* ignore */ }
   function saveOrder() { try { localStorage.setItem(ORDER_KEY, JSON.stringify(S.order)); } catch { /* ignore */ } }
 
   const isHome = () => S.meta?.mode === 'home';
@@ -104,7 +106,7 @@
       const [label, sk, cls] = COLS[k];
       const fk = HEADER_FILTERS[k];
       const fval = fk ? $('#' + fk.input).value : '';
-      const arrow = sk && S.sort === sk ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
+      const arrow = (sk && S.sort === sk) || (fk && S.sort === k) ? `<span class="arrow">${S.desc ? '▼' : '▲'}</span>` : '';
       const ftag = fk ? `<span class="hf-btn ${fval ? 'on' : ''}" aria-label="Filter">${FUNNEL(!!fval)}</span>` : '';
       const attrs = fk ? `data-hfilter="${k}"` : (sk ? `data-sort="${sk}"` : '');
       const tip = fk ? (fval ? `Filtered: ${fk.show(fval)} (click to change)` : 'Click to filter' + (sk ? ' or sort' : '')) : (sk ? 'Click to sort' : '');
@@ -193,8 +195,13 @@
     const el = document.createElement('div'); el.className = 'hpop'; el.dataset.key = key;
     const opt = (v, label) => `<button class="hp-opt ${cur === v ? 'on' : ''}" data-hp-val="${esc(v)}">${esc(label)}</button>`;
     if (key === 'store' || key === 'brand') {
+      const other = key === 'store' ? 'brand' : 'store';
       el.innerHTML = `<input class="hp-text" list="${key === 'store' ? 'dlStores' : 'dlBrands'}" placeholder="Type a ${key} name" value="${esc(cur)}">
-        <div class="hp-foot"><button class="btn small ghost" data-hp-val="">Clear</button><button class="btn small primary" data-hp-apply>Apply</button></div>`;
+        <div class="hp-foot"><button class="btn small ghost" data-hp-val="">Clear</button><button class="btn small primary" data-hp-apply>Apply</button></div>
+        <div class="hp-label">Sort within each day</div>
+        <button class="hp-opt ${S.sort === key && !S.desc ? 'on' : ''}" data-hp-sort="asc" data-hp-key="${key}">A → Z, then ${other}</button>
+        <button class="hp-opt ${S.sort === key && S.desc ? 'on' : ''}" data-hp-sort="desc" data-hp-key="${key}">Z → A, then ${other}</button>
+        ${S.sort === key ? '<button class="hp-opt" data-hp-sort="off">Newest first (default)</button>' : ''}`;
     } else if (key === 'by') {
       el.innerHTML = opt('', 'Anyone') + (S.meta?.sourcers || []).map((x) => opt(x, x)).join('');
     } else if (key === 'band') {
@@ -216,7 +223,12 @@
     el.addEventListener('click', (e) => {
       const v = e.target.closest('[data-hp-val]'); if (v) { setHeaderFilter(key, v.dataset.hpVal); closeHeaderFilter(); return; }
       if (e.target.closest('[data-hp-apply]')) { setHeaderFilter(key, txt.value.trim()); closeHeaderFilter(); return; }
-      const so = e.target.closest('[data-hp-sort]'); if (so) { S.sort = 'band'; S.desc = so.dataset.hpSort === 'desc'; closeHeaderFilter(); load().catch(fail); }
+      const so = e.target.closest('[data-hp-sort]');
+      if (so) {
+        if (so.dataset.hpSort === 'off') { S.sort = 'date'; S.desc = true; }
+        else { S.sort = so.dataset.hpKey || 'band'; S.desc = so.dataset.hpSort === 'desc'; }
+        saveSort(); closeHeaderFilter(); load().catch(fail);
+      }
     });
   }
   document.addEventListener('mousedown', (e) => { if (hPop && !hPop.contains(e.target) && !e.target.closest('th[data-hfilter]')) closeHeaderFilter(); });
@@ -543,7 +555,7 @@
     const hf = t.closest('th[data-hfilter]');
     if (hf && !S.justDragged) { openHeaderFilter(hf); return; }
     const th = t.closest('th[data-sort]');
-    if (th && !S.justDragged) { const k = th.dataset.sort; if (S.sort === k) { if (S.desc === !['asin'].includes(k)) S.desc = !S.desc; else { S.sort = 'date'; S.desc = true; } } else { S.sort = k; S.desc = !['asin'].includes(k); } load().catch(fail); return; }
+    if (th && !S.justDragged) { const k = th.dataset.sort; if (S.sort === k) { if (S.desc === !['asin'].includes(k)) S.desc = !S.desc; else { S.sort = 'date'; S.desc = true; } } else { S.sort = k; S.desc = !['asin'].includes(k); } saveSort(); load().catch(fail); return; }
     const tr = t.closest('#rows tr[data-id]'); if (tr) { openLead(tr.dataset.id); return; }
     if (t.closest('#rows tr.day-row')) return;
     const o = t.closest('[data-open]'); if (o) { openLead(o.dataset.open); return; }

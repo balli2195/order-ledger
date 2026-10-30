@@ -35,6 +35,9 @@ SORTS = {
     "left": "l.left_to_buy {d} NULLS LAST", "band": "l.lead_score_band {d} NULLS LAST", "roi": "l.lead_score_roi {d} NULLS LAST",
     "claude_qty": "l.claude_buy_qty {d} NULLS LAST", "spend": "l.actual_spend {d} NULLS LAST", "asin": "l.asin {d}",
     "updated": "l.updated_at {d}",
+    # store A-Z then brand A-Z within each day (Nick, Oct 30 2026); brand sort is brand then store
+    "store": "lower(l.stores[1]) {d} NULLS LAST, lower(l.brands[1]) {d} NULLS LAST, l.created_at DESC",
+    "brand": "lower(l.brands[1]) {d} NULLS LAST, lower(l.stores[1]) {d} NULLS LAST, l.created_at DESC",
 }
 
 LIST_COLS = (
