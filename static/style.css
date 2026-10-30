@@ -152,11 +152,11 @@ td.promo { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-sp
 
 /* ---------- month tiles */
 .tiles {
-  display: flex; gap: 10px; overflow-x: auto; padding: 12px; background: var(--panel); border: 1px solid var(--line);
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(300px, 1fr); gap: 10px; overflow-x: auto; padding: 12px; background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius); scrollbar-width: thin;
 }
-.tile-pair { display: flex; gap: 0; border: 1px solid var(--line-2); border-radius: 9px; flex: 0 0 auto; background: var(--panel-2); }
-.tile { padding: 9px 14px; min-width: 150px; }
+.tile-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--line-2); border-radius: 9px; background: var(--panel-2); }
+.tile { padding: 9px 14px; min-width: 0; }
 .tile + .tile { border-left: 1px solid var(--line-2); }
 .tile .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .tile .v { font-size: 21px; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px; }
