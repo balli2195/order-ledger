@@ -6,7 +6,8 @@ import json
 import logging
 import os
 import re
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Iterable
 
 import httpx
@@ -168,7 +169,7 @@ def _where(f: dict) -> tuple[list[str], list]:
     return w, a
 
 
-async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit: int = 200, offset: int = 0) -> dict:
+async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit: int = 200, offset: int = 0, day_list: list | None = None) -> dict:
     w, a = _where(filters)
     where = ("WHERE " + " AND ".join(w)) if w else ""
     order = SORTS.get(sort, SORTS["date"]).format(d="DESC" if desc else "ASC")
@@ -194,13 +195,15 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
         )
         totals = jsonable(dict(await cur.fetchone()))
         days = sorted({r["lead_date"] for r in rows if r.get("lead_date")})
+        if day_list: days = sorted(set(days) | set(day_list))   # extra days whose totals the page wants refreshed
         day_totals = {}
         if days:
             w2 = w + ["l.lead_date = ANY(%s::date[])"]
             cur = await conn.execute(
                 f"SELECT l.lead_date, count(*) n, count(*) FILTER (WHERE COALESCE(l.qty_ordered,0)>0) bought, "
                 f"COALESCE(sum(l.qty_ordered),0) units, COALESCE(sum(l.actual_spend),0) actual, "
-                f"COALESCE(sum(l.expected_spend),0) expected FROM leads l WHERE {' AND '.join(w2)} GROUP BY l.lead_date",
+                f"COALESCE(sum(l.expected_spend),0) expected, COALESCE(sum(l.claude_buy_qty * l.cost),0) claude_spend, "
+                f"count(l.claude_buy_qty) claude_n FROM leads l WHERE {' AND '.join(w2)} GROUP BY l.lead_date",
                 a + [days],
             )
             day_totals = {str(r["lead_date"]): jsonable({k: v for k, v in r.items() if k != "lead_date"}) for r in await cur.fetchall()}
@@ -293,7 +296,7 @@ async def create_lead(actor: Actor, data: dict) -> dict:
         raise LedgerError("A lead needs at least an ASIN or a store link")
     if f.get("asin") and not re.fullmatch(r"[A-Z0-9]{10}", f["asin"]):
         raise LedgerError(f"ASIN should be 10 letters/digits (got {f['asin']!r})")
-    f.setdefault("lead_date", date.today())
+    f.setdefault("lead_date", datetime.now(ZoneInfo("America/Chicago")).date())
     if f.get("asin") and not f.get("product_name"):
         f["product_name"] = await keepa_title(f["asin"])
         if not f["product_name"]:

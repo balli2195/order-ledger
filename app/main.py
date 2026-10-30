@@ -6,6 +6,7 @@ import contextlib
 import html
 import json
 import logging
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -232,7 +233,11 @@ LEAD_FILTERS = ("q", "asin", "store", "brand", "date_from", "date_to", "sourced_
 async def api_leads(request: Request, sort: str = "date", desc: bool = True, limit: int = 200, offset: int = 0):
     await auth.require(request)
     f = {k: request.query_params.get(k) for k in LEAD_FILTERS if request.query_params.get(k) not in (None, "")}
-    return await L.list_leads(f, sort, desc, limit, offset)
+    dl = []
+    for d in (request.query_params.get("day_totals") or "").split(","):
+        try: dl.append(date.fromisoformat(d.strip()))
+        except ValueError: pass
+    return await L.list_leads(f, sort, desc, limit, offset, dl[:60])
 
 
 @app.get("/api/leads-meta")

@@ -131,7 +131,8 @@
     if (t.units) bits.push(`${num(t.units)} units`);
     if (t.actual) bits.push(`${money(t.actual, 0)} spent`);
     if (t.expected) bits.push(`${money(t.expected, 0)} planned`);
-    return `<tr class="day-row"><td colspan="${S.order.length + 1}"><b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
+    const cs = t.claude_n ? `<span class="day-claude" title="Sum of Claude buy qty × cost for this day's leads">Claude suggested spend <b>${money(t.claude_spend, 0)}</b></span>` : '';
+    return `<tr class="day-row"><td colspan="${S.order.length + 1}">${cs}<b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
   }
 
   function rowHtml(r) {
@@ -525,7 +526,11 @@
         }
       }
       if (!changedVisible && S.offset === 0 && S.sort === 'date') await load();   // probably a new lead at the top
-      else { const p = new URLSearchParams({ ...filters(), limit: 1 }); api('GET', '/api/leads?' + p).then((r) => { S.totals = r.totals; render(); }); }
+      else {
+        const ds = [...new Set((m.ids || []).map((id) => S.byId.get(id)?.lead_date).filter(Boolean))];
+        const p = new URLSearchParams({ ...filters(), limit: 1, day_totals: ds.join(',') });
+        api('GET', '/api/leads?' + p).then((r) => { S.totals = r.totals; S.dayTotals = { ...S.dayTotals, ...(r.days || {}) }; render(); });
+      }
       if (m.src !== 'airtable' && m.by && m.by !== (LG.st.me?.name || LG.st.me?.email)) toast(`${m.by} updated a lead`);
     }
   }

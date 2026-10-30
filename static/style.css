@@ -344,3 +344,5 @@ th.row-act, td.row-act { width: 28px; padding-left: 0 !important; padding-right:
 @media (max-width: 1700px) { .wrap.full th { white-space: normal; line-height: 1.2; vertical-align: bottom; } }
 td.note-cell { max-width: min(180px, 7.4vw); }
 @media (max-width: 1700px) { td.note-cell { max-width: 5.6vw; } }
+tr.day-row .day-claude { float: right; color: var(--muted); }
+tr.day-row .day-claude b { color: var(--ink); margin-left: 4px; }
