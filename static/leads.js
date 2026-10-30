@@ -53,6 +53,10 @@
     } catch { /* storage blocked */ }
     return DEFAULT_ORDER.slice();
   }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#entryOrder')) return;
+    S.sort = 'date'; S.desc = true; saveSort(); closeHeaderFilter(); load().catch(fail);
+  });
   function saveSort() { try { localStorage.setItem('leadSort', JSON.stringify({ sort: S.sort, desc: S.desc })); } catch { /* ignore */ } }
   try { const v = JSON.parse(localStorage.getItem('leadSort') || 'null'); if (v && v.sort) { S.sort = v.sort; S.desc = !!v.desc; } } catch { /* ignore */ }
   function saveOrder() { try { localStorage.setItem(ORDER_KEY, JSON.stringify(S.order)); } catch { /* ignore */ } }
@@ -103,6 +107,7 @@
     const t = S.totals || {};
     $('#summary') && ($('#summary').textContent = `${num(t.n)} leads match · ${num(t.bought)} bought`);
     const selOk = canOrder();
+    const eo = $('#entryOrder'); if (eo) { const on = S.sort === 'date' && S.desc; eo.classList.toggle('on', on); eo.disabled = on; }
     $('#head').innerHTML = (selOk ? `<th class="sel-col"><input type="checkbox" id="selAll" title="Select all shown" ${S.rows.length && S.rows.every((r) => S.sel.has(r.id)) ? 'checked' : ''}></th>` : '') + S.order.map((k) => {
       const [label, sk, cls] = COLS[k];
       const fk = HEADER_FILTERS[k];

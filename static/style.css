@@ -405,3 +405,4 @@ tbody tr.picked { background: var(--accent-soft); }
 .hover-tip { position: absolute; z-index: 80; background: var(--ink); color: var(--panel); font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; box-shadow: var(--shadow); white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
 .hover-tip[hidden] { display: none; }
 #rows td.note-cell { cursor: pointer; }
+#entryOrder:disabled { opacity: .55; cursor: default; }
