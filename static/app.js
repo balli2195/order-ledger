@@ -157,8 +157,52 @@
       <td class="num">${money(o.order_total)}</td><td class="mono">${esc(o.order_ref || '')}</td>
       <td class="notes" title="${esc(o.notes || '')}">${esc(o.notes || '—')}</td>
       <td class="center"><span class="dot ${o.discrepancy ? 'bad' : ''}" title="${esc(discTitle)}"></span></td>
-      <td class="center"><span class="dot ${o.missing.length ? 'bad' : ''}" title="${esc(missTitle)}"></span></td></tr>`;
+      <td class="center"><span class="dot ${o.missing.length ? 'bad' : ''}" title="${esc(missTitle)}"></span></td>
+      <td class="order-act">${can('editor') ? `<button class="row-add" data-add-items="${esc(o.id)}" title="Add items to this order">+ Items</button><button class="row-del" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${TRASH}</button>` : ''}</td></tr>`;
   }
+
+  const TRASH = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>`;
+
+  function confirmDeleteOrder(id) {
+    const o = S.orders.find((x) => x.id === id) || {};
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="cfT">
+      <h3 id="cfT">Delete this order?</h3>
+      <p><b>${esc(o.store || '(no store)')}</b> · ${esc(fmtDate(o.order_date))} · ${money(o.order_total)}${o.order_ref ? `<br><span class="muted mono">${esc(o.order_ref)}</span>` : ''}</p>
+      <p class="muted" style="font-size:13px">This deletes the order and all of its items from Myrddin Hub. It can't be undone.</p>
+      <div class="confirm-actions"><button class="btn" data-cf="no">Cancel</button><button class="btn danger-solid" data-cf="yes">Delete</button></div></div>`;
+    document.body.appendChild(wrap);
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    wrap.querySelector('[data-cf="no"]').focus();
+    wrap.addEventListener('click', async (e) => {
+      if (e.target === wrap || e.target.closest('[data-cf="no"]')) { close(); return; }
+      const yes = e.target.closest('[data-cf="yes"]'); if (!yes) return;
+      yes.disabled = true; yes.textContent = 'Deleting…';
+      try {
+        await api('DELETE', '/api/orders/' + id);
+        close();
+        S.orders = S.orders.filter((x) => x.id !== id);
+        if (S.openId === id) closeDrawer();
+        render(); toast('Order deleted');
+      } catch (err) { yes.disabled = false; yes.textContent = 'Delete'; fail(err); }
+    });
+  }
+
+  async function addItemTo(id) {
+    if (S.openId !== id || $('#drawer').classList.contains('hidden')) await openOrder(id);
+    const o = await api('POST', `/api/orders/${id}/items`, [{ qty_ordered: 1 }]);
+    upsertLocal(o); render(); renderDrawer(o);
+    const rows = $$('#drawer tr[data-item]'); $('input[data-f="asin"]', rows[rows.length - 1])?.focus();
+  }
+
+  document.addEventListener('click', (e) => {
+    const d = e.target.closest('[data-del-order]');
+    if (d) { e.preventDefault(); e.stopPropagation(); confirmDeleteOrder(d.dataset.delOrder); return; }
+    const a = e.target.closest('[data-add-items]');
+    if (a) { e.preventDefault(); e.stopPropagation(); addItemTo(a.dataset.addItems).catch(fail); }
+  }, true);
 
   function renderTiles(base) {
     base = base || filtered();
@@ -445,21 +489,14 @@
           if (v != null && v !== '') { await api('PUT', '/api/settings/daily_target', { value: v }); toast('Daily target updated'); }
           break;
         }
-        case 'add-item': {
-          const o = await api('POST', `/api/orders/${S.openId}/items`, [{ qty_ordered: 1 }]);
-          upsertLocal(o); render(); renderDrawer(o);
-          const rows = $$('#drawer tr[data-item]'); $('input[data-f="asin"]', rows[rows.length - 1])?.focus();
-          break;
-        }
+        case 'add-item': await addItemTo(S.openId); break;
         case 'del-item': {
           const itemTr = btn.closest('tr[data-item]');
           if (btn.dataset.armed) { await api('DELETE', '/api/items/' + itemTr.dataset.item); }
           else { btn.dataset.armed = '1'; btn.textContent = 'Remove?'; btn.style.color = 'var(--bad)'; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕'; btn.style.color = ''; } }, 3000); }
           break;
         }
-        case 'del-order':
-          $('#delWrap').innerHTML = `<span class="confirm"><span class="muted">Delete this order and its items?</span><button class="btn small" data-act="del-cancel">Keep</button><button class="btn small danger" data-act="del-yes">Delete</button></span>`;
-          break;
+        case 'del-order': confirmDeleteOrder(S.openId); break;
         case 'del-cancel': $('#delWrap').innerHTML = `<button class="btn small danger" data-act="del-order">Delete order</button>`; break;
         case 'del-yes': { const id = S.openId; await api('DELETE', '/api/orders/' + id); closeDrawer(); toast('Order deleted'); break; }
         case 'add-new-row': $('#newItems').insertAdjacentHTML('beforeend', S._blankRow()); break;
