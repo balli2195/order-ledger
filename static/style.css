@@ -380,3 +380,4 @@ td.row-act .icon-act { width: 28px; height: 28px; }
 .table-wrap tbody tr:last-child td:first-child { border-bottom-left-radius: calc(var(--radius) - 1px); }
 .table-wrap tbody tr:last-child td:last-child { border-bottom-right-radius: calc(var(--radius) - 1px); }
 .table-wrap tbody tr:last-child td { border-bottom: 0; }
+td.store-name { font-weight: 600; }
