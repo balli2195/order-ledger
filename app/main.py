@@ -43,6 +43,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
+@app.middleware("http")
+async def no_stale_pages(request: Request, call_next):
+    """Pages and their scripts/styles: browsers re-check on every load (cheap 304 via ETag), so updates show at once."""
+    resp = await call_next(request)
+    p = request.url.path
+    if p.startswith("/static/") or p in ("/", "/leads", "/stores", "/login", "/invite"):
+        resp.headers.setdefault("Cache-Control", "no-cache")
+    return resp
+
+
 @app.exception_handler(o.LedgerError)
 async def ledger_error(_: Request, exc: o.LedgerError):
     return JSONResponse({"detail": str(exc)}, status_code=400)
