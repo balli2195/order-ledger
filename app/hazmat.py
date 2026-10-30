@@ -155,7 +155,9 @@ async def backfill_once() -> int:
     tl = await _tokens()
     status["tokens_left"] = tl
     if tl is None or tl < TOKEN_FLOOR + len(asins):
-        status["paused"] = f"waiting for Keepa tokens ({tl} left)"
+        if status.get("paused") != "tokens":
+            log.info("hazmat backfill waiting for Keepa tokens (%s left, %s ASINs to check)", tl, len(asins))
+        status["paused"] = "tokens"
         return 0
     status["paused"] = None
     infos, tl = await keepa_products(asins)
@@ -171,6 +173,7 @@ async def backfill_loop() -> None:
     if not KEEPA_KEY:
         log.info("KEEPA_KEY not set; hazmat checks off")
         return
+    log.info("hazmat backfill starts in 60 s")
     await asyncio.sleep(60)
     while True:
         try:

@@ -192,7 +192,8 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
         )
         totals = jsonable(dict(await cur.fetchone()))
         days = sorted({r["lead_date"] for r in rows if r.get("lead_date")})
-        if day_list: days = sorted(set(days) | set(day_list))   # extra days whose totals the page wants refreshed
+        if day_list:   # extra days whose totals the page wants refreshed (rows carry dates as text)
+            days = sorted(set(days) | {d.isoformat() if hasattr(d, "isoformat") else str(d) for d in day_list})
         day_totals = {}
         if days:
             w2 = w + ["l.lead_date = ANY(%s::date[])"]
