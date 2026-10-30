@@ -357,7 +357,7 @@
   }
 
   async function openOrder(id) {
-    S.openId = id; S.isNew = false;
+    S.openId = id; S.isNew = false; $('#drawer').classList.remove('narrow');
     $$('#rows tr').forEach((tr) => tr.classList.toggle('sel', tr.dataset.id === id));
     history.replaceState(null, '', '#order=' + id);
     openDrawerShell();
@@ -499,41 +499,33 @@
   function newOrder() {
     S.openId = null; S.isNew = true; openDrawerShell();
     const today = new Date(); const iso = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-    const blankRow = () => `<tr class="new-item">
-      <td class="c-asin"><input class="mono" data-f="asin" placeholder="ASIN"></td><td><input data-f="product_title" placeholder="Title"></td>
-      <td class="c-shade"><input data-f="shade" placeholder="Shade"></td><td class="c-set"><input data-f="set_type" list="dlSets" placeholder="Set type"></td>
-      <td class="c-qty"><input data-f="qty_ordered" class="num" value="1"></td><td class="c-cost"><input data-f="cost_per_unit" class="num" placeholder="0.00"></td>
-      <td><button class="icon-btn" data-act="drop-new-row">✕</button></td></tr>`;
+    $('#drawer').classList.add('narrow');
     $('#drawer').innerHTML = `
-      <div class="drawer-head"><h2>New order</h2><button class="icon-btn" data-act="close" style="font-size:20px">✕</button></div>
+      <div class="drawer-head"><h2>New order</h2><button class="icon-btn" data-act="close" title="Close (Esc)" style="font-size:20px">✕</button></div>
       <div class="drawer-body">
         <form id="newForm">
-        <div class="grid">
+        <div class="grid two">
           <label>Date<input type="date" name="order_date" value="${iso}" required></label>
-          <label>Store<input name="store" list="dlStores" required autofocus></label>
+          <label>Store<input name="store" list="dlStores" required autofocus placeholder="Store"></label>
+          <label>Email<input name="email" list="dlEmails" value="${esc(S.meta.emails?.[0] || '')}" placeholder="you@example.com"></label>
           <label>Order total<input name="order_total" class="num" inputmode="decimal" placeholder="0.00"></label>
-          <label>Order ID<input name="order_ref" class="mono"></label>
-          <label style="grid-column: span 2">Email<input name="email" list="dlEmails" value="${esc(S.meta.emails?.[0] || '')}"></label>
-          <label class="wide">Notes<textarea name="notes" rows="2"></textarea></label>
+          <label class="wide">Order ID<input name="order_ref" class="mono" placeholder="Order ID"></label>
+          <label class="wide">Notes<textarea name="notes" rows="3" placeholder="Notes"></textarea></label>
         </div>
-        <div class="section-title">Items</div>
-        <div class="items"><table><thead><tr><th>ASIN</th><th>Title</th><th>Shade</th><th>Set type</th><th class="num">Qty</th><th class="num">Cost/unit</th><th></th></tr></thead>
-          <tbody id="newItems">${blankRow()}</tbody></table></div>
-        <div style="margin-top:8px;display:flex;gap:8px"><button type="button" class="btn small" data-act="add-new-row">+ Another item</button>
-          <span class="spacer"></span><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Save order</button></div>
+        <div class="dlg-actions"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Add order</button></div>
         </form>
       </div>`;
+    setTimeout(() => $('#newForm [name="store"]')?.focus(), 30);
     $('#newForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fd = new FormData(e.target); const body = Object.fromEntries(fd.entries());
-      body.items = $$('#newItems tr').map((tr) => Object.fromEntries($$('input', tr).map((i) => [i.dataset.f, i.value])))
-        .filter((it) => (it.asin || it.product_title || it.cost_per_unit));
+      const body = Object.fromEntries(new FormData(e.target).entries());
+      const btn = e.target.querySelector('[type="submit"]'); btn.disabled = true; btn.textContent = 'Adding…';
       try {
         const o = await api('POST', '/api/orders', body);
-        upsertLocal(o); render(); toast('Order saved'); openOrder(o.id);
-      } catch (err) { fail(err); }
+        upsertLocal(o); render(); toast('Order added — now add its items');
+        await addItemTo(o.id);   // the order dialog opens with the item row ready
+      } catch (err) { fail(err); btn.disabled = false; btn.textContent = 'Add order'; }
     });
-    S._blankRow = blankRow;
   }
 
   // ------------------------------------------------------------ modals
@@ -640,8 +632,6 @@
         case 'dup-order': duplicateOrder(S.openId); break;
         case 'del-cancel': $('#delWrap').innerHTML = `<button class="btn small danger" data-act="del-order">Delete order</button>`; break;
         case 'del-yes': { const id = S.openId; await api('DELETE', '/api/orders/' + id); closeDrawer(); toast('Order deleted'); break; }
-        case 'add-new-row': $('#newItems').insertAdjacentHTML('beforeend', S._blankRow()); break;
-        case 'drop-new-row': btn.closest('tr').remove(); break;
         case 'reset': { const { link } = await api('POST', `/api/users/${btn.closest('tr').dataset.user}/reset`); if (!$('#inviteOut')) break; showLink(link); toast('New sign-in link created below'); break; }
         case 'toggle': { const uid = btn.closest('tr').dataset.user; const enable = btn.textContent.trim() === 'Enable'; await api('PATCH', `/api/users/${uid}`, { active: enable }); await showUsers(); break; }
       }
