@@ -188,13 +188,12 @@
     const store = [...storeCount].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
     const stores = [...storeCount.keys()];
     const today = todayIso();
-    const qtyOf = (l) => (l.left_to_buy > 0 ? l.left_to_buy : (l.buy_qty || ''));
     const itemRow = (l) => `<tr data-lead="${esc(l.id)}">
       <td class="c-asin"><input class="mono" data-f="asin" value="${esc(l.asin || '')}" maxlength="10"></td>
       <td><input data-f="product_title" value="${esc(l.product_name || '')}" placeholder="Title"></td>
       <td class="c-shade"><input data-f="shade" placeholder="Shade"></td>
       <td class="c-set"><input data-f="set_type" list="coSets" placeholder="Set type"></td>
-      <td class="c-qty"><input data-f="qty_ordered" class="num" inputmode="numeric" value="${esc(qtyOf(l))}"></td>
+      <td class="c-qty"><input data-f="qty_ordered" class="num" inputmode="numeric" required pattern="[0-9]*[1-9][0-9]*" title="Units ordered"></td>
       <td class="c-cost"><input data-f="cost_per_unit" class="num" inputmode="decimal" placeholder="0.00"></td>
       <td><button type="button" class="icon-btn" data-co-drop title="Remove this item">✕</button></td></tr>`;
     const wrap = document.createElement('div'); wrap.className = 'confirm-back co-back';
@@ -232,13 +231,21 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(form).entries());
-      body.items = $$('#coItems tr').map((tr) => Object.fromEntries($$('input', tr).map((i) => [i.dataset.f, i.value.trim()])))
-        .filter((it) => it.asin || it.product_title)
-        .map((it) => Object.fromEntries(Object.entries(it).filter(([, v]) => v !== '')));
+      const rows = $$('#coItems tr').map((tr) => ({ lead: tr.dataset.lead, it: Object.fromEntries($$('input', tr).map((i) => [i.dataset.f, i.value.trim()])) }))
+        .filter((x) => x.it.asin || x.it.product_title);
+      body.items = rows.map((x) => Object.fromEntries(Object.entries(x.it).filter(([, v]) => v !== '')));
       if (!body.items.length) { toast('Add at least one item', true); return; }
       const btn = form.querySelector('[type="submit"]'); btn.disabled = true; btn.textContent = 'Creating…';
       try {
         const o = await api('POST', '/api/orders', body);
+        // Add each item's qty to its lead's Ordered (on top of anything already ordered)
+        btn.textContent = 'Updating leads…';
+        const add = new Map(); rows.forEach((x) => add.set(x.lead, (add.get(x.lead) || 0) + (parseInt(x.it.qty_ordered, 10) || 0)));
+        try {
+          const changes = [];
+          for (const [id, q] of add) { if (!q) continue; const cur = await api('GET', '/api/leads/' + id); changes.push({ id, qty_ordered: (cur.qty_ordered || 0) + q }); }
+          if (changes.length) await api('PATCH', '/api/leads', changes);
+        } catch (err) { alert(`The order was created, but the leads' Ordered numbers couldn't be updated (${err.message || err}). Please fill them in by hand.`); }
         close(); S.sel.clear();
         location.href = '/#order=' + encodeURIComponent(o.id);   // open it on the Orders page
       } catch (err) { btn.disabled = false; btn.textContent = 'Create order'; fail(err); }
