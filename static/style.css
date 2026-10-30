@@ -437,8 +437,9 @@ tbody tr.picked { background: var(--accent-soft); }
 td.prod .prod-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 td.prod .prod-sub { display: flex; align-items: center; gap: 6px; margin-top: 3px; white-space: nowrap; overflow: hidden; }
 td.prod .prod-sub .asin-btn { padding: 1px 6px; font-size: 11.5px; }
-td.prod .prod-sub .hz-badge, td.prod .prod-sub .ok-badge { margin-left: -2px; }
-td.prod .prod-sub .pill-list { overflow: hidden; text-overflow: ellipsis; }
+td.prod .prod-sub .hz-badge, td.prod .prod-sub .ok-badge { margin-left: 0; flex: 0 0 auto; }
+td.prod .prod-sub .pill-list a.pill-link, td.prod .prod-sub .pill-list span { margin-right: 0; }
+td.prod .prod-sub .pill-list { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .wrap.full td.prod { max-width: min(560px, 24vw); }
 @media (max-width: 1700px) { .wrap.full td.prod { max-width: 21vw; } }
 @media (max-width: 1500px) { .wrap.full td.prod { max-width: 19vw; } }
