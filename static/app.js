@@ -354,13 +354,18 @@
   function describe(c) {
     const fields = (obj) => Object.keys(obj || {}).filter((k) => !['id', 'order_id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'legacy_id'].includes(k));
     if (c.entity === 'batch') return `imported ${c.after?.orders ?? ''} orders, ${c.after?.items ?? ''} items`;
-    if (c.entity === 'setting') return `set daily target to ${moneyWhole(c.after?.daily_target)}`;
-    const what = c.entity === 'item' ? `item ${esc(c.after?.asin || c.before?.asin || '')}` : 'order';
+    if (c.entity === 'setting') return c.after?.daily_target != null ? `set daily target to ${moneyWhole(c.after.daily_target)}` : c.after?.leads_mode === 'home' ? 'made Myrddin Hub the home for leads' : 'changed a setting';
+    if (c.entity === 'store' || c.entity === 'brand') return `marked ${c.entity} ${esc(c.after?.name || '')} as ${c.after?.can_source ? 'OK to source' : "can't source"}`;
+    let what;
+    if (c.entity === 'lead') {
+      const asin = c.lead_asin || c.after?.asin || c.before?.asin || '';
+      what = c.action === 'delete' || !c.entity_id ? `lead ${esc(asin)}` : `lead <a href="/leads#lead=${esc(c.entity_id)}" class="mono">${esc(asin || '(no ASIN)')}</a>`;
+    } else what = c.entity === 'item' ? `item ${esc(c.after?.asin || c.before?.asin || '')}` : 'order';
     if (c.action === 'create') return `added ${what}`;
     if (c.action === 'delete') return `deleted ${what}`;
     return `changed ${what}: ` + fields(c.after).map((k) => `${esc(k.replace(/_/g, ' '))} ${esc(fmtVal(c.before?.[k]))} → ${esc(fmtVal(c.after?.[k]))}`).join('; ');
   }
-  const fmtVal = (v) => v == null || v === '' ? '∅' : String(v);
+  const fmtVal = (v) => { if (v == null || v === '') return '∅'; const t = Array.isArray(v) ? v.join(', ') : String(v); return t.length > 80 ? t.slice(0, 80) + '…' : t; };
 
   function changeLine(c) {
     const when = new Date(c.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
