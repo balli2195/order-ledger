@@ -158,10 +158,49 @@
       <td class="notes" title="${esc(o.notes || '')}">${esc(o.notes || '—')}</td>
       <td class="center"><span class="dot ${o.discrepancy ? 'bad' : ''}" title="${esc(discTitle)}"></span></td>
       <td class="center"><span class="dot ${o.missing.length ? 'bad' : ''}" title="${esc(missTitle)}"></span></td>
-      <td class="order-act">${can('editor') ? `<button class="row-add" data-add-items="${esc(o.id)}" title="Add items to this order">+ Items</button><button class="row-del" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${TRASH}</button>` : ''}</td></tr>`;
+      <td class="order-act">${can('editor') ? `<button class="row-add" data-add-items="${esc(o.id)}" title="Add items to this order">+ Items</button><button class="row-del row-dup" data-dup-order="${esc(o.id)}" title="Duplicate order" aria-label="Duplicate order">${COPY}</button><button class="row-del" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${TRASH}</button>` : ''}</td></tr>`;
   }
 
   const TRASH = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>`;
+
+  const COPY = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>`;
+
+  async function duplicateOrder(id) {
+    let o = S.orders.find((x) => x.id === id);
+    if (!o || S.openId === id) { try { o = await api('GET', '/api/orders/' + id); } catch (e) { fail(e); return; } }
+    const nItems = o.item_count ?? (o.items || []).length;
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<form class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="dpT">
+      <h3 id="dpT">Duplicate order</h3>
+      <p><b>${esc(o.store || '')}</b> · ${esc(fmtDate(o.order_date))} · ${money(o.order_total)}${o.order_ref ? ` · <span class="mono">${esc(o.order_ref)}</span>` : ''}<br>
+        <span class="muted">${nItems} item line${nItems === 1 ? '' : 's'}${o.email ? ' · ' + esc(o.email) : ''}</span></p>
+      <label style="display:flex;align-items:center;gap:10px;margin:12px 0 4px">How many copies?
+        <input name="count" type="number" min="1" max="50" step="1" value="1" required style="width:80px" class="num"></label>
+      <p class="muted" style="font-size:13px">Each copy gets the same date, store, email, order total and items. Order ID and notes start blank, so add each copy's own order ID.</p>
+      <div class="confirm-actions"><button type="button" class="btn" data-cf="no">Cancel</button><button class="btn primary" type="submit" data-cf="yes">Make copies</button></div></form>`;
+    document.body.appendChild(wrap);
+    const form = wrap.querySelector('form'), inp = form.elements.count;
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    inp.select(); inp.focus();
+    const yes = form.querySelector('[data-cf="yes"]');
+    const upd = () => { const n = Number(inp.value); yes.textContent = n >= 1 ? `Make ${n} cop${n === 1 ? 'y' : 'ies'}` : 'Make copies'; };
+    inp.addEventListener('input', upd); upd();
+    wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-cf="no"]')) close(); });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const n = Math.floor(Number(inp.value));
+      if (!(n >= 1 && n <= 50)) { toast('Enter a number from 1 to 50', true); inp.focus(); return; }
+      yes.disabled = true; yes.textContent = 'Copying…';
+      try {
+        const { ids } = await api('POST', `/api/orders/${id}/duplicate`, { count: n });
+        close(); await loadOrders();
+        toast(`Made ${ids.length} cop${ids.length === 1 ? 'y' : 'ies'}`);
+        ids.forEach((x) => flashRow(x));
+      } catch (err) { yes.disabled = false; upd(); fail(err); }
+    });
+  }
 
   function confirmDeleteOrder(id) {
     const o = S.orders.find((x) => x.id === id) || {};
@@ -213,6 +252,8 @@
   }
 
   document.addEventListener('click', (e) => {
+    const dup = e.target.closest('[data-dup-order]');
+    if (dup) { e.preventDefault(); e.stopPropagation(); duplicateOrder(dup.dataset.dupOrder); return; }
     const d = e.target.closest('[data-del-order]');
     if (d) { e.preventDefault(); e.stopPropagation(); confirmDeleteOrder(d.dataset.delOrder); return; }
     const a = e.target.closest('[data-add-items]');
@@ -304,7 +345,7 @@
     $('#drawer').innerHTML = `
       <div class="drawer-head">
         <h2>${esc(o.store)} <span class="muted mono" style="font-size:15px">${esc(o.order_ref || '')}</span></h2>
-        ${can('editor') ? `<span id="delWrap"><button class="btn small danger" data-act="del-order">Delete order</button></span>` : ''}
+        ${can('editor') ? `<button class="btn small" data-act="dup-order">Duplicate</button><span id="delWrap"><button class="btn small danger" data-act="del-order">Delete order</button></span>` : ''}
         <button class="icon-btn" data-act="close" title="Close (Esc)" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">
@@ -534,6 +575,7 @@
           break;
         }
         case 'del-order': confirmDeleteOrder(S.openId); break;
+        case 'dup-order': duplicateOrder(S.openId); break;
         case 'del-cancel': $('#delWrap').innerHTML = `<button class="btn small danger" data-act="del-order">Delete order</button>`; break;
         case 'del-yes': { const id = S.openId; await api('DELETE', '/api/orders/' + id); closeDrawer(); toast('Order deleted'); break; }
         case 'add-new-row': $('#newItems').insertAdjacentHTML('beforeend', S._blankRow()); break;

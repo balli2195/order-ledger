@@ -177,6 +177,12 @@ async def api_create_order(request: Request, body: dict = Body(...)):
     return await o.create_order(web_actor(user), body, items)
 
 
+@app.post("/api/orders/{order_id}/duplicate")
+async def api_duplicate_order(order_id: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor")
+    return {"ids": await o.duplicate_order(web_actor(user), order_id, body.get("count", 1))}
+
+
 @app.patch("/api/orders/{order_id}")
 async def api_update_order(order_id: str, request: Request, body: dict = Body(...)):
     user = await auth.require(request, "editor")

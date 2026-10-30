@@ -358,6 +358,38 @@ async def create_order(actor: Actor, data: dict, items: Iterable[dict] = ()) -> 
     return await get_order(oid)
 
 
+async def duplicate_order(actor: Actor, order_id, count: int) -> list[str]:
+    """Make `count` copies of an order: date, store, email, order total and all items. Order ID and notes start blank."""
+    try:
+        count = int(count)
+    except Exception:
+        raise LedgerError("How many copies? Give a whole number")
+    if not 1 <= count <= 50:
+        raise LedgerError("Make between 1 and 50 copies at a time")
+    src = await get_order(order_id)
+    if not src:
+        raise LedgerError("Order not found")
+    keep = ("asin", "product_title", "shade", "set_type", "qty_ordered", "cost_per_unit")
+    items = [{k: i.get(k) for k in keep} for i in src.get("items") or []]
+    new_ids = []
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            for _ in range(count):
+                cur = await conn.execute(
+                    "INSERT INTO orders (order_date, store, email, order_total, created_by, updated_by) "
+                    "VALUES (%s,%s,%s,%s,%s,%s) RETURNING *",
+                    (src["order_date"], src["store"], src.get("email"), src.get("order_total"), actor.user_id, actor.user_id),
+                )
+                order = await cur.fetchone()
+                oid = order["id"]
+                await _audit(conn, actor, "create", "order", oid, oid, None, dict(order, duplicated_from=src.get("order_ref") or str(src["id"])))
+                for it in items:
+                    await _insert_item(conn, actor, oid, it)
+                await _notify(conn, "upsert", oid, actor.label, actor.source)
+                new_ids.append(str(oid))
+    return new_ids
+
+
 async def update_order(actor: Actor, order_id, data: dict) -> dict:
     fields = clean_order(data, partial=True)
     if not fields:
@@ -400,7 +432,7 @@ async def delete_order(actor: Actor, order_id) -> dict:
 async def _insert_item(conn, actor: Actor, order_id, it: dict) -> dict:
     cols = ["order_id"] + list(it)
     cur = await conn.execute(
-        f"INSERT INTO order_items ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING *",
+        f"INSERT INTO order_items ({', '.join(cols)}, created_at) VALUES ({', '.join(['%s'] * len(cols))}, clock_timestamp()) RETURNING *",  # lines keep the order they were added in
         [order_id] + list(it.values()),
     )
     row = await cur.fetchone()

@@ -352,3 +352,5 @@ tr.day-row .day-claude b { color: var(--ink); margin-left: 4px; }
 .order-act .row-del { vertical-align: middle; }
 .items tr.new-item td { background: var(--panel-2); border-top: 1px dashed var(--line); }
 .items tr.new-item input { background: var(--panel); }
+.row-dup:hover { color: var(--accent) !important; background: var(--accent-soft) !important; border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
+.drawer-head .btn.small + #delWrap { margin-left: 6px; }
