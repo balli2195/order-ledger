@@ -48,19 +48,12 @@ LIST_COLS = (
 
 
 async def keepa_title(asin: str) -> str | None:
-    """Amazon product title for an ASIN from Keepa (about 1 token). None if unavailable."""
+    """Amazon product title for an ASIN from Keepa (1 token). The same call caches the ASIN's hazmat flags."""
     if not KEEPA_KEY or not asin:
         return None
-    try:
-        async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.get("https://api.keepa.com/product",
-                            params={"key": KEEPA_KEY, "domain": 1, "asin": asin, "history": 0})
-        prods = r.json().get("products") or []
-        title = (prods[0].get("title") or "").strip() if prods else ""
-        return title or None
-    except Exception as e:
-        log.warning("keepa title lookup failed for %s: %s", asin, e)
-        return None
+    from . import hazmat   # local import: hazmat imports db only
+    info = (await hazmat.check([asin])).get((asin or "").strip().upper()) or {}
+    return info.get("title")
 
 
 # ---------------------------------------------------------------- settings
@@ -184,7 +177,8 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     limit = max(1, min(int(limit), 1000))
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {LIST_COLS}, {bsql} FROM leads l {where} ORDER BY {order} LIMIT %s OFFSET %s",
+            f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level FROM leads l "
+            f"LEFT JOIN asin_flags hf ON hf.asin = upper(btrim(l.asin)) {where} ORDER BY {order} LIMIT %s OFFSET %s",
             bargs + a + [limit, int(offset)],
         )
         rows = [jsonable(dict(r)) for r in await cur.fetchall()]
@@ -236,6 +230,10 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
                 (lead["asin"], r["id"]),
             )
             lead["same_asin"] = [jsonable(dict(x)) for x in await cur.fetchall()]
+            cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at FROM asin_flags WHERE asin=upper(btrim(%s))", (lead["asin"],))
+            hz = await cur.fetchone()
+            lead["hazmat"] = jsonable(dict(hz)) if hz else None
+            lead["hazmat_level"] = hz["level"] if hz else None
     return lead
 
 
@@ -301,9 +299,13 @@ async def create_lead(actor: Actor, data: dict) -> dict:
         raise LedgerError(f"ASIN should be 10 letters/digits (got {f['asin']!r})")
     f.setdefault("lead_date", datetime.now(ZoneInfo("America/Chicago")).date())
     if f.get("asin") and not f.get("product_name"):
-        f["product_name"] = await keepa_title(f["asin"])
+        f["product_name"] = await keepa_title(f["asin"])   # also caches the hazmat flags
         if not f["product_name"]:
             f.pop("product_name")
+    elif f.get("asin"):
+        from . import hazmat
+        if not await hazmat.is_fresh(f["asin"]):
+            await hazmat.check([f["asin"]])
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await _ensure_names(conn, "stores", f.get("stores", []))
@@ -356,7 +358,17 @@ async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
             await _notify(conn, "upsert", touched, actor.label, actor.source)
     for r in rescore:
         maybe_score(r["id"], r, force=True)
+    changed_asins = [c.get("asin") for c in changes if c.get("asin")]
+    if changed_asins:   # new ASIN on a lead: check its hazmat flags in the background
+        asyncio.create_task(_check_new_asins(changed_asins))
     return touched
+
+
+async def _check_new_asins(asins: list) -> None:
+    from . import hazmat
+    todo = [a for a in asins if not await hazmat.is_fresh(a)]
+    if todo:
+        await hazmat.check(todo)
 
 
 async def delete_leads(actor: Actor, ids: list[str]) -> int:

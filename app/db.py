@@ -296,6 +296,18 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE order_items ADD COLUMN lead_id uuid REFERENCES leads(id) ON DELETE SET NULL;
     CREATE INDEX order_items_lead_idx ON order_items (lead_id) WHERE lead_id IS NOT NULL;
+    """,    # 14: hazmat flags per ASIN from Keepa (see app/hazmat.py)
+    """
+    CREATE TABLE asin_flags (
+        asin        text PRIMARY KEY,
+        hazmat      boolean NOT NULL,
+        hazmat_info jsonb NOT NULL DEFAULT '[]',
+        fba_ever    boolean NOT NULL,
+        amazon_ever boolean NOT NULL,
+        level       text NOT NULL,
+        title       text,
+        checked_at  timestamptz NOT NULL DEFAULT now()
+    );
     """,
 ]
 

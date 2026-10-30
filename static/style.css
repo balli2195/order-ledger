@@ -408,3 +408,13 @@ tbody tr.picked { background: var(--accent-soft); }
 #entryOrder:disabled { opacity: .55; cursor: default; }
 #rows tr.hl > td { background: var(--flash); }
 #rows tr.hl > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.hz-badge { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 12px; line-height: 1; vertical-align: middle; }
+.hz-badge:hover { filter: brightness(1.1); } .hz-badge:focus-visible { outline: 2px solid var(--bad); outline-offset: 2px; }
+.hz-pill { display: inline-block; margin-left: 4px; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; background: var(--warn-soft); color: var(--bad); vertical-align: middle; }
+.hz-box { width: min(560px, 100%); }
+.hz-box h3 { display: flex; align-items: center; gap: 10px; }
+.hz-icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 16px; font-family: var(--sans, inherit); }
+.hz-box p { margin: 8px 0; line-height: 1.5; }
+.hz-banner { background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); color: var(--ink); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px; line-height: 1.5; }
+.hz-banner b { color: var(--bad); } .hz-banner .btn { margin-left: 6px; }
+.hz-banner.soft { border-color: var(--line); }

@@ -18,6 +18,7 @@ from . import airtable_sync, auth, db, live
 from . import leads as L
 from . import prepos
 from . import docs as hubdocs
+from . import hazmat
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
 
@@ -36,11 +37,13 @@ async def lifespan(app: FastAPI):
     listener = asyncio.create_task(live.listener())
     syncer = asyncio.create_task(airtable_sync.loop())
     prepos_task = asyncio.create_task(prepos.nightly_loop())
+    hazmat_task = asyncio.create_task(hazmat.backfill_loop())
     async with mcp.session_manager.run():
         yield
     listener.cancel()
     syncer.cancel()
     prepos_task.cancel()
+    hazmat_task.cancel()
     await db.close_pool()
 
 
@@ -331,6 +334,12 @@ async def api_leads_meta(request: Request):
     meta = await L.lead_choices()
     meta["sync"] = airtable_sync.status
     return meta
+
+
+@app.get("/api/hazmat/{asin}")
+async def api_hazmat(asin: str, request: Request):
+    await auth.require(request, tab=("leads", "orders"))
+    return {"flag": await hazmat.get(asin), "status": hazmat.status}
 
 
 @app.get("/api/leads/{lead_id}")

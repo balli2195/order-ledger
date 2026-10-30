@@ -15,7 +15,7 @@
       : `<span>${esc(n)}</span>`).join('')}</span>`;
   };
   const COLS = {
-    asin: ['ASIN', null, 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">—</span>'],
+    asin: ['ASIN', null, 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>${hazBadge(r)}` : '<span class="muted">—</span>'],
     product: ['Product', null, 'prod', (r) => `<span>${esc(r.product_name || '')}</span>`],
     store: ['Store', null, 'tags', storeCell],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
@@ -153,6 +153,39 @@
 
   // ------------------------------------------------------------ row delete with confirmation
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
+  // ------------------------------------------------------------ hazmat warning (flags from Keepa, cached per ASIN)
+  function hazBadge(r) {
+    if (r.hazmat_level === 'strong') return `<button class="hz-badge" data-hz="${esc(r.asin)}" data-stop title="Hazmat: no FBA seller has ever sold this. Click for details." aria-label="Hazmat warning">⚠</button>`;
+    if (r.hazmat_level === 'soft') return `<span class="hz-pill" title="Hazmat (Dangerous Goods). FBA sellers have sold it, but Amazon may ask you for a safety data sheet.">Hazmat</span>`;
+    return '';
+  }
+  const HZ_TEXT = `<p><b>Amazon flags this product as hazmat (Dangerous Goods), and no FBA seller has ever sold it.</b> Keepa has never seen an FBA offer on the listing, and Amazon itself has never sold it.</p>
+    <p>If you buy it, the listing will most likely sit in Amazon's <b>"Product Under Dangerous Goods (Hazmat) Review"</b>, and Amazon will ask for a <b>safety data sheet (SDS) or an exemption sheet</b> before it can go to FBA. That can take weeks or be refused, and the stock can't be sent in until it's cleared.</p>
+    <p class="muted" style="font-size:13px">Before buying: check that you can get an SDS from the brand, or sell it merchant-fulfilled instead.</p>`;
+  async function hazPopup(asin, intro) {
+    let f = null; try { f = (await api('GET', '/api/hazmat/' + encodeURIComponent(asin))).flag; } catch { /* show the general text */ }
+    const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name', 'regulatory_packing_group'];
+    const info = (f?.hazmat_info || []).filter((x) => KEEP.includes(x.aspect)).map((x) => `${esc(String(x.aspect || '').replace(/_/g, ' '))}: ${esc(x.value)}`).join(' · ');
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<div class="confirm-box hz-box" role="alertdialog" aria-modal="true" aria-labelledby="hzT">
+      <h3 id="hzT"><span class="hz-icon">⚠</span> Hazmat: can't go to FBA yet</h3>
+      ${intro ? `<p>${intro}</p>` : ''}
+      <p><a class="mono" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener">${esc(asin)}</a>${f?.title ? ` · ${esc(f.title)}` : ''}</p>
+      ${HZ_TEXT}
+      ${f ? `<p class="muted" style="font-size:12px">Keepa: ${info || 'hazardous materials listed'} · FBA offers ever: ${f.fba_ever ? 'yes' : 'none'} · Amazon ever: ${f.amazon_ever ? 'yes' : 'never'} · checked ${esc(new Date(f.checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</p>` : ''}
+      <div class="confirm-actions"><button class="btn primary" data-cf="no">Got it</button></div></div>`;
+    document.body.appendChild(wrap);
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    wrap.querySelector('[data-cf="no"]').focus();
+    wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-cf="no"]')) close(); });
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-hz]'); if (b) { e.preventDefault(); e.stopPropagation(); hazPopup(b.dataset.hz); } }, true);
+  function hazAfterAdd(lead) {
+    if (lead && lead.hazmat_level === 'strong') hazPopup(lead.asin, `The lead you just added (<b>${esc(lead.asin)}</b>) is a hazmat product. Check this before buying.`);
+  }
+
   // ------------------------------------------------------------ select rows -> create an order
   function canOrder() { const me = LG.st.me; return !!me && ['owner', 'editor'].includes(me.role) && (me.tabs || []).includes('orders'); }
   let lastPick = null;
@@ -544,6 +577,7 @@
       $('#newrow [data-n="asin"]')?.focus();
       await load();
       flashLead(lead.id);
+      hazAfterAdd(lead);
     } catch (e) { fail(e); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Add lead'; } }
   }
@@ -586,6 +620,8 @@
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">
+        ${l.hazmat_level === 'strong' ? `<div class="hz-banner"><b>⚠ Hazmat: no FBA seller has ever sold this.</b> It will likely sit in Amazon's Dangerous Goods review and needs a safety data sheet (SDS) or exemption sheet before it can go to FBA. <button class="btn small" data-hz="${esc(l.asin)}">Details</button></div>`
+          : l.hazmat_level === 'soft' ? `<div class="hz-banner soft"><b>Hazmat.</b> FBA sellers have sold this before, but Amazon may ask for a safety data sheet when you list it.</div>` : ''}
         <div class="grid">
           ${field('Date', 'lead_date', l.lead_date, { type: 'date' })}
           ${field('ASIN', 'asin', l.asin, { cls: 'mono' })}
@@ -664,7 +700,7 @@
     $('#newForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = Object.fromEntries([...new FormData(e.target).entries()].filter(([, v]) => v !== ''));
-      try { const l = await api('POST', '/api/leads', body); toast('Lead saved'); await load(); openLead(l.id); } catch (err) { fail(err); }
+      try { const l = await api('POST', '/api/leads', body); toast('Lead saved'); await load(); await openLead(l.id); hazAfterAdd(l); } catch (err) { fail(err); }
     });
   }
 
