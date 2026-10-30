@@ -402,3 +402,6 @@ tbody tr.picked { background: var(--accent-soft); }
 .selbar[hidden] { display: none; }
 .co-box { width: min(980px, 100%); max-height: calc(100vh - 48px); overflow: auto; }
 .co-box h3 { font-family: var(--serif); font-weight: 400; font-size: 28px; }
+.hover-tip { position: absolute; z-index: 80; background: var(--ink); color: var(--panel); font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; box-shadow: var(--shadow); white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
+.hover-tip[hidden] { display: none; }
+#rows td.note-cell { cursor: pointer; }

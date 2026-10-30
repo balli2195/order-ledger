@@ -16,7 +16,7 @@
   };
   const COLS = {
     asin: ['ASIN', null, 'tight', (r) => r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">—</span>'],
-    product: ['Product', null, 'prod', (r) => `<span title="${esc(r.product_name || '')}">${esc(r.product_name || '')}</span>`],
+    product: ['Product', null, 'prod', (r) => `<span>${esc(r.product_name || '')}</span>`],
     store: ['Store', null, 'tags', storeCell],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
     cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
@@ -142,7 +142,7 @@
   function rowHtml(r) {
     return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''} ${S.sel.has(r.id) ? 'picked' : ''}">` +
       (canOrder() ? `<td class="sel-col" data-stop><input type="checkbox" data-pick="${esc(r.id)}" ${S.sel.has(r.id) ? 'checked' : ''} aria-label="Select lead"></td>` : '') +
-      S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') +
+      S.order.map((k) => `<td class="${COLS[k][2]}" data-k="${k}">${COLS[k][3](r)}</td>`).join('') +
       `<td class="row-act">${can('editor') ? `<button class="icon-act danger" data-del="${esc(r.id)}" data-stop title="Delete lead" aria-label="Delete lead">${TRASH}</button>` : ''}</td></tr>`;
   }
 
@@ -399,10 +399,39 @@
   }
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-numedit]'); if (b) { e.preventDefault(); openNumEdit(b); } }, true);
 
+  // ------------------------------------------------------------ instant hover text (product name and notes), anywhere in the cell
+  const HOVER_FIELD = { product: 'product_name', va_notes: 'va_notes', buyer_notes: 'buyer_notes', feedback: 'feedback' };
+  let hov = null, hovTd = null;
+  function hideHover() { if (hov) hov.hidden = true; hovTd = null; }
+  document.addEventListener('mouseover', (e) => {
+    const td = e.target.closest?.('#rows td[data-k]');
+    if (!td || !HOVER_FIELD[td.dataset.k]) { if (hovTd && !(td && td === hovTd)) hideHover(); return; }
+    if (td === hovTd) return;
+    if (notePop) { hideHover(); return; }   // an editor is open
+    const r = S.byId.get(td.closest('tr')?.dataset.id || ''); const text = r && (r[HOVER_FIELD[td.dataset.k]] || '').trim();
+    if (!text) { hideHover(); return; }
+    if (!hov) { hov = document.createElement('div'); hov.className = 'hover-tip'; document.body.appendChild(hov); }
+    hov.textContent = text; hov.hidden = false; hovTd = td;
+    const c = td.getBoundingClientRect(); const w = Math.min(420, window.innerWidth - 16);
+    hov.style.maxWidth = w + 'px';
+    const left = Math.max(8, Math.min(c.left, window.innerWidth - hov.offsetWidth - 8));
+    const below = c.bottom + 6 + hov.offsetHeight < window.innerHeight;
+    hov.style.left = left + window.scrollX + 'px';
+    hov.style.top = (below ? c.bottom + 4 : c.top - hov.offsetHeight - 4) + window.scrollY + 'px';
+  });
+  document.addEventListener('mouseleave', hideHover);
+  addEventListener('scroll', hideHover, true);
+  document.addEventListener('mousedown', hideHover, true);
+  // a click anywhere in a notes cell opens its editor (not only on the text)
+  document.addEventListener('click', (e) => {
+    const td = e.target.closest?.('#rows td.note-cell');
+    if (td && !e.target.closest('[data-note]')) { const b = td.querySelector('[data-note]'); if (b) { e.preventDefault(); e.stopPropagation(); b.click(); } }
+  }, true);
+
   // ------------------------------------------------------------ note cells + pop-up editor
   function noteCell(r, field) {
     const v = r[field] || '';
-    return `<button class="note-btn ${v ? '' : 'empty'}" data-note="${field}" data-stop title="${esc(v || (can('editor') ? 'Click to add' : ''))}">${v ? esc(v) : (can('editor') ? '+ add' : '')}</button>`;
+    return `<button class="note-btn ${v ? '' : 'empty'}" data-note="${field}" data-stop>${v ? esc(v) : (can('editor') ? '+ add' : '')}</button>`;
   }
   let notePop = null;
   function closeNote(save) {
