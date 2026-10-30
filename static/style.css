@@ -354,3 +354,9 @@ tr.day-row .day-claude b { color: var(--ink); margin-left: 4px; }
 .items tr.new-item input { background: var(--panel); }
 .row-dup:hover { color: var(--accent) !important; background: var(--accent-soft) !important; border-color: color-mix(in srgb, var(--accent) 30%, transparent) !important; }
 .drawer-head .btn.small + #delWrap { margin-left: 6px; }
+.oe { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; cursor: text; padding: 3px 6px; margin: -3px -6px; border-radius: 5px; }
+.oe:hover { background: var(--line-2); box-shadow: inset 0 0 0 1px var(--line); }
+.oe-input { width: 100%; min-width: 80px; font: inherit; padding: 3px 6px; margin: -4px -7px; border: 1px solid var(--accent); border-radius: 5px; background: var(--panel); box-sizing: border-box; }
+.oe-input.num { text-align: right; } .oe-input[type=date] { min-width: 140px; }
+.row-open { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; height: 26px; padding: 0 8px; font-size: 12px; cursor: pointer; margin-right: 4px; vertical-align: middle; }
+.row-open:hover { color: var(--ink); border-color: var(--ink); }

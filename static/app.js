@@ -134,6 +134,8 @@
   }
 
   function render() {
+    if (oe && !oe.done) { S.pendingRender = true; return; }   // don't redraw the table under an open cell editor
+    S.pendingRender = false;
     const base = filtered();
     const disc = base.filter((o) => o.discrepancy), miss = base.filter((o) => o.missing.length);
     $('#cDisc').textContent = disc.length || ''; $('#cMiss').textContent = miss.length || '';
@@ -149,16 +151,74 @@
     renderTiles(base);
   }
 
+  // ------------------------------------------------------------ inline cell editing on the orders table
+  const OE_FIELDS = ['order_date', 'store', 'email', 'order_total', 'order_ref', 'notes'];
+  function oeCell(o, f, shown) {
+    if (!can('editor')) return shown;
+    return `<span class="oe" data-oe="${f}" title="Click to edit">${shown === '' ? '<span class="muted">—</span>' : shown}</span>`;
+  }
+  let oe = null;
+  const oeVal = (o, f) => o[f] == null ? '' : f === 'order_total' ? Number(o[f]).toFixed(2) : String(o[f]);
+  function openOE(span) {
+    if (oe && !oe.done) finishOE(true);
+    const tr = span.closest('tr[data-id]'); if (!tr) return;
+    const id = tr.dataset.id, f = span.dataset.oe, o = S.byId.get(id); if (!o) return;
+    const orig = oeVal(o, f), td = span.closest('td');
+    const type = f === 'order_date' ? 'date' : 'text';
+    const list = f === 'store' ? 'list="dlStores"' : f === 'email' ? 'list="dlEmails"' : '';
+    td.innerHTML = `<input class="oe-input ${f === 'order_total' ? 'num' : ''} ${f === 'order_ref' ? 'mono' : ''}" type="${type}" ${list} ${f === 'order_total' ? 'inputmode="decimal"' : ''} value="${esc(orig)}" autocomplete="off">`;
+    const inp = td.querySelector('input'); inp.focus(); if (type === 'text') inp.select();
+    const me = { id, f, orig, inp, done: false }; oe = me;
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finishOE(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); finishOE(true, 'down'); }
+      else if (e.key === 'Tab') { e.preventDefault(); finishOE(true, e.shiftKey ? 'left' : 'right'); }
+    });
+    inp.addEventListener('blur', () => setTimeout(() => { if (oe === me) finishOE(true); }, 0));   // only close this cell's own editor
+  }
+  async function finishOE(save, move) {
+    const ed = oe; if (!ed || ed.done) return; ed.done = true;
+    const o = S.byId.get(ed.id); const val = ed.inp.value.trim();
+    let next = null;
+    if (move) {
+      const tr = $(`#rows tr[data-id="${CSS.escape(ed.id)}"]`);
+      if (move === 'down') { const n = tr?.nextElementSibling; if (n?.dataset.id) next = { id: n.dataset.id, f: ed.f }; }
+      else { const f = OE_FIELDS[OE_FIELDS.indexOf(ed.f) + (move === 'right' ? 1 : -1)]; if (f) next = { id: ed.id, f }; }
+    }
+    const openNext = () => { if (next) { const sp = $(`#rows tr[data-id="${CSS.escape(next.id)}"] [data-oe="${next.f}"]`); if (sp) openOE(sp); } };
+    const redraw = () => { const tr = $(`#rows tr[data-id="${CSS.escape(ed.id)}"]`); if (tr && o) { tr.outerHTML = rowHtml(o); } };
+    if (!save || val === ed.orig || (ed.f === 'order_total' && val !== '' && Number(val.replace(/[$,]/g, '')) === Number(ed.orig))) {
+      redraw(); if (S.pendingRender) render(); openNext(); return;
+    }
+    if (ed.f === 'store' && !val) { toast("Store can't be blank", true); redraw(); return; }
+    const body = { [ed.f]: ed.f === 'order_total' ? val.replace(/[$,]/g, '') : val };
+    const prev = o[ed.f]; o[ed.f] = ed.f === 'order_total' ? (val === '' ? null : Number(body.order_total)) : val || null;
+    redraw(); openNext();   // move on right away; the save runs in the background
+    try {
+      const fresh = await api('PATCH', '/api/orders/' + ed.id, body);
+      upsertLocal(fresh); render();
+      if (S.openId === ed.id) refreshDrawer(fresh);
+    } catch (e) { fail(e); o[ed.f] = prev; redraw(); render(); }
+  }
+  document.addEventListener('click', (e) => {
+    const sp = e.target.closest('#rows [data-oe]');
+    if (sp) { e.preventDefault(); e.stopPropagation(); openOE(sp); return; }
+    if (e.target.closest('#rows .oe-input')) { e.stopPropagation(); return; }
+    const op = e.target.closest('[data-open-row]');
+    if (op) { e.preventDefault(); e.stopPropagation(); openOrder(op.dataset.openRow); }
+  }, true);
+
   function rowHtml(o) {
     const discTitle = o.discrepancy ? `Items total ${money(o.items_total)} vs order total ${money(o.order_total)}` : 'Items total matches order total';
     const missTitle = o.missing.length ? 'Missing: ' + o.missing.join(', ') : 'All item fields filled in';
     return `<tr data-id="${esc(o.id)}" class="${S.openId === o.id ? 'sel' : ''}">
-      <td>${esc(fmtDate(o.order_date))}</td><td>${esc(o.store)}</td><td class="email">${esc(o.email || '')}</td>
-      <td class="num">${money(o.order_total)}</td><td class="mono">${esc(o.order_ref || '')}</td>
-      <td class="notes" title="${esc(o.notes || '')}">${esc(o.notes || '—')}</td>
+      <td>${oeCell(o, 'order_date', esc(fmtDate(o.order_date)))}</td><td>${oeCell(o, 'store', esc(o.store))}</td>
+      <td class="email">${oeCell(o, 'email', esc(o.email || ''))}</td>
+      <td class="num">${oeCell(o, 'order_total', money(o.order_total))}</td><td class="mono">${oeCell(o, 'order_ref', esc(o.order_ref || ''))}</td>
+      <td class="notes" title="${esc(o.notes || '')}">${oeCell(o, 'notes', esc(o.notes || '—'))}</td>
       <td class="center"><span class="dot ${o.discrepancy ? 'bad' : ''}" title="${esc(discTitle)}"></span></td>
       <td class="center"><span class="dot ${o.missing.length ? 'bad' : ''}" title="${esc(missTitle)}"></span></td>
-      <td class="order-act">${can('editor') ? `<button class="row-add" data-add-items="${esc(o.id)}" title="Add items to this order">+ Items</button><button class="row-del row-dup" data-dup-order="${esc(o.id)}" title="Duplicate order" aria-label="Duplicate order">${COPY}</button><button class="row-del" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${TRASH}</button>` : ''}</td></tr>`;
+      <td class="order-act"><button class="row-open" data-open-row="${esc(o.id)}" title="Open order">Open</button>${can('editor') ? `<button class="row-add" data-add-items="${esc(o.id)}" title="Add items to this order">+ Items</button><button class="row-del row-dup" data-dup-order="${esc(o.id)}" title="Duplicate order" aria-label="Duplicate order">${COPY}</button><button class="row-del" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${TRASH}</button>` : ''}</td></tr>`;
   }
 
   const TRASH = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>`;
