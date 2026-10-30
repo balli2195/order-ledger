@@ -328,6 +328,10 @@ MIGRATIONS: list[str] = [
         added_at       timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (asin, ref)
     );
+    """,    # 17: also "removed": Amazon removed the listing / set the inventory aside for missing Transparency codes
+    """
+    ALTER TABLE transparency_notices DROP CONSTRAINT transparency_notices_kind_check;
+    ALTER TABLE transparency_notices ADD CONSTRAINT transparency_notices_kind_check CHECK (kind IN ('enrolled', 'rejected', 'removed'));
     """,
 ]
 

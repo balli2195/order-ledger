@@ -8,6 +8,8 @@ SP-API has no call that tells a reseller whether an ASIN is enrolled, so the lis
   with the date after which units without codes can't be sold.
 - "Action Required: Transparency Code Requirements - Unsellable Inventory MM/DD - MM/DD" (TRANSPARENCY_FC_FAILURES_3P):
   units already rejected at fulfillment centers that week.
+- "Action Required: Listing Removed from Amazon" / "Important message about your Amazon Seller account" (kind removed):
+  Amazon removed the listing or set the inventory aside because units lacked Transparency codes.
 A scheduled Claude run reads those emails and posts them to /api/engine/transparency. One row per ASIN per email
 (transparency_notices), so re-posting the same email changes nothing.
 """
@@ -42,8 +44,8 @@ async def add_notices(notices: list[dict], source: str = "email") -> dict:
         if not ASIN_RE.match(a):
             raise TransparencyError(f"bad ASIN {n.get('asin')!r}")
         kind = n.get("kind") or "enrolled"
-        if kind not in ("enrolled", "rejected"):
-            raise TransparencyError(f"kind must be enrolled or rejected, not {kind!r}")
+        if kind not in ("enrolled", "rejected", "removed"):
+            raise TransparencyError(f"kind must be enrolled, rejected or removed, not {kind!r}")
         ref = (n.get("thread_id") or n.get("ref") or "").strip()
         if not ref:
             raise TransparencyError(f"{a}: thread_id is required")
