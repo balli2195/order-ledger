@@ -192,9 +192,24 @@
 
   async function addItemTo(id) {
     if (S.openId !== id || $('#drawer').classList.contains('hidden')) await openOrder(id);
-    const o = await api('POST', `/api/orders/${id}/items`, [{ qty_ordered: 1 }]);
-    upsertLocal(o); render(); renderDrawer(o);
-    const rows = $$('#drawer tr[data-item]'); $('input[data-f="asin"]', rows[rows.length - 1])?.focus();
+    const n = $('#newItem'); if (!n) return;
+    n.scrollIntoView({ block: 'center' }); $('[data-n="asin"]', n).focus();
+  }
+
+  async function saveNewItem() {
+    const n = $('#newItem'); if (!n || n.dataset.busy) return;
+    const v = Object.fromEntries($$('[data-n]', n).map((x) => [x.dataset.n, x.value.trim()]));
+    if (!v.asin && !v.product_title) { $('[data-n="asin"]', n).focus(); toast('Enter an ASIN (or a title) first', true); return; }
+    const body = Object.fromEntries(Object.entries(v).filter(([, x]) => x !== ''));
+    n.dataset.busy = '1'; const btn = $('[data-act="save-new-item"]', n); btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+      const o = await api('POST', `/api/orders/${S.openId}/items`, [body]);
+      upsertLocal(o); render();
+      $$('#newItem [data-n]').forEach((x) => { x.value = x.dataset.n === 'qty_ordered' ? '1' : ''; });
+      renderDrawer(o);
+      $('#newItem [data-n="asin"]')?.focus();
+      toast('Item added');
+    } catch (err) { fail(err); btn.disabled = false; btn.textContent = '+ Add'; delete n.dataset.busy; }
   }
 
   document.addEventListener('click', (e) => {
@@ -260,6 +275,15 @@
   const ro = () => can('editor') ? '' : 'disabled';
 
   function renderDrawer(o) {
+    const keep = $('#newItem') && $('#drawer').dataset.order === String(o.id) ? Object.fromEntries($$('#newItem [data-n]').map((x) => [x.dataset.n, x.value])) : null;
+    const keepFocus = document.activeElement?.closest?.('#newItem') ? document.activeElement.dataset.n : null;
+    _renderDrawer(o);
+    $('#drawer').dataset.order = String(o.id);
+    if (keep) $$('#newItem [data-n]').forEach((x) => { if (keep[x.dataset.n] != null) x.value = keep[x.dataset.n]; });
+    if (keepFocus) $(`#newItem [data-n="${keepFocus}"]`)?.focus();
+  }
+
+  function _renderDrawer(o) {
     const items = o.items || [];
     const itemsTotal = items.reduce((s, i) => s + (i.qty_ordered || 0) * (i.cost_per_unit || 0), 0);
     const units = items.reduce((s, i) => s + (i.qty_ordered || 0), 0);
@@ -297,9 +321,16 @@
         <div class="items"><table>
           <thead><tr><th>ASIN</th><th>Title</th><th>Shade</th><th>Set type</th><th class="num">Qty</th><th class="num">Cost/unit</th><th class="num">Line</th><th></th></tr></thead>
           <tbody>${items.map(itemRow).join('') || `<tr><td colspan="8" class="muted" style="padding:14px">No items yet.</td></tr>`}</tbody>
+          ${can('editor') ? `<tbody><tr class="new-item" id="newItem">
+            <td class="c-asin"><input class="mono" data-n="asin" placeholder="ASIN" maxlength="10" autocomplete="off"></td>
+            <td><input data-n="product_title" placeholder="Title (filled from Keepa if blank)"></td>
+            <td class="c-shade"><input data-n="shade" placeholder="Shade"></td>
+            <td class="c-set"><input data-n="set_type" list="dlSets" placeholder="Set type"></td>
+            <td class="c-qty"><input data-n="qty_ordered" class="num" inputmode="numeric" value="1"></td>
+            <td class="c-cost"><input data-n="cost_per_unit" class="num" inputmode="decimal" placeholder="0.00"></td>
+            <td colspan="2"><button class="btn small primary" data-act="save-new-item">+ Add</button></td></tr></tbody>` : ''}
           <tfoot><tr><td colspan="6">Items total</td><td class="num">${money(itemsTotal)}</td><td></td></tr></tfoot>
         </table></div>
-        ${can('editor') ? `<div style="margin-top:8px"><button class="btn small" data-act="add-item">+ Add item</button></div>` : ''}
         <div class="recon ${off ? 'bad' : 'ok'}">${off
           ? `Items total ${money(itemsTotal)} is ${money(Math.abs(diff))} ${diff > 0 ? 'over' : 'under'} the order total ${money(o.order_total)} (tolerance ${money(units * 0.01)}).`
           : `Items total matches the order total.`}
@@ -334,7 +365,7 @@
   function changeLine(c) {
     const when = new Date(c.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const tag = `<span class="tag ${c.source === 'chat' ? 'chat' : ''}">${esc(c.source)}</span>`;
-    return `<li>${tag} <b>${esc(c.who || (c.source === 'import' ? 'Import' : 'Someone'))}</b> ${describe(c)} <span class="muted">· ${esc(when)}</span></li>`;
+    return `<li>${tag} <b>${esc(c.who || (c.source === 'import' ? 'Import' : c.source === 'system' ? 'Cleanup' : 'Someone'))}</b> ${describe(c)} <span class="muted">· ${esc(when)}</span></li>`;
   }
 
   // field saves
@@ -490,6 +521,7 @@
           break;
         }
         case 'add-item': await addItemTo(S.openId); break;
+        case 'save-new-item': await saveNewItem(); break;
         case 'del-item': {
           const itemTr = btn.closest('tr[data-item]');
           if (btn.dataset.armed) { await api('DELETE', '/api/items/' + itemTr.dataset.item); }
@@ -532,6 +564,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { if (!$('#modal').classList.contains('hidden')) closeModal(); else if (!$('#drawer').classList.contains('hidden')) closeDrawer(); }
     if (e.key === 'Enter' && e.target.matches('#drawer tr[data-item] input, #drawer input[data-o]')) e.target.blur();
+    if (e.key === 'Enter' && e.target.matches('#newItem input')) { e.preventDefault(); saveNewItem(); }
     if (e.key === '/' && document.activeElement === document.body) { e.preventDefault(); $('#q').focus(); }
   });
 

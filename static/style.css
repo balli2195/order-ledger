@@ -350,3 +350,5 @@ tr.day-row .day-claude b { color: var(--ink); margin-left: 4px; }
 .row-add { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; height: 26px; padding: 0 8px; font-size: 12px; cursor: pointer; margin-right: 4px; vertical-align: middle; }
 .row-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .order-act .row-del { vertical-align: middle; }
+.items tr.new-item td { background: var(--panel-2); border-top: 1px dashed var(--line); }
+.items tr.new-item input { background: var(--panel); }

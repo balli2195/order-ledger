@@ -193,6 +193,10 @@ async def api_delete_order(order_id: str, request: Request):
 async def api_add_items(order_id: str, request: Request, body: Any = Body(...)):
     user = await auth.require(request, "editor")
     items = body if isinstance(body, list) else [body]
+    for it in items:   # fill a blank title from Keepa
+        if isinstance(it, dict) and it.get("asin") and not str(it.get("product_title") or "").strip():
+            t = await L.keepa_title(str(it["asin"]).strip().upper())
+            if t: it["product_title"] = t
     return await o.add_items(web_actor(user), order_id, items)
 
 

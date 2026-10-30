@@ -214,6 +214,20 @@ MIGRATIONS: list[str] = [
         user_id     integer REFERENCES users(id) ON DELETE SET NULL
     );
     """,
+    # 5: one-time cleanup of the completely blank item lines the first "+ Items" button saved (Oct 29, 2026 evening)
+    """
+    WITH gone AS (
+        DELETE FROM order_items
+        WHERE created_at >= '2026-10-30 02:40+00' AND created_at < '2026-10-30 05:00+00'
+          AND COALESCE(asin, '') = '' AND COALESCE(product_title, '') = '' AND COALESCE(shade, '') = ''
+          AND COALESCE(set_type, '') = '' AND cost_per_unit IS NULL
+        RETURNING *
+    ), logged AS (
+        INSERT INTO audit_log (source, action, entity, entity_id, order_id, before)
+        SELECT 'system', 'delete', 'item', id, order_id, to_jsonb(gone) - 'order_id' FROM gone
+    )
+    UPDATE orders SET updated_at = now() WHERE id IN (SELECT order_id FROM gone);
+    """,
 ]
 
 
