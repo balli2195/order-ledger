@@ -155,24 +155,25 @@
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
   // ------------------------------------------------------------ hazmat warning (flags from Keepa, cached per ASIN)
   function hazBadge(r) {
-    if (r.hazmat_level === 'strong') return `<button class="hz-badge" data-hz="${esc(r.asin)}" data-stop title="Hazmat: no FBA seller has ever sold this. Click for details." aria-label="Hazmat warning">⚠</button>`;
-    if (r.hazmat_level === 'soft') return `<span class="hz-pill" title="Hazmat (Dangerous Goods). FBA sellers have sold it, but Amazon may ask you for a safety data sheet.">Hazmat</span>`;
+    if (r.fba_eligible === true) return `<span class="ok-badge" title="Amazon says you can send this to FBA${r.fba_checked_at ? ' (checked ' + new Date(r.fba_checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')' : ''}" aria-label="Can sell via FBA">✓</span>`;
+    if (r.fba_eligible === false) return `<button class="hz-badge" data-hz="${esc(r.asin)}" data-stop title="Amazon says you can't send this to FBA right now. Click for the reason." aria-label="Can't sell via FBA">!</button>`;
     return '';
   }
-  const HZ_TEXT = `<p><b>Amazon flags this product as hazmat (Dangerous Goods), and no FBA seller has ever sold it.</b> Keepa has never seen an FBA offer on the listing, and Amazon itself has never sold it.</p>
-    <p>If you buy it, the listing will most likely sit in Amazon's <b>"Product Under Dangerous Goods (Hazmat) Review"</b>, and Amazon will ask for a <b>safety data sheet (SDS) or an exemption sheet</b> before it can go to FBA. That can take weeks or be refused, and the stock can't be sent in until it's cleared.</p>
-    <p class="muted" style="font-size:13px">Before buying: check that you can get an SDS from the brand, or sell it merchant-fulfilled instead.</p>`;
   async function hazPopup(asin, intro) {
     let f = null; try { f = (await api('GET', '/api/hazmat/' + encodeURIComponent(asin))).flag; } catch { /* show the general text */ }
-    const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name', 'regulatory_packing_group'];
-    const info = (f?.hazmat_info || []).filter((x) => KEEP.includes(x.aspect)).map((x) => `${esc(String(x.aspect || '').replace(/_/g, ' '))}: ${esc(x.value)}`).join(' · ');
+    const reasons = f?.reason_text || [];
+    const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name'];
+    const kinfo = (f?.hazmat_info || []).filter((x) => KEEP.includes(x.aspect)).map((x) => `${esc(String(x.aspect).replace(/_/g, ' '))}: ${esc(x.value)}`).join(' · ');
     const wrap = document.createElement('div'); wrap.className = 'confirm-back';
     wrap.innerHTML = `<div class="confirm-box hz-box" role="alertdialog" aria-modal="true" aria-labelledby="hzT">
-      <h3 id="hzT"><span class="hz-icon">⚠</span> Hazmat: can't go to FBA yet</h3>
+      <h3 id="hzT"><span class="hz-icon">!</span> ${f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now"}</h3>
       ${intro ? `<p>${intro}</p>` : ''}
       <p><a class="mono" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener">${esc(asin)}</a>${f?.title ? ` · ${esc(f.title)}` : ''}</p>
-      ${HZ_TEXT}
-      ${f ? `<p class="muted" style="font-size:12px">Keepa: ${info || 'hazardous materials listed'} · FBA offers ever: ${f.fba_ever ? 'yes' : 'none'} · Amazon ever: ${f.amazon_ever ? 'yes' : 'never'} · checked ${esc(new Date(f.checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</p>` : ''}
+      <p>Amazon's eligibility check for your seller account says this ASIN <b>isn't eligible for FBA</b>. Amazon's reason${reasons.length === 1 ? '' : 's'}:</p>
+      <ul class="hz-reasons">${reasons.length ? reasons.map((x) => `<li>${x.text ? esc(x.text) : 'Amazon gave a code without details.'} <span class="muted mono">${esc(x.code)}</span></li>`).join('') : '<li>No reason given.</li>'}</ul>
+      ${f?.hazmat_reason ? `<p>To fix it, upload a <b>safety data sheet (SDS) or exemption sheet</b> in Seller Central (Dangerous Goods document upload). Reviews take days to weeks and can be refused, and the stock can't be sent in until it's cleared.</p>` : ''}
+      <p class="muted" style="font-size:13px">Before buying: make sure you can clear this with Amazon, or plan to sell it merchant-fulfilled.</p>
+      <p class="muted" style="font-size:12px">Checked with Amazon ${f?.fba_checked_at ? esc(new Date(f.fba_checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : ''} (re-checked every 2 weeks)${f?.hazmat ? ` · Keepa lists it as hazmat${kinfo ? ': ' + kinfo : ''}` : ''}.</p>
       <div class="confirm-actions"><button class="btn primary" data-cf="no">Got it</button></div></div>`;
     document.body.appendChild(wrap);
     const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
@@ -183,7 +184,7 @@
   }
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-hz]'); if (b) { e.preventDefault(); e.stopPropagation(); hazPopup(b.dataset.hz); } }, true);
   function hazAfterAdd(lead) {
-    if (lead && lead.hazmat_level === 'strong') hazPopup(lead.asin, `The lead you just added (<b>${esc(lead.asin)}</b>) is a hazmat product. Check this before buying.`);
+    if (lead && lead.fba_eligible === false) hazPopup(lead.asin, `The lead you just added (<b>${esc(lead.asin)}</b>) can't be sent to FBA right now. Check this before buying.`);
   }
 
   // ------------------------------------------------------------ select rows -> create an order
@@ -620,8 +621,8 @@
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">
-        ${l.hazmat_level === 'strong' ? `<div class="hz-banner"><b>⚠ Hazmat: no FBA seller has ever sold this.</b> It will likely sit in Amazon's Dangerous Goods review and needs a safety data sheet (SDS) or exemption sheet before it can go to FBA. <button class="btn small" data-hz="${esc(l.asin)}">Details</button></div>`
-          : l.hazmat_level === 'soft' ? `<div class="hz-banner soft"><b>Hazmat.</b> FBA sellers have sold this before, but Amazon may ask for a safety data sheet when you list it.</div>` : ''}
+        ${l.fba_eligible === false ? `<div class="hz-banner"><b>! You can't send this to FBA right now.</b> Amazon's eligibility check says it isn't eligible${(l.fba_reasons || []).length ? ` (${(l.fba_reasons || []).map(esc).join(', ')})` : ''}. <button class="btn small" data-hz="${esc(l.asin)}">Why?</button></div>`
+          : l.fba_eligible === true ? `<div class="hz-banner ok"><b>✓ Amazon says you can send this to FBA.</b></div>` : ''}
         <div class="grid">
           ${field('Date', 'lead_date', l.lead_date, { type: 'date' })}
           ${field('ASIN', 'asin', l.asin, { cls: 'mono' })}

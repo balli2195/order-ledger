@@ -19,6 +19,7 @@ from . import leads as L
 from . import prepos
 from . import docs as hubdocs
 from . import hazmat
+from . import sellable
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
 
@@ -37,7 +38,7 @@ async def lifespan(app: FastAPI):
     listener = asyncio.create_task(live.listener())
     syncer = asyncio.create_task(airtable_sync.loop())
     prepos_task = asyncio.create_task(prepos.nightly_loop())
-    hazmat_task = asyncio.create_task(hazmat.backfill_loop())
+    hazmat_task = asyncio.create_task(sellable.backfill_loop())   # Amazon FBA eligibility (Keepa hazmat comes with title lookups)
     async with mcp.session_manager.run():
         yield
     listener.cancel()
@@ -339,7 +340,14 @@ async def api_leads_meta(request: Request):
 @app.get("/api/hazmat/{asin}")
 async def api_hazmat(asin: str, request: Request):
     await auth.require(request, tab=("leads", "orders"))
-    return {"flag": await hazmat.get(asin), "status": hazmat.status}
+    f = await hazmat.get(asin)
+    if f:
+        for k in ("fba_checked_at",):
+            if f.get(k) and hasattr(f[k], "isoformat"):
+                f[k] = f[k].isoformat()
+        f["reason_text"] = [{"code": c, "text": sellable.REASONS.get(c, "")} for c in (f.get("fba_reasons") or [])]
+        f["hazmat_reason"] = bool(set(f.get("fba_reasons") or []) & sellable.HAZMAT_CODES)
+    return {"flag": f, "status": sellable.status}
 
 
 @app.get("/api/leads/{lead_id}")

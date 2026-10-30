@@ -117,13 +117,14 @@ async def get(asin: str) -> dict | None:
     if not r:
         return None
     d = dict(r)
-    d["checked_at"] = d["checked_at"].isoformat()
+    if d.get("checked_at"):
+        d["checked_at"] = d["checked_at"].isoformat()
     return d
 
 
 async def is_fresh(asin: str) -> bool:
     f = await get(asin)
-    return bool(f) and datetime.fromisoformat(f["checked_at"]) > datetime.now(TZ) - timedelta(days=RECHECK_DAYS)
+    return bool(f) and bool(f.get("checked_at")) and datetime.fromisoformat(f["checked_at"]) > datetime.now(TZ) - timedelta(days=RECHECK_DAYS)
 
 
 async def _tokens() -> int | None:

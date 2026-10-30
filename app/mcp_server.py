@@ -328,9 +328,9 @@ async def get_lead(lead_id: str) -> dict:
 @mcp.tool()
 async def create_lead(lead: LeadIn) -> dict:
     """Add a lead (stays on this site; Airtable isn't changed). It is scored automatically once it has an ASIN, cost and store link.
-    If the result has hazmat_level "strong", warn the user before they buy: Amazon lists it as hazmat and no FBA seller
-    (nor Amazon) has ever sold it, so it will likely sit in Dangerous Goods review and needs an SDS or exemption sheet
-    before it can go to FBA. "soft" = hazmat but sold via FBA before (may need an SDS)."""
+    The result carries Amazon's own FBA eligibility for the ASIN: if fba_eligible is false, warn the user before they buy
+    and give the reasons (fba_reasons codes, e.g. FBA_INB_0007 = under Dangerous Goods (hazmat) review, needs an SDS or
+    exemption sheet; FBA_INB_0050 = no US fulfillment center can receive it)."""
     actor = await _actor("editor", tab="leads")
     return await L.create_lead(actor, lead.model_dump(exclude_none=True))
 

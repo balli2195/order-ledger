@@ -177,7 +177,7 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     limit = max(1, min(int(limit), 1000))
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level FROM leads l "
+            f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at FROM leads l "
             f"LEFT JOIN asin_flags hf ON hf.asin = upper(btrim(l.asin)) {where} ORDER BY {order} LIMIT %s OFFSET %s",
             bargs + a + [limit, int(offset)],
         )
@@ -231,10 +231,13 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
                 (lead["asin"], r["id"]),
             )
             lead["same_asin"] = [jsonable(dict(x)) for x in await cur.fetchall()]
-            cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at FROM asin_flags WHERE asin=upper(btrim(%s))", (lead["asin"],))
+            cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at, fba_eligible, fba_reasons, fba_checked_at "
+                                     "FROM asin_flags WHERE asin=upper(btrim(%s))", (lead["asin"],))
             hz = await cur.fetchone()
             lead["hazmat"] = jsonable(dict(hz)) if hz else None
             lead["hazmat_level"] = hz["level"] if hz else None
+            lead["fba_eligible"] = hz["fba_eligible"] if hz else None
+            lead["fba_reasons"] = list(hz["fba_reasons"] or []) if hz else []
     return lead
 
 
@@ -307,6 +310,12 @@ async def create_lead(actor: Actor, data: dict) -> dict:
         from . import hazmat
         if not await hazmat.is_fresh(f["asin"]):
             await hazmat.check([f["asin"]])
+    if f.get("asin"):   # can Nick send it to FBA? Amazon's own answer (about 1 s)
+        from . import sellable
+        try:
+            await sellable.ensure(f["asin"])
+        except Exception as e:
+            log.warning("eligibility check failed for %s: %s", f["asin"], e)
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await _ensure_names(conn, "stores", f.get("stores", []))
@@ -366,10 +375,12 @@ async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
 
 
 async def _check_new_asins(asins: list) -> None:
-    from . import hazmat
+    from . import hazmat, sellable
     todo = [a for a in asins if not await hazmat.is_fresh(a)]
     if todo:
         await hazmat.check(todo)
+    for a in asins:
+        await sellable.ensure(a)
 
 
 async def delete_leads(actor: Actor, ids: list[str]) -> int:

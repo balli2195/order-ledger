@@ -308,6 +308,12 @@ MIGRATIONS: list[str] = [
         title       text,
         checked_at  timestamptz NOT NULL DEFAULT now()
     );
+    """,    # 15: Amazon's own FBA eligibility per ASIN (app/sellable.py); Keepa hazmat fields become optional
+    """
+    ALTER TABLE asin_flags ALTER COLUMN hazmat DROP NOT NULL, ALTER COLUMN fba_ever DROP NOT NULL,
+        ALTER COLUMN amazon_ever DROP NOT NULL, ALTER COLUMN level DROP NOT NULL, ALTER COLUMN checked_at DROP NOT NULL;
+    ALTER TABLE asin_flags ADD COLUMN fba_eligible boolean, ADD COLUMN fba_reasons text[] NOT NULL DEFAULT '{}',
+        ADD COLUMN fba_checked_at timestamptz;
     """,
 ]
 
