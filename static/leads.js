@@ -2,7 +2,7 @@
   'use strict';
   const { $, $$, esc, money, num, pct, fmtDate, api, toast, fail, can } = LG;
   const PAGE = 200;
-  const S = { meta: null, rows: [], byId: new Map(), totals: null, dayTotals: {}, sort: 'date', desc: true, offset: 0, days: 30, openId: null, order: [] };
+  const S = { sel: new Set(), meta: null, rows: [], byId: new Map(), totals: null, dayTotals: {}, sort: 'date', desc: true, offset: 0, days: 30, openId: null, order: [] };
 
   // Column definitions: key, header, sort key (or null), cell class, renderer.
   const band = (b) => b == null ? '<span class="muted">—</span>' : `<span class="band b${b}">${b}</span>`;
@@ -102,7 +102,8 @@
   function render() {
     const t = S.totals || {};
     $('#summary') && ($('#summary').textContent = `${num(t.n)} leads match · ${num(t.bought)} bought`);
-    $('#head').innerHTML = S.order.map((k) => {
+    const selOk = canOrder();
+    $('#head').innerHTML = (selOk ? `<th class="sel-col"><input type="checkbox" id="selAll" title="Select all shown" ${S.rows.length && S.rows.every((r) => S.sel.has(r.id)) ? 'checked' : ''}></th>` : '') + S.order.map((k) => {
       const [label, sk, cls] = COLS[k];
       const fk = HEADER_FILTERS[k];
       const fval = fk ? $('#' + fk.input).value : '';
@@ -119,6 +120,7 @@
       html += rowHtml(r);
     }
     $('#rows').innerHTML = html;
+    updateSelBar();
     if (S.newRowOrder !== S.order.join()) renderNewRow();
     $('#empty').classList.toggle('hidden', S.rows.length > 0);
     const left = (t.n || 0) - S.rows.length;
@@ -134,17 +136,115 @@
     if (t.actual) bits.push(`${money(t.actual, 0)} spent`);
     if (t.expected) bits.push(`${money(t.expected, 0)} planned`);
     const cs = t.claude_n ? `<span class="day-claude" title="Sum of Claude buy qty × cost for this day's leads">Claude suggested spend <b>${money(t.claude_spend, 0)}</b></span>` : '';
-    return `<tr class="day-row"><td colspan="${S.order.length + 1}">${cs}<b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
+    return `<tr class="day-row"><td colspan="${S.order.length + 1 + (canOrder() ? 1 : 0)}">${cs}<b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
   }
 
   function rowHtml(r) {
-    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''}">` +
+    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''} ${S.sel.has(r.id) ? 'picked' : ''}">` +
+      (canOrder() ? `<td class="sel-col" data-stop><input type="checkbox" data-pick="${esc(r.id)}" ${S.sel.has(r.id) ? 'checked' : ''} aria-label="Select lead"></td>` : '') +
       S.order.map((k) => `<td class="${COLS[k][2]}">${COLS[k][3](r)}</td>`).join('') +
       `<td class="row-act">${can('editor') ? `<button class="icon-act danger" data-del="${esc(r.id)}" data-stop title="Delete lead" aria-label="Delete lead">${TRASH}</button>` : ''}</td></tr>`;
   }
 
   // ------------------------------------------------------------ row delete with confirmation
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
+  // ------------------------------------------------------------ select rows -> create an order
+  function canOrder() { const me = LG.st.me; return !!me && ['owner', 'editor'].includes(me.role) && (me.tabs || []).includes('orders'); }
+  let lastPick = null;
+  function updateSelBar() {
+    const n = S.sel.size, bar = $('#selBar'); if (!bar) return;
+    bar.hidden = !canOrder() || n === 0;
+    $('#selCount').textContent = `${n} selected`;
+    const all = $('#selAll'); if (all) { const shown = S.rows.filter((r) => S.sel.has(r.id)).length; all.checked = shown > 0 && shown === S.rows.length; all.indeterminate = shown > 0 && shown < S.rows.length; }
+  }
+  function setPick(id, on) {
+    if (on) S.sel.add(id); else S.sel.delete(id);
+    const tr = $(`#rows tr[data-id="${CSS.escape(id)}"]`);
+    if (tr) { tr.classList.toggle('picked', on); const cb = tr.querySelector('[data-pick]'); if (cb) cb.checked = on; }
+  }
+  document.addEventListener('click', (e) => {
+    const cb = e.target.closest('input[data-pick]');
+    if (cb) {
+      e.stopPropagation();
+      const id = cb.dataset.pick;
+      if (e.shiftKey && lastPick && lastPick !== id) {   // shift-click selects the run between
+        const ids = S.rows.map((r) => r.id); const a = ids.indexOf(lastPick), b = ids.indexOf(id);
+        if (a >= 0 && b >= 0) ids.slice(Math.min(a, b), Math.max(a, b) + 1).forEach((x) => setPick(x, cb.checked));
+      } else setPick(id, cb.checked);
+      lastPick = id; updateSelBar(); return;
+    }
+    if (e.target.id === 'selAll') { const on = e.target.checked; S.rows.forEach((r) => setPick(r.id, on)); updateSelBar(); return; }
+    if (e.target.closest('#selClear')) { [...S.sel].forEach((id) => setPick(id, false)); S.sel.clear(); updateSelBar(); return; }
+    if (e.target.closest('#selOrder')) { createOrderDialog().catch(fail); }
+  }, true);
+
+  async function createOrderDialog() {
+    const leads = [...S.sel].map((id) => S.byId.get(id)).filter(Boolean);
+    if (!leads.length) { toast('Select some leads first', true); return; }
+    let meta = { stores: [], emails: [], set_types: [] };
+    try { meta = await api('GET', '/api/meta'); } catch { /* suggestions only */ }
+    const storeCount = new Map();
+    leads.forEach((l) => { const s0 = (l.stores || [])[0]; if (s0) storeCount.set(s0, (storeCount.get(s0) || 0) + 1); });
+    const store = [...storeCount].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    const stores = [...storeCount.keys()];
+    const today = todayIso();
+    const qtyOf = (l) => (l.left_to_buy > 0 ? l.left_to_buy : (l.buy_qty || ''));
+    const itemRow = (l) => `<tr data-lead="${esc(l.id)}">
+      <td class="c-asin"><input class="mono" data-f="asin" value="${esc(l.asin || '')}" maxlength="10"></td>
+      <td><input data-f="product_title" value="${esc(l.product_name || '')}" placeholder="Title"></td>
+      <td class="c-shade"><input data-f="shade" placeholder="Shade"></td>
+      <td class="c-set"><input data-f="set_type" list="coSets" placeholder="Set type"></td>
+      <td class="c-qty"><input data-f="qty_ordered" class="num" inputmode="numeric" value="${esc(qtyOf(l))}"></td>
+      <td class="c-cost"><input data-f="cost_per_unit" class="num" inputmode="decimal" placeholder="0.00"></td>
+      <td><button type="button" class="icon-btn" data-co-drop title="Remove this item">✕</button></td></tr>`;
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back co-back';
+    wrap.innerHTML = `<form class="confirm-box co-box" role="dialog" aria-modal="true" aria-labelledby="coT">
+      <div style="display:flex;align-items:center;gap:10px"><h3 id="coT" style="flex:1;margin:0">New order <span class="muted" style="font-size:16px">from ${leads.length} lead${leads.length === 1 ? '' : 's'}</span></h3>
+        <button type="button" class="icon-btn" data-co-close title="Close (Esc)" style="font-size:20px">✕</button></div>
+      ${stores.length > 1 ? `<p class="recon bad" style="margin:10px 0 0">These leads come from ${stores.length} stores (${stores.map(esc).join(', ')}). One order is one store checkout, so check the store below.</p>` : ''}
+      <div class="grid two" style="margin-top:14px">
+        <label>Date<input type="date" name="order_date" value="${today}" required></label>
+        <label>Store<input name="store" list="coStores" value="${esc(store)}" required></label>
+        <label>Email<input name="email" list="coEmails" value="${esc(meta.emails?.[0] || '')}"></label>
+        <label>Order total<input name="order_total" class="num" inputmode="decimal" placeholder="0.00"></label>
+        <label class="wide">Order ID<input name="order_ref" class="mono" placeholder="Order ID"></label>
+        <label class="wide">Notes<textarea name="notes" rows="2" placeholder="Notes"></textarea></label>
+      </div>
+      <div class="section-title">Items</div>
+      <div class="items"><table><thead><tr><th>ASIN</th><th>Title</th><th>Shade</th><th>Set type</th><th class="num">Qty</th><th class="num">Cost/unit</th><th></th></tr></thead>
+        <tbody id="coItems">${leads.map(itemRow).join('')}</tbody></table></div>
+      <datalist id="coStores">${[...new Set([...stores, ...(meta.stores || [])])].map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+      <datalist id="coEmails">${(meta.emails || []).map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+      <datalist id="coSets">${(meta.set_types || []).map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+      <div class="confirm-actions"><button type="button" class="btn" data-co-close>Cancel</button><button class="btn primary" type="submit">Create order</button></div>
+    </form>`;
+    document.body.appendChild(wrap);
+    const form = wrap.querySelector('form');
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    form.querySelector('[name="order_total"]').focus();
+    wrap.addEventListener('click', (e) => {
+      if (e.target === wrap || e.target.closest('[data-co-close]')) { close(); return; }
+      const d = e.target.closest('[data-co-drop]'); if (d) { d.closest('tr').remove(); if (!$('#coItems tr')) close(); }
+    });
+    form.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.preventDefault(); });   // Enter doesn't submit by accident
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(form).entries());
+      body.items = $$('#coItems tr').map((tr) => Object.fromEntries($$('input', tr).map((i) => [i.dataset.f, i.value.trim()])))
+        .filter((it) => it.asin || it.product_title)
+        .map((it) => Object.fromEntries(Object.entries(it).filter(([, v]) => v !== '')));
+      if (!body.items.length) { toast('Add at least one item', true); return; }
+      const btn = form.querySelector('[type="submit"]'); btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        const o = await api('POST', '/api/orders', body);
+        close(); S.sel.clear();
+        location.href = '/#order=' + encodeURIComponent(o.id);   // open it on the Orders page
+      } catch (err) { btn.disabled = false; btn.textContent = 'Create order'; fail(err); }
+    });
+  }
+
   function confirmDelete(id) {
     const r = S.byId.get(id) || {};
     const wrap = document.createElement('div'); wrap.className = 'confirm-back';
@@ -276,7 +376,8 @@
     const refreshComputed = () => {
       const tr = $(`#rows tr[data-id="${CSS.escape(ed.id)}"]`); if (!tr || !row) return;
       if (numEd && numEd.id === ed.id) {
-        S.order.forEach((k, idx) => { if (['left', 'spend'].includes(k) && tr.children[idx]) tr.children[idx].innerHTML = COLS[k][3](row); });
+        const off = canOrder() ? 1 : 0;
+        S.order.forEach((k, idx) => { if (['left', 'spend'].includes(k) && tr.children[idx + off]) tr.children[idx + off].innerHTML = COLS[k][3](row); });
       } else tr.outerHTML = rowHtml(row);
     };
     try {
@@ -374,9 +475,10 @@
       if (i === best.start) { cells += `<td colspan="${best.len}">${extras}</td>`; i += best.len - 1; continue; }
       cells += `<td class="${cls}">${content[i] ?? ''}</td>`;
     }
-    const fallback = best.len ? '' : `<tr class="new-row new-more"><td colspan="${S.order.length + 1}">${extras}</td></tr>`;
-    tb.innerHTML = `<tr class="new-row"><td colspan="${S.order.length + 1}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter. The product name is filled in from Keepa.</span></td></tr>
-      <tr class="new-row new-main">${cells}<td class="row-act"></td></tr>${fallback}`;
+    const lead0 = canOrder() ? '<td class="sel-col"></td>' : '';
+    const fallback = best.len ? '' : `<tr class="new-row new-more">${lead0}<td colspan="${S.order.length + 1}">${extras}</td></tr>`;
+    tb.innerHTML = `<tr class="new-row">${lead0}<td colspan="${S.order.length + 1}" class="new-title"><b>New lead</b> <span class="muted">— type across, then press Enter. The product name is filled in from Keepa.</span></td></tr>
+      <tr class="new-row new-main">${lead0}${cells}<td class="row-act"></td></tr>${fallback}`;
     const defaults = { lead_date: todayIso(), sourced_by: 'Ariane' };
     $$('#newrow [data-n]').forEach((el) => { const v = keep[el.dataset.n] ?? defaults[el.dataset.n]; if (v != null) el.value = v; });
     S.newRowOrder = S.order.join();

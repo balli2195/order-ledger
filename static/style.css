@@ -395,3 +395,10 @@ td.store-name { font-weight: 600; }
 .tabboxes { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
 .tabboxes label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-weight: 400; }
 nav.tabs a[hidden] { display: none !important; }
+th.sel-col, td.sel-col { width: 28px; padding-left: 8px !important; padding-right: 2px !important; text-align: center; }
+td.sel-col input, th.sel-col input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; vertical-align: middle; }
+tbody tr.picked { background: var(--accent-soft); }
+.selbar { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.selbar[hidden] { display: none; }
+.co-box { width: min(980px, 100%); max-height: calc(100vh - 48px); overflow: auto; }
+.co-box h3 { font-family: var(--serif); font-weight: 400; font-size: 28px; }
