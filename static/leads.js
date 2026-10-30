@@ -2,7 +2,7 @@
   'use strict';
   const { $, $$, esc, money, num, pct, fmtDate, api, toast, fail, can } = LG;
   const PAGE = 200;
-  const S = { sel: new Set(), meta: null, rows: [], byId: new Map(), totals: null, dayTotals: {}, sort: 'date', desc: true, offset: 0, days: 30, openId: null, order: [] };
+  const S = { hl: null, sel: new Set(), meta: null, rows: [], byId: new Map(), totals: null, dayTotals: {}, sort: 'date', desc: true, offset: 0, days: 30, openId: null, order: [] };
 
   // Column definitions: key, header, sort key (or null), cell class, renderer.
   const band = (b) => b == null ? '<span class="muted">—</span>' : `<span class="band b${b}">${b}</span>`;
@@ -145,7 +145,7 @@
   }
 
   function rowHtml(r) {
-    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''} ${S.sel.has(r.id) ? 'picked' : ''}">` +
+    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''} ${S.sel.has(r.id) ? 'picked' : ''} ${S.hl === r.id ? 'hl' : ''}">` +
       (canOrder() ? `<td class="sel-col" data-stop><input type="checkbox" data-pick="${esc(r.id)}" ${S.sel.has(r.id) ? 'checked' : ''} aria-label="Select lead"></td>` : '') +
       S.order.map((k) => `<td class="${COLS[k][2]}" data-k="${k}">${COLS[k][3](r)}</td>`).join('') +
       `<td class="row-act">${can('editor') ? `<button class="icon-act danger" data-del="${esc(r.id)}" data-stop title="Delete lead" aria-label="Delete lead">${TRASH}</button>` : ''}</td></tr>`;
@@ -395,6 +395,22 @@
     }
   }
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-numedit]'); if (b) { e.preventDefault(); openNumEdit(b); } }, true);
+
+  // ------------------------------------------------------------ highlight the row whose ASIN / store link was clicked, until the next click
+  function setHl(id) {
+    if (S.hl === id) return;
+    if (S.hl) $(`#rows tr[data-id="${CSS.escape(S.hl)}"]`)?.classList.remove('hl');
+    S.hl = id;
+    if (id) $(`#rows tr[data-id="${CSS.escape(id)}"]`)?.classList.add('hl');
+  }
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest?.('#rows a.asin-btn, #rows a.store-link, #rows a.pill-link');
+    setHl(link ? link.closest('tr[data-id]')?.dataset.id || null : null);
+  }, true);
+  document.addEventListener('auxclick', (e) => {   // middle-click opens the link too
+    const link = e.target.closest?.('#rows a.asin-btn, #rows a.store-link, #rows a.pill-link');
+    if (link) setHl(link.closest('tr[data-id]')?.dataset.id || null);
+  }, true);
 
   // ------------------------------------------------------------ instant hover text (product name and notes), anywhere in the cell
   const HOVER_FIELD = { promo: 'promo_code', product: 'product_name', va_notes: 'va_notes', buyer_notes: 'buyer_notes', feedback: 'feedback' };

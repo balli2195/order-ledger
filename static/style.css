@@ -406,3 +406,5 @@ tbody tr.picked { background: var(--accent-soft); }
 .hover-tip[hidden] { display: none; }
 #rows td.note-cell { cursor: pointer; }
 #entryOrder:disabled { opacity: .55; cursor: default; }
+#rows tr.hl > td { background: var(--flash); }
+#rows tr.hl > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
