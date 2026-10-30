@@ -541,7 +541,7 @@
     const cost = lines.reduce((s, x) => s + x.qty * (x.unit_cost || 0), 0);
     const day = (iso) => fmtDate(iso);
     const span = (x) => x.first_date === x.last_date ? day(x.first_date) : `${day(x.first_date)} – ${day(x.last_date)}`;
-    const lineRow = (x) => `<tr><td class="mono"><a href="https://www.amazon.com/dp/${esc(x.asin)}" target="_blank" rel="noopener">${esc(x.asin)}</a></td>
+    const lineRow = (x) => `<tr><td class="mono"><a href="https://www.amazon.com/dp/${esc(x.asin)}" target="_blank" rel="noopener">${esc(x.asin)}</a>${x.multipack ? ` <span class="tag">${x.multipack}-pack</span>` : ''}</td>
       <td class="pp-title" title="${esc(x.title || '')}">${esc(x.title || '—')}</td><td class="num">${x.qty}</td>
       <td class="num">${x.unit_cost == null ? '<span class="bad-text">no cost</span>' : money(x.unit_cost)}${x.cost_missing_units ? `<br><span class="muted" style="font-size:11px">${x.cost_missing_units} u no cost</span>` : ''}</td>
       <td>${esc(x.supplier)}</td><td class="muted" style="white-space:nowrap">${x.orders} order${x.orders === 1 ? '' : 's'} · ${esc(span(x))}</td></tr>`;
@@ -553,7 +553,7 @@
       return `<details class="pp-batch"><summary><b>${esc(when)}</b> · ${b.kind === 'nightly' ? 'nightly' : 'button' + (b.who ? ' (' + esc(b.who) + ')' : '')} · ${b.rows.length} line${b.rows.length === 1 ? '' : 's'}, ${u} units
         ${b.status === 'sent' ? '<span class="tag ok-tag">sent</span>' : '<span class="tag bad-tag">refused</span>'}</summary>
         <table><thead><tr><th>ASIN</th><th>Title</th><th class="num">Qty</th><th class="num">Cost</th><th class="num">Sell</th><th>Store</th><th>Order IDs</th></tr></thead><tbody>
-        ${b.rows.map((x) => `<tr><td class="mono">${esc(x.asin)}</td><td class="pp-title" title="${esc(x.title || '')}">${esc(x.title || '')}</td><td class="num">${x.qty}</td>
+        ${b.rows.map((x) => `<tr><td class="mono">${esc(x.asin)}${x.multipack ? ` <span class="tag">${x.multipack}-pack</span>` : ''}</td><td class="pp-title" title="${esc(x.title || '')}">${esc(x.title || '')}</td><td class="num">${x.qty}</td>
           <td class="num">${money(x.unit_cost)}</td><td class="num">${x.sell == null ? '—' : money(x.sell)}</td><td>${esc(x.supplier || '')}</td><td class="mono pp-refs" title="${esc(x.order_refs || '')}">${esc(x.order_refs || '')}</td></tr>`).join('')}
         </tbody></table></details>`;
     }).join('');
@@ -563,7 +563,7 @@
       ${d.enabled ? '' : '<p class="recon bad">PrepOS isn\'t connected yet (no API token on the server), so nothing can be sent.</p>'}
       ${d.last_error ? `<p class="recon bad">Last problem: ${esc(d.last_error)}</p>` : ''}
       <p class="muted" style="margin:8px 0 14px">Every night at 11:45 PM the Hub sends order items from orders dated ${d.lag_days} days earlier or before (from ${esc(day(d.start))} on), so cancelled orders can be deleted first.
-        Items of the same ASIN are combined into one line (total qty, average cost; Sell = Buy Box or last Buy Box + 10%). An ASIN gets at most one line a day.
+        Items of the same ASIN are combined into one line (total qty, average cost; Sell = Buy Box or last Buy Box + 10%); a 2-pack, 3-pack… set type is sent as Multi-Pack and kept on its own line. An ASIN gets at most one line a day.
         ${d.last_nightly ? `Last nightly run: ${esc(day(d.last_nightly))}.` : ''}</p>
       <div class="pp-bar"><label>Orders through <input type="date" id="ppThrough" value="${esc(p.through)}" min="${esc(d.start)}" max="${esc(d.today)}"></label>
         <span class="muted">${p.through === d.default_through ? '(tonight\'s cutoff)' : ''}</span><span class="spacer"></span>

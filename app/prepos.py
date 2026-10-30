@@ -8,6 +8,8 @@ Rules (Nick, Oct 29, 2026):
 - PrepOS lines can't be edited through the API, so an ASIN gets at most one line per day: if an ASIN was already sent
   today (button or nightly), its new items wait for the next run.
 - Sell = Buy Box (or the last Buy Box Keepa saw) + 10%.
+- Multi-Pack comes from the item's set type: "2-pack" -> 2, "3-pack" -> 3, ... (Single, Split set, Bundle -> blank).
+  Items are combined per ASIN and pack size, so a 2-pack and singles of one ASIN are separate lines.
 - A "Send now" button sends early, through any date up to today.
 
 PrepOS API: POST {PREPOS_URL}/items/import, multipart field `products` = the same CSV as the manual import.
@@ -21,6 +23,7 @@ import io
 import json
 import logging
 import os
+import re
 import uuid
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
@@ -60,7 +63,7 @@ async def pending(through: date) -> dict:
     cfg = await config()
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            """SELECT i.id, upper(trim(i.asin)) AS asin, i.product_title, i.qty_ordered, i.cost_per_unit,
+            """SELECT i.id, upper(trim(i.asin)) AS asin, i.product_title, i.qty_ordered, i.cost_per_unit, i.set_type,
                       o.id AS order_id, o.store, o.order_ref, o.order_date
                FROM order_items i JOIN orders o ON o.id = i.order_id
                LEFT JOIN prepos_sent_items s ON s.item_id = i.id
@@ -69,18 +72,18 @@ async def pending(through: date) -> dict:
             (cfg["start"], through),
         )
         rows = await cur.fetchall()
-        cur = await conn.execute("SELECT DISTINCT asin FROM prepos_sends WHERE send_day=%s AND status='sent'", (today(),))
-        sent_today = {r["asin"] for r in await cur.fetchall()}
-    groups: dict[str, list] = defaultdict(list)
+        cur = await conn.execute("SELECT DISTINCT asin, multipack FROM prepos_sends WHERE send_day=%s AND status='sent'", (today(),))
+        sent_today = {(r["asin"], r["multipack"]) for r in await cur.fetchall()}
+    groups: dict[tuple, list] = defaultdict(list)
     no_asin = []
     for r in rows:
         if r["asin"] and len(r["asin"]) == 10:
-            groups[r["asin"]].append(r)
+            groups[(r["asin"], pack_size(r["set_type"]))].append(r)
         else:
             no_asin.append({"order_id": str(r["order_id"]), "store": r["store"], "order_ref": r["order_ref"],
                             "order_date": r["order_date"].isoformat(), "title": r["product_title"], "qty": r["qty_ordered"]})
     lines, held = [], []
-    for asin, items in groups.items():
+    for (asin, pack), items in groups.items():
         qty = sum(i["qty_ordered"] for i in items)
         costed = [i for i in items if i["cost_per_unit"] is not None]
         cu = sum(i["qty_ordered"] for i in costed)
@@ -91,13 +94,13 @@ async def pending(through: date) -> dict:
         titles = Counter(i["product_title"].strip() for i in items if (i["product_title"] or "").strip())
         refs = list(dict.fromkeys(i["order_ref"] for i in items if i["order_ref"]))
         line = {
-            "asin": asin, "title": titles.most_common(1)[0][0] if titles else None, "qty": qty, "unit_cost": cost,
+            "asin": asin, "multipack": pack, "title": titles.most_common(1)[0][0] if titles else None, "qty": qty, "unit_cost": cost,
             "cost_missing_units": qty - cu, "supplier": " + ".join(s for s, _ in stores.most_common()),
             "order_refs": refs, "orders": len({str(i["order_id"]) for i in items}),
             "first_date": items[0]["order_date"].isoformat(), "last_date": items[-1]["order_date"].isoformat(),
             "item_ids": [str(i["id"]) for i in items],
         }
-        (held if asin in sent_today else lines).append(line)
+        (held if (asin, pack) in sent_today else lines).append(line)
     lines.sort(key=lambda x: (x["first_date"], x["supplier"], x["asin"]))
     return {"through": through.isoformat(), "lines": lines, "held": held, "no_asin": no_asin}
 
@@ -134,6 +137,13 @@ async def keepa_prices(asins: list[str]) -> dict[str, dict]:
     return out
 
 
+def pack_size(set_type: str | None) -> int | None:
+    """'2-pack' / '2 pack' / '2pk' -> 2; anything else (Single, Split set, Bundle, blank) -> None."""
+    m = re.match(r"^\s*(\d{1,2})\s*-?\s*(pack|pk)\s*$", set_type or "", re.I)
+    n = int(m.group(1)) if m else None
+    return n if n and n >= 2 else None
+
+
 def to_csv(lines: list[dict]) -> bytes:
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -142,7 +152,7 @@ def to_csv(lines: list[dict]) -> bytes:
         w.writerow(["AMZ FBA", x["title"] or "", x["asin"], x["qty"],
                     "" if x["unit_cost"] is None else f"{x['unit_cost']:.2f}",
                     "" if x.get("sell") is None else f"{x['sell']:.2f}",
-                    x["supplier"], "", "", "", ", ".join(x["order_refs"])])
+                    x["supplier"], x.get("multipack") or "", "", "", ", ".join(x["order_refs"])])
     return buf.getvalue().encode("utf-8-sig")
 
 
@@ -190,10 +200,10 @@ async def send(through: date, kind: str, user_id: int | None = None) -> dict:
                 async with conn.transaction():
                     for x in lines:
                         cur = await conn.execute(
-                            """INSERT INTO prepos_sends (batch, send_day, kind, user_id, asin, title, qty, unit_cost, sell, supplier,
+                            """INSERT INTO prepos_sends (batch, send_day, kind, user_id, asin, multipack, title, qty, unit_cost, sell, supplier,
                                    order_refs, first_date, last_date, status, response)
-                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                            (batch, day, kind, user_id, x["asin"], x["title"], x["qty"], x["unit_cost"], x["sell"], x["supplier"],
+                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                            (batch, day, kind, user_id, x["asin"], x["multipack"], x["title"], x["qty"], x["unit_cost"], x["sell"], x["supplier"],
                              ", ".join(x["order_refs"]), x["first_date"], x["last_date"], "sent" if ok else "failed",
                              json.dumps({"code": code, "body": body})),
                         )

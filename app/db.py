@@ -261,6 +261,11 @@ MIGRATIONS: list[str] = [
     INSERT INTO settings (key, value) VALUES ('prepos_start', '"2026-10-29"'), ('prepos_lag_days', '2')
     ON CONFLICT (key) DO NOTHING;
     """,
+    # 8: pack set types (sent to PrepOS as Multi-Pack) and the pack size on sent lines
+    """
+    INSERT INTO set_types (name) VALUES ('2-pack'), ('3-pack'), ('4-pack'), ('5-pack'), ('6-pack') ON CONFLICT DO NOTHING;
+    ALTER TABLE prepos_sends ADD COLUMN multipack integer;
+    """,
 ]
 
 
