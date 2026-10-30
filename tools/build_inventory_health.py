@@ -32,6 +32,13 @@ def drop_div(html: str, marker: str) -> str:
 
 
 sec = drop_div(sec, '<div class="lqws" id="lqWs"')   # the liquidation chat (removed by Nick, Oct 29 2026)
+# "Dashboards" heading, note and links to the old claude.ai dashboards (removed at Nick's request, Oct 29 2026).
+# The hidden days-of-inventory block stays: its script expects those elements.
+sec = drop_div(sec, '<div class="cards">')
+k = sec.find('<h2>Dashboards</h2>')
+if k >= 0:
+    sec = drop_div(sec, sec[sec.rfind('<div class="block"', 0, k):k])
+sec = re.sub(r'<p class="note">The dashboards below each open in a new tab\..*?</p>', '', sec, flags=re.S)
 
 scripts = [m.group(0) for m in re.finditer(r"<script[^>]*>.*?</script>", src, re.S)]
 want = []
