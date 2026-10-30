@@ -462,7 +462,7 @@
     const { users } = await api('GET', '/api/users');
     openModal(`<h2>Users &amp; logins</h2>
       <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
-      ${users.map((u) => `<tr data-user="${u.id}"><td>${esc(u.name)}</td><td>${esc(u.email)}</td>
+      ${users.map((u) => `<tr data-user="${u.id}"><td><input data-act="uname" value="${esc(u.name || '')}" placeholder="Name" style="min-width:120px"></td><td>${esc(u.email)}</td>
         <td><select data-act="role" ${u.id === S.me.id ? 'disabled' : ''}>${['owner', 'editor', 'viewer'].map((r) => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
         <td>${!u.active ? '<span class="tag">disabled</span>' : u.has_password ? 'active' : '<span class="tag">invite sent</span>'}</td>
         <td style="white-space:nowrap"><button class="btn small" data-act="reset">New link</button>
@@ -553,6 +553,9 @@
     const i = e.target;
     if (i.matches('#drawer [data-o]')) await saveOrderField(i);
     else if (i.matches('#drawer tr[data-item] input')) await saveItemField(i);
+    else if (i.matches('input[data-act="uname"]')) {
+      try { await api('PATCH', `/api/users/${i.closest('tr').dataset.user}`, { name: i.value }); toast('Name updated'); } catch (err) { fail(err); }
+    }
     else if (i.matches('select[data-act="role"]')) {
       try { await api('PATCH', `/api/users/${i.closest('tr').dataset.user}`, { role: i.value }); toast('Role updated'); } catch (err) { fail(err); }
     }

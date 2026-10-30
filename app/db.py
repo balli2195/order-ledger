@@ -228,6 +228,10 @@ MIGRATIONS: list[str] = [
     )
     UPDATE orders SET updated_at = now() WHERE id IN (SELECT order_id FROM gone);
     """,
+    # 6: fix the spelling of Ariane's user name (Nick, Oct 29, 2026)
+    """
+    UPDATE users SET name = 'Ariane' WHERE name = 'Araine';
+    """,
 ]
 
 
