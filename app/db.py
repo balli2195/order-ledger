@@ -279,6 +279,10 @@ MIGRATIONS: list[str] = [
         version    integer NOT NULL DEFAULT 1,
         updated_at timestamptz NOT NULL DEFAULT now()
     );
+    """,    # 11: Left to buy = Buy qty until something is entered in Ordered (Nick, Oct 30 2026); was NULL while Ordered was blank
+    """
+    ALTER TABLE leads DROP COLUMN left_to_buy;
+    ALTER TABLE leads ADD COLUMN left_to_buy integer GENERATED ALWAYS AS (buy_qty - COALESCE(qty_ordered, 0)) STORED;
     """,
 ]
 

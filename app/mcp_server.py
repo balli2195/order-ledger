@@ -33,7 +33,7 @@ It also holds Nick's sourcing leads (formerly the Airtable "VA Leads" base): one
 lead_date, product_name, sourced_by (VA name), stores[], brands[], store_link, cost (per unit), promo_code, va_notes,
 buyer_notes, feedback, buy_qty (planned), qty_ordered (actually bought), lead_score_band (1-10) / lead_score_roi
 (predicted ROI) / lead_score_notes from the Lead Score server, claude_buy_qty / claude_buy_note, replen.
-expected_spend = cost*buy_qty, actual_spend = cost*qty_ordered, left_to_buy = buy_qty-qty_ordered.
+expected_spend = cost*buy_qty, actual_spend = cost*qty_ordered, left_to_buy = buy_qty-qty_ordered (= buy_qty while nothing is ordered).
 The VA bonus is 1.2% of actual spend on leads sourced by the bonus sourcer (see get_lead_choices).
 Stores and brands have a can_source flag. While leads mode is "mirror", leads are copied from Airtable every minute
 (this site never writes to Airtable); leads added or edited here stay here and edited fields aren't overwritten by
