@@ -25,7 +25,7 @@
     left: ['Left', 'left', 'num', (r) => num(r.left_to_buy)],
     spend: ['Spend', 'spend', 'num', (r) => r.actual_spend ? money(r.actual_spend, 0) : '—'],
     band: ['Band', 'band', 'center', (r) => band(r.lead_score_band)],
-    roi: ['Pred ROI', 'roi', 'num', (r) => pct(r.lead_score_roi)],
+    roi: ['Pred ROI', 'roi', 'num', (r) => r.lead_score_roi == null || r.lead_score_roi === '' ? '—' : Math.round(Number(r.lead_score_roi) * 100) + '%'],
     claude_qty: ['Claude qty', 'claude_qty', 'num', (r) => num(r.claude_buy_qty)],
     by: ['By', null, 'tight', (r) => esc(r.sourced_by || '')],
     promo: ['Promo', null, 'promo', (r) => r.promo_code ? `<span class="promo-code">${esc(r.promo_code)}</span>` : '<span class="muted">—</span>'],

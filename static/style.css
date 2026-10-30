@@ -451,3 +451,7 @@ td.prod .prod-sub .pill-list { overflow: hidden; text-overflow: ellipsis; min-wi
 #newrow .new-inline .new-store { flex: 0 1 150px; min-width: 90px; }
 td.prod .prod-sub .badge-slot { flex: 0 0 30px; display: inline-flex; justify-content: flex-start; }
 td.prod .prod-sub .badge-slot .hz-badge, td.prod .prod-sub .badge-slot .ok-badge { margin: 0; }
+/* Promo a bit wider (Oct 30, 2026) */
+td.promo, .wrap.full td.promo { min-width: 120px; max-width: 230px; }
+@media (max-width: 1700px) { .wrap.full td.promo { max-width: 10vw; } }
+#newrow td.promo input { max-width: 210px; }
