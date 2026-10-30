@@ -166,9 +166,21 @@
     return '';
   }
   async function hazPopup(asin, intro, day) {
-    let f = null, tp = null, tbm = []; try { const h = await api('GET', '/api/hazmat/' + encodeURIComponent(asin)); f = h.flag; tp = h.transparency; tbm = h.tp_brand || []; } catch { /* show the general text */ }
-    let same = [];
-    if (day) { try { same = (await api('GET', '/api/leads?' + new URLSearchParams({ asin, date_from: day, date_to: day, sort: 'date', desc: 'false', limit: 50 }))).leads; } catch { /* skip */ } }
+    // Open at once with a loading line, then fill in (both lookups run at the same time).
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<div class="confirm-box hz-box" role="alertdialog" aria-modal="true"><p class="muted">Loading warnings for <span class="mono">${esc(asin)}</span>…</p></div>`;
+    document.body.appendChild(wrap);
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-cf="no"]')) close(); });
+    const [h, sameRes] = await Promise.all([
+      api('GET', '/api/hazmat/' + encodeURIComponent(asin)).catch(() => null),
+      day ? api('GET', '/api/leads?' + new URLSearchParams({ asin, date_from: day, date_to: day, sort: 'date', desc: 'false', limit: 50 })).catch(() => null) : null,
+    ]);
+    if (!wrap.isConnected) return;   // closed while loading
+    const f = h?.flag || null, tp = h?.transparency || null, tbm = h?.tp_brand || [];
+    const same = sameRes?.leads || [];
     const bad = f?.fba_eligible === false, dup = same.length > 1;
     const tb = !tp && tbm.length > 0;
     const nWarn = [bad, dup, !!tp, tb].filter(Boolean).length;
@@ -176,7 +188,6 @@
     const reasons = f?.reason_text || [];
     const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name'];
     const kinfo = (f?.hazmat_info || []).filter((x) => KEEP.includes(x.aspect)).map((x) => `${esc(String(x.aspect).replace(/_/g, ' '))}: ${esc(x.value)}`).join(' · ');
-    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
     wrap.innerHTML = `<div class="confirm-box hz-box" role="alertdialog" aria-modal="true" aria-labelledby="hzT">
       <h3 id="hzT"><span class="hz-icon ${bad || tp ? '' : 'warn'}">!</span> ${nWarn > 1 ? nWarn + ' warnings' : tp ? 'Enrolled in Transparency' : tb ? 'Brand uses Transparency' : bad ? (f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now") : 'Entered more than once today'}</h3>
       ${intro ? `<p>${intro}</p>` : ''}
@@ -196,12 +207,7 @@
       <p class="muted" style="font-size:13px">Before buying: make sure you can clear this with Amazon, or plan to sell it merchant-fulfilled.</p>
       <p class="muted" style="font-size:12px">Checked with Amazon ${f?.fba_checked_at ? esc(new Date(f.fba_checked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })) : ''} (re-checked every 2 weeks)${f?.hazmat ? ` · Keepa lists it as hazmat${kinfo ? ': ' + kinfo : ''}` : ''}.</p></div>`}
       <div class="confirm-actions"><button class="btn primary" data-cf="no">Got it</button></div></div>`;
-    document.body.appendChild(wrap);
-    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
-    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(); } };
-    document.addEventListener('keydown', onKey, true);
     wrap.querySelector('[data-cf="no"]').focus();
-    wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-cf="no"]')) close(); });
   }
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-hz]'); if (b) { e.preventDefault(); e.stopPropagation(); hazPopup(b.dataset.hz, '', b.dataset.hzDay || ''); } }, true);
   function hazAfterAdd(lead) {
