@@ -17,7 +17,7 @@
   const COLS = {
     // Title on top; ASIN (with its warning badge) and store link underneath (Nick, Oct 30 2026)
     product: ['Product · Store', null, 'prod', (r) => `<div class="prod-title">${esc(r.product_name || '') || '<span class="muted">—</span>'}</div>`
-      + `<div class="prod-sub">${r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">no ASIN</span>'}${storeCell(r)}${r.asin ? hazBadge(r) : ''}</div>`],
+      + `<div class="prod-sub"><span class="badge-slot">${r.asin ? hazBadge(r) : ''}</span>${r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">no ASIN</span>'}${storeCell(r)}</div>`],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
     cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
     buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => numEditCell(r, 'buy_qty')],
