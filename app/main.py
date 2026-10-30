@@ -19,6 +19,7 @@ from . import leads as L
 from . import prepos
 from . import docs as hubdocs
 from . import hazmat
+from . import transparency
 from . import sellable
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
@@ -347,7 +348,30 @@ async def api_hazmat(asin: str, request: Request):
                 f[k] = f[k].isoformat()
         f["reason_text"] = [{"code": c, "text": sellable.REASONS.get(c, "")} for c in (f.get("fba_reasons") or [])]
         f["hazmat_reason"] = bool(set(f.get("fba_reasons") or []) & sellable.HAZMAT_CODES)
-    return {"flag": f, "status": sellable.status}
+    return {"flag": f, "status": sellable.status, "transparency": await transparency.get(asin)}
+
+
+@app.get("/api/transparency")
+async def api_transparency(request: Request):
+    """ASINs Amazon has emailed Nick about as enrolled in Transparency (units need Transparency codes)."""
+    await auth.require(request, tab=("leads", "orders"))
+    return await transparency.list_all()
+
+
+@app.get("/api/engine/transparency")
+async def engine_transparency(request: Request):
+    auth.require_engine_key(request)
+    return await transparency.list_all()
+
+
+@app.post("/api/engine/transparency")
+async def engine_transparency_add(request: Request, body: dict = Body(...)):
+    """For the scheduled email check: {notices: [{asin, title, email_date, kind: enrolled|rejected, effective_date, units_rejected, thread_id}]}."""
+    auth.require_engine_key(request)
+    try:
+        return await transparency.add_notices(body.get("notices") or [])
+    except transparency.TransparencyError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/leads/{lead_id}")

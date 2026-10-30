@@ -12,7 +12,7 @@ from typing import Any, Iterable
 
 import httpx
 
-from . import db
+from . import db, transparency
 from .orders import Actor, LedgerError, _audit, _date, _money, _text, jsonable
 
 log = logging.getLogger("ledger.leads")
@@ -178,7 +178,9 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, "
-            f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n FROM leads l "
+            f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
+            f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
+            f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency FROM leads l "
             f"LEFT JOIN asin_flags hf ON hf.asin = upper(btrim(l.asin)) {where} ORDER BY {order} LIMIT %s OFFSET %s",
             bargs + a + [limit, int(offset)],
         )
@@ -241,6 +243,8 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
             lead["fba_reasons"] = list(hz["fba_reasons"] or []) if hz else []
             cur = await conn.execute("SELECT count(*) n FROM leads WHERE upper(asin)=upper(%s) AND lead_date=%s", (lead["asin"], r["lead_date"]))
             lead["same_day_n"] = (await cur.fetchone())["n"]
+    if lead.get("asin"):
+        lead["transparency"] = await transparency.get(lead["asin"])
     return lead
 
 

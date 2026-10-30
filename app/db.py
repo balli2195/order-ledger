@@ -314,6 +314,20 @@ MIGRATIONS: list[str] = [
         ALTER COLUMN amazon_ever DROP NOT NULL, ALTER COLUMN level DROP NOT NULL, ALTER COLUMN checked_at DROP NOT NULL;
     ALTER TABLE asin_flags ADD COLUMN fba_eligible boolean, ADD COLUMN fba_reasons text[] NOT NULL DEFAULT '{}',
         ADD COLUMN fba_checked_at timestamptz;
+    """,    # 16: Amazon Transparency enrollment per ASIN, from Amazon's emails (app/transparency.py)
+    """
+    CREATE TABLE transparency_notices (
+        asin           text NOT NULL,
+        ref            text NOT NULL,
+        kind           text NOT NULL CHECK (kind IN ('enrolled', 'rejected')),
+        email_date     date,
+        effective_date date,
+        units_rejected integer,
+        title          text,
+        source         text NOT NULL DEFAULT 'email',
+        added_at       timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (asin, ref)
+    );
     """,
 ]
 
