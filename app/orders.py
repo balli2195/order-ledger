@@ -11,6 +11,8 @@ from . import db
 
 ORDER_FIELDS = ("order_date", "store", "email", "order_total", "order_ref", "notes")
 ITEM_FIELDS = ("asin", "product_title", "shade", "set_type", "qty_ordered", "cost_per_unit")
+# Typed set types are saved with the standard spelling ("single" -> "Single")
+SET_TYPE_NAMES = {n.lower(): n for n in ("Single", "Split set", "2-pack", "3-pack", "4-pack", "5-pack", "Bundle")}
 
 
 class LedgerError(ValueError):
@@ -117,6 +119,9 @@ def clean_item(data: dict, partial: bool, strict: bool = True) -> dict:
             out[k] = q
         elif k == "cost_per_unit":
             out[k] = _money(v, "cost_per_unit", places=4)
+        elif k == "set_type":
+            t = _text(v)
+            out[k] = SET_TYPE_NAMES.get(t.lower(), t) if t else t
         else:
             out[k] = _text(v)
     if not partial and "qty_ordered" not in out:
@@ -288,7 +293,7 @@ async def suggestions() -> dict:
         for key, sql in {
             "stores": "SELECT store v, count(*) c FROM orders GROUP BY store ORDER BY c DESC LIMIT 300",
             "emails": "SELECT email v, count(*) c FROM orders WHERE email IS NOT NULL GROUP BY email ORDER BY c DESC LIMIT 50",
-            "set_types": "SELECT name v FROM set_types UNION SELECT DISTINCT set_type FROM order_items WHERE set_type IS NOT NULL ORDER BY 1",
+            "set_types": "SELECT name v FROM set_types ORDER BY position, name",
         }.items():
             cur = await conn.execute(sql)
             out[key] = [r["v"] for r in await cur.fetchall()]

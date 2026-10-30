@@ -283,6 +283,15 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE leads DROP COLUMN left_to_buy;
     ALTER TABLE leads ADD COLUMN left_to_buy integer GENERATED ALWAYS AS (buy_qty - COALESCE(qty_ordered, 0)) STORED;
+    """,    # 12: one "Single" (items had both "single" and "Single"), fixed order of set types, no 6-pack (Nick, Oct 30 2026)
+    """
+    ALTER TABLE set_types ADD COLUMN position integer NOT NULL DEFAULT 100;
+    DELETE FROM set_types WHERE lower(name) IN ('single', '6-pack');
+    INSERT INTO set_types (name, position) VALUES ('Single', 1), ('Split set', 2), ('Bundle', 7) ON CONFLICT (name) DO NOTHING;
+    UPDATE set_types SET position = CASE lower(name) WHEN 'split set' THEN 2 WHEN '2-pack' THEN 3 WHEN '3-pack' THEN 4
+        WHEN '4-pack' THEN 5 WHEN '5-pack' THEN 6 WHEN 'bundle' THEN 7 ELSE position END;
+    UPDATE order_items i SET set_type = t.name FROM set_types t
+        WHERE lower(btrim(i.set_type)) = lower(t.name) AND i.set_type IS DISTINCT FROM t.name;
     """,
 ]
 
