@@ -28,7 +28,7 @@
     roi: ['Pred ROI', 'roi', 'num', (r) => pct(r.lead_score_roi)],
     claude_qty: ['Claude qty', 'claude_qty', 'num', (r) => num(r.claude_buy_qty)],
     by: ['By', null, 'tight', (r) => esc(r.sourced_by || '')],
-    promo: ['Promo', null, 'promo', (r) => r.promo_code ? `<span class="promo-code" title="${esc(r.promo_code)}">${esc(r.promo_code)}</span>` : '<span class="muted">—</span>'],
+    promo: ['Promo', null, 'promo', (r) => r.promo_code ? `<span class="promo-code">${esc(r.promo_code)}</span>` : '<span class="muted">—</span>'],
     va_notes: ['VA notes', null, 'note-cell', (r) => noteCell(r, 'va_notes')],
     buyer_notes: ['Buyer notes', null, 'note-cell', (r) => noteCell(r, 'buyer_notes')],
     feedback: ['Feedback', null, 'note-cell', (r) => noteCell(r, 'feedback')],
@@ -400,7 +400,7 @@
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-numedit]'); if (b) { e.preventDefault(); openNumEdit(b); } }, true);
 
   // ------------------------------------------------------------ instant hover text (product name and notes), anywhere in the cell
-  const HOVER_FIELD = { product: 'product_name', va_notes: 'va_notes', buyer_notes: 'buyer_notes', feedback: 'feedback' };
+  const HOVER_FIELD = { promo: 'promo_code', product: 'product_name', va_notes: 'va_notes', buyer_notes: 'buyer_notes', feedback: 'feedback' };
   let hov = null, hovTd = null;
   function hideHover() { if (hov) hov.hidden = true; hovTd = null; }
   document.addEventListener('mouseover', (e) => {
