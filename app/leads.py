@@ -178,7 +178,7 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             f"WITH tb AS MATERIALIZED (SELECT asin, key FROM transparency_brands) "
-            f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, "
+            f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, hf.list_ok, hf.list_checked_at, "
             f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
             f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
             f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency, "
@@ -237,13 +237,16 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
                 (lead["asin"], r["id"]),
             )
             lead["same_asin"] = [jsonable(dict(x)) for x in await cur.fetchall()]
-            cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at, fba_eligible, fba_reasons, fba_checked_at "
+            cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at, fba_eligible, fba_reasons, fba_checked_at, "
+                                     "list_ok, list_reasons, list_checked_at "
                                      "FROM asin_flags WHERE asin=upper(btrim(%s))", (lead["asin"],))
             hz = await cur.fetchone()
             lead["hazmat"] = jsonable(dict(hz)) if hz else None
             lead["hazmat_level"] = hz["level"] if hz else None
             lead["fba_eligible"] = hz["fba_eligible"] if hz else None
             lead["fba_reasons"] = list(hz["fba_reasons"] or []) if hz else []
+            lead["list_ok"] = hz["list_ok"] if hz else None
+            lead["list_reasons"] = (hz["list_reasons"] or []) if hz else []
             cur = await conn.execute("SELECT count(*) n FROM leads WHERE upper(asin)=upper(%s) AND lead_date=%s", (lead["asin"], r["lead_date"]))
             lead["same_day_n"] = (await cur.fetchone())["n"]
     if lead.get("asin"):

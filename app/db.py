@@ -351,6 +351,10 @@ MIGRATIONS: list[str] = [
     """
     CREATE INDEX IF NOT EXISTS leads_asin_trim_idx ON leads (upper(btrim(asin)));
     ANALYZE leads;
+    """,    # 20: can Nick's account list the ASIN at all (SP-API listing restrictions; app/sellable.py)
+    """
+    ALTER TABLE asin_flags ADD COLUMN list_ok boolean, ADD COLUMN list_reasons jsonb NOT NULL DEFAULT '[]',
+        ADD COLUMN list_checked_at timestamptz;
     """,
 ]
 

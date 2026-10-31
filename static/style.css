@@ -455,3 +455,4 @@ td.prod .prod-sub .badge-slot .hz-badge, td.prod .prod-sub .badge-slot .ok-badge
 td.promo, .wrap.full td.promo { min-width: 120px; max-width: 230px; }
 @media (max-width: 1700px) { .wrap.full td.promo { max-width: 10vw; } }
 #newrow td.promo input { max-width: 210px; }
+.ok-badge.part { background: transparent; border: 1.5px solid color-mix(in srgb, var(--ok) 55%, transparent); width: 15px; height: 15px; }

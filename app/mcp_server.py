@@ -330,7 +330,9 @@ async def create_lead(lead: LeadIn) -> dict:
     """Add a lead (stays on this site; Airtable isn't changed). It is scored automatically once it has an ASIN, cost and store link.
     The result carries Amazon's own FBA eligibility for the ASIN: if fba_eligible is false, warn the user before they buy
     and give the reasons (fba_reasons codes, e.g. FBA_INB_0007 = under Dangerous Goods (hazmat) review, needs an SDS or
-    exemption sheet; FBA_INB_0050 = no US fulfillment center can receive it). If transparency is set, Amazon has told the
+    exemption sheet; FBA_INB_0050 = no US fulfillment center can receive it). If list_ok is false, Amazon won't let the
+    user's account list the ASIN at all (list_reasons: APPROVAL_REQUIRED = brand/category gating, apply with the link;
+    NOT_ELIGIBLE = can't list it): warn them not to buy it. If transparency is set, Amazon has told the
     user the ASIN is enrolled in Transparency: units without Transparency codes are rejected at the warehouse, so warn
     them not to buy it for FBA. If tp_brand lists ASINs, the brand has other ASINs enrolled in Transparency: warn that this
     one may be enrolled too (check the product for a Transparency code before buying)."""
