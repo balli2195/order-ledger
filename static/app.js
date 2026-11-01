@@ -751,10 +751,19 @@
     if (e.key === '/' && document.activeElement === document.body) { e.preventDefault(); $('#q').focus(); }
   });
 
+  // Search and the All / Discrepancy / Missing info filter are remembered per browser (Nick, Nov 1 2026).
+  const saveFilters = () => { try { localStorage.setItem('orderFilters', JSON.stringify({ q: S.q, filter: S.filter })); } catch { /* storage blocked */ } };
+  try {
+    const v = JSON.parse(localStorage.getItem('orderFilters') || 'null');
+    if (v) {
+      if (typeof v.q === 'string') { S.q = v.q; $('#q').value = v.q; }
+      if (['all', 'discrepancy', 'missing'].includes(v.filter)) { S.filter = v.filter; $$('.chip[data-filter]').forEach((x) => x.classList.toggle('on', x.dataset.filter === v.filter)); }
+    }
+  } catch { /* storage blocked or old value */ }
   let qTimer;
-  $('#q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { S.q = e.target.value; S.shown = PAGE; render(); }, 120); });
+  $('#q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { S.q = e.target.value; S.shown = PAGE; saveFilters(); render(); }, 120); });
   $$('.chip').forEach((c) => c.addEventListener('click', () => {
-    $$('.chip').forEach((x) => x.classList.toggle('on', x === c)); S.filter = c.dataset.filter; S.shown = PAGE; render();
+    $$('.chip').forEach((x) => x.classList.toggle('on', x === c)); S.filter = c.dataset.filter; S.shown = PAGE; saveFilters(); render();
   }));
   $('#moreBtn').addEventListener('click', () => { S.shown += PAGE; render(); });
   $('#addBtn').addEventListener('click', newOrder);

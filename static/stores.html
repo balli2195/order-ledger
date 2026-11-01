@@ -74,9 +74,19 @@
     const g = e.target.closest('[data-goto]');
     if (g) { e.preventDefault(); sessionStorage.setItem('leadFilter', JSON.stringify({ [S.kind === 'stores' ? 'store' : 'brand']: g.dataset.goto })); location.href = '/leads'; }
   });
-  $$('#kind .chip').forEach((c) => c.addEventListener('click', () => { $$('#kind .chip').forEach((x) => x.classList.toggle('on', x === c)); S.kind = c.dataset.kind; load().catch(fail); }));
-  $$('#cs .chip').forEach((c) => c.addEventListener('click', () => { $$('#cs .chip').forEach((x) => x.classList.toggle('on', x === c)); S.cs = c.dataset.cs; render(); }));
-  $('#q').addEventListener('input', render);
+  // Stores/brands, the Can source filter and the search are remembered per browser (Nick, Nov 1 2026).
+  const saveFilters = () => { try { localStorage.setItem('storeFilters', JSON.stringify({ kind: S.kind, cs: S.cs, q: $('#q').value })); } catch { /* storage blocked */ } };
+  try {
+    const v = JSON.parse(localStorage.getItem('storeFilters') || 'null');
+    if (v) {
+      if (['stores', 'brands'].includes(v.kind)) { S.kind = v.kind; $$('#kind .chip').forEach((x) => x.classList.toggle('on', x.dataset.kind === v.kind)); }
+      if (['', '0', '1'].includes(v.cs)) { S.cs = v.cs; $$('#cs .chip').forEach((x) => x.classList.toggle('on', x.dataset.cs === v.cs)); }
+      if (typeof v.q === 'string') $('#q').value = v.q;
+    }
+  } catch { /* storage blocked or old value */ }
+  $$('#kind .chip').forEach((c) => c.addEventListener('click', () => { $$('#kind .chip').forEach((x) => x.classList.toggle('on', x === c)); S.kind = c.dataset.kind; saveFilters(); load().catch(fail); }));
+  $$('#cs .chip').forEach((c) => c.addEventListener('click', () => { $$('#cs .chip').forEach((x) => x.classList.toggle('on', x === c)); S.cs = c.dataset.cs; saveFilters(); render(); }));
+  $('#q').addEventListener('input', () => { saveFilters(); render(); });
   (async () => { await LG.header(); await load(); LG.live((m) => { if (m.t === 'store' || (m.t === 'lead' && (m.op === 'reload' || m.op === 'mode'))) load(); }); })().catch(fail);
 })();
 </script>

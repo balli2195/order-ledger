@@ -74,8 +74,27 @@
     return f;
   }
 
+  // Filters are remembered per browser, so switching pages and coming back keeps them (Nick, Nov 1 2026).
+  const FILTER_KEY = 'leadFilters';
+  function saveFilters() {
+    try {
+      const v = { days: S.days };
+      for (const id of ['q', 'store', 'brand', 'sourced', 'band']) v[id] = $('#' + id).value;
+      for (const id of ['ordered', 'left', 'unscored']) v[id] = $('#' + id).checked;
+      localStorage.setItem(FILTER_KEY, JSON.stringify(v));
+    } catch { /* storage blocked */ }
+  }
+  function restoreFilters() {
+    try {
+      const v = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null'); if (!v) return;
+      for (const id of ['q', 'store', 'brand', 'sourced', 'band']) if (typeof v[id] === 'string') $('#' + id).value = v[id];
+      for (const id of ['ordered', 'left', 'unscored']) $('#' + id).checked = !!v[id];
+      if (typeof v.days === 'number') { S.days = v.days; $$('#range .chip').forEach((x) => x.classList.toggle('on', Number(x.dataset.days) === S.days)); }
+    } catch { /* storage blocked or old value */ }
+  }
+
   async function load(append = false) {
-    if (!append) S.offset = 0;
+    if (!append) { S.offset = 0; saveFilters(); }
     const p = new URLSearchParams({ ...filters(), sort: S.sort, desc: S.desc, limit: PAGE, offset: S.offset });
     const res = await api('GET', '/api/leads?' + p);
     S.rows = append ? S.rows.concat(res.leads) : res.leads;
@@ -852,7 +871,8 @@
   S.order = loadOrder();
   (async () => {
     await LG.header();
-    try {   // coming from the Stores & brands page
+    restoreFilters();
+    try {   // coming from the Stores & brands page (this overrides the remembered filters)
       const pre = JSON.parse(sessionStorage.getItem('leadFilter') || 'null');
       if (pre) { sessionStorage.removeItem('leadFilter'); if (pre.store) $('#store').value = pre.store; if (pre.brand) $('#brand').value = pre.brand;
         S.days = 0; $$('#range .chip').forEach((x) => x.classList.toggle('on', x.dataset.days === '0')); }
