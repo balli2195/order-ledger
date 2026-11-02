@@ -125,6 +125,11 @@ async def inventory_health_frame(request: Request):
     return await _page(request, "inventory_health", "inventory-health-frame.html")
 
 
+@app.get("/brand-sellers", include_in_schema=False)
+async def brand_sellers_page(request: Request):
+    return await _page(request, "brand_sellers", "brand-sellers.html")
+
+
 @app.get("/no-access", include_in_schema=False)
 async def no_access(request: Request):
     user = await auth.current_user(request)

@@ -43,3 +43,7 @@ uvicorn app.main:app --reload
 For the lead scoring / Claude Buy QTY jobs. Header `X-Engine-Key: <ENGINE_KEY>` (Render env var `ENGINE_KEY`).
 - `GET /api/engine/leads?since=YYYY-MM-DD&asin=&limit=2000&offset=0` returns `{leads, total, offset, limit, next_offset}`, oldest first. Each lead has: id, date, created_at, asin, cost, store, stores, store_link, brand, brands, qty_ordered, buy_qty, lead_score_band, lead_score_pred_roi, claude_buy_qty. `limit` goes up to 5000; page until `next_offset` is null.
 - `POST /api/engine/leads/update {updates:[{id, claude_buy_qty, claude_buy_note, lead_score_band, lead_score_pred_roi, lead_score_notes}]}` accepts any subset of those fields, up to 200 per call, in one transaction. Edits are audited with source `engine` (shown as "Claude engine") and broadcast live. Any other field is rejected. Fields the engine writes are kept by the site (the Airtable copy won't overwrite them).
+
+## Brand sellers tab (Nov 2, 2026)
+- Page /brand-sellers (static/brand-sellers.html), tab key `brand_sellers`: Sephora brands Nick can sell, ranked by distinct third-party sellers. Owners see it; tick it per person in Users & logins.
+- Data: hub doc `brand_sellers/latest` = {label, builtAt, notes[], rows:[{rank, brand, sellers, fba, avg, asins, live, me, top_asin, top_n, verdict, new, thin, hist}]}. Refresh with `PUT /api/engine/docs/brand_sellers/latest` (X-Engine-Key); no redeploy needed. Method: project doc claude/sephora-brand-eligibility-2026-11-02.md.

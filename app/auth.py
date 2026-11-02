@@ -33,8 +33,9 @@ TABS = {
     "stores": ("Stores & brands", "/stores"),
     "prepos": ("PrepOS", "/"),
     "inventory_health": ("Inventory health", "/inventory-health"),
+    "brand_sellers": ("Brand sellers", "/brand-sellers"),
 }
-PAGE_TABS = ("leads", "orders", "stores", "inventory_health")   # tabs that are their own page, in menu order
+PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "brand_sellers")   # tabs that are their own page, in menu order
 
 
 @dataclass
