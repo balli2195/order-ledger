@@ -456,3 +456,10 @@ td.promo, .wrap.full td.promo { min-width: 120px; max-width: 230px; }
 @media (max-width: 1700px) { .wrap.full td.promo { max-width: 10vw; } }
 #newrow td.promo input { max-width: 210px; }
 .ok-badge.part { background: transparent; border: 1.5px solid color-mix(in srgb, var(--ok) 55%, transparent); width: 15px; height: 15px; }
+
+/* Day header rows on Leads: easier to spot (Nick, Nov 2 2026) */
+tr.day-row td { background: var(--accent-soft); color: var(--ink); font-size: 14px; padding-top: 10px; padding-bottom: 10px;
+  border-top: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+tr.day-row td > b { font-size: 15px; }
+tr.day-row td .muted { color: var(--ink); opacity: .85; }
+tr.day-row .day-claude { color: var(--ink); opacity: .85; }
