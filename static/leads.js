@@ -920,6 +920,13 @@
   $('#clear').addEventListener('click', () => { ['q', 'store', 'brand', 'sourced', 'band'].forEach((id) => { $('#' + id).value = ''; }); ['ordered', 'left', 'unscored'].forEach((id) => { $('#' + id).checked = false; }); reload(); });
   $('#moreBtn').addEventListener('click', () => { S.offset += PAGE; load(true).catch(fail); });
 
+  // The filter bar stays at the top while scrolling; the table header pins just below it (Nick, Nov 2 2026).
+  (() => {
+    const bar = $('#filterBar'); if (!bar) return;
+    document.body.classList.add('has-sticky-bar');
+    const set = () => document.documentElement.style.setProperty('--bar-h', bar.offsetHeight + 'px');
+    set(); try { new ResizeObserver(set).observe(bar); } catch { window.addEventListener('resize', set); }
+  })();
   S.order = loadOrder();
   (async () => {
     await LG.header();

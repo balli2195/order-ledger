@@ -475,3 +475,7 @@ tr.day-row .day-claude { color: var(--ink); opacity: .85; }
 .set-box table.mini { width: 100%; font-size: 12.5px; border-collapse: collapse; margin: 4px 0; }
 .set-box table.mini td { padding: 3px 6px; border-top: 1px solid var(--line-2); }
 .set-box table.mini tr.cur td { font-weight: 600; }
+
+/* Leads: the filter bar stays at the top while scrolling, and the table header pins just below it */
+.sticky-bar { position: sticky; top: 0; z-index: 6; background: var(--bg); padding-top: 8px; padding-bottom: 8px; margin-bottom: 4px; }
+body.has-sticky-bar th { top: var(--bar-h, 0px); }
