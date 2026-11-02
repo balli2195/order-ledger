@@ -144,8 +144,6 @@
     for (const r of S.rows) {
       const day = (r.set_id && r.group_date) || r.lead_date || '';
       if (day !== lastDay) { html += dayHtml(day); lastDay = day; prevSet = null; }
-      // a little space between two sets that sit next to each other
-      if (r.set_id && prevSet && prevSet !== r.set_id) html += `<tr class="set-gap" aria-hidden="true"><td colspan="${S.order.length + 1 + (canPick() ? 1 : 0)}"></td></tr>`;
       html += rowHtml(r);
       prevSet = r.set_id || null;
     }
