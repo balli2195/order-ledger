@@ -43,7 +43,7 @@ SORTS = {
 LIST_COLS = (
     "l.id, l.airtable_id, l.asin, l.lead_date, l.product_name, l.sourced_by, l.stores, l.brands, l.store_link, l.cost, "
     "l.promo_code, l.va_notes, l.feedback, l.buy_qty, l.qty_ordered, l.buyer_notes, l.lead_score_band, l.lead_score_roi, "
-    "l.claude_buy_qty, l.replen, l.expected_spend, l.actual_spend, l.left_to_buy, l.updated_at, l.created_at"
+    "l.claude_buy_qty, l.replen, l.expected_spend, l.actual_spend, l.left_to_buy, l.updated_at, l.created_at, l.set_id"
 )
 
 
@@ -165,26 +165,49 @@ def _where(f: dict) -> tuple[list[str], list]:
     return w, a
 
 
+GROUP = "PARTITION BY COALESCE(l.set_id, l.id)"   # a lead set sorts as one unit; a lead on its own is its own group
+
+
+def _group_order(order: str) -> str:
+    """Turn 'expr DIR [NULLS LAST], ...' into the same order applied to each set as a whole: a set takes the place of its
+    best member (max for DESC, min for ASC), and its members stay together in the order they were entered."""
+    parts = []
+    for p in [x.strip() for x in order.split(",") if x.strip()]:
+        m = re.match(r"^(.*?)\s+(ASC|DESC)(\s+NULLS LAST)?$", p, re.I)
+        if not m:
+            parts.append(p)
+            continue
+        expr, d, nl = m.group(1), m.group(2).upper(), m.group(3) or ""
+        parts.append(f"{'max' if d == 'DESC' else 'min'}({expr}) OVER ({GROUP}) {d}{nl}")
+    return ", ".join(parts + ["COALESCE(l.set_id, l.id)", "l.created_at DESC"])
+
+
 async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit: int = 200, offset: int = 0, day_list: list | None = None) -> dict:
     w, a = _where(filters)
+    if w:   # a filter that matches one lead of a set shows the whole set (Nick, Nov 2 2026)
+        cond = " AND ".join(w)
+        w, a = [f"(({cond}) OR (l.set_id IS NOT NULL AND l.set_id IN (SELECT l.set_id FROM leads l WHERE l.set_id IS NOT NULL AND {cond})))"], a + a
     where = ("WHERE " + " AND ".join(w)) if w else ""
     order = SORTS.get(sort, SORTS["date"]).format(d="DESC" if desc else "ASC")
     if sort != "date":
         # Leads are shown grouped by day: keep days together (newest first) and sort within each day.
         order = "l.lead_date DESC NULLS LAST, " + order
+    order = _group_order(order)
     rate, who = await bonus_params()
     bsql, bargs = _bonus_sql(rate, who)
     limit = max(1, min(int(limit), 1000))
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             f"WITH tb AS MATERIALIZED (SELECT asin, key FROM transparency_brands) "
-            f"SELECT {LIST_COLS}, {bsql}, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, hf.list_ok, hf.list_checked_at, "
+            f"SELECT {LIST_COLS}, {bsql}, ls.name AS set_name, count(*) OVER ({GROUP}) AS set_shown, "
+            f"max(l.lead_date) OVER ({GROUP}) AS group_date, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, hf.list_ok, hf.list_checked_at, "
             f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
             f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
             f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency, "
             f"(SELECT array_agg(DISTINCT tb.asin) FROM tb WHERE tb.asin <> upper(btrim(l.asin)) AND tb.key IN "
             f"(SELECT brand_key(b) FROM unnest(l.brands) b UNION SELECT brand_key(hf.brand))) AS tp_brand_asins FROM leads l "
-            f"LEFT JOIN asin_flags hf ON hf.asin = upper(btrim(l.asin)) {where} ORDER BY {order} LIMIT %s OFFSET %s",
+            f"LEFT JOIN asin_flags hf ON hf.asin = upper(btrim(l.asin)) LEFT JOIN lead_sets ls ON ls.id = l.set_id "
+            f"{where} ORDER BY {order} LIMIT %s OFFSET %s",
             bargs + a + [limit, int(offset)],
         )
         rows = [jsonable(dict(r)) for r in await cur.fetchall()]
@@ -252,6 +275,14 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
     if lead.get("asin"):
         lead["transparency"] = await transparency.get(lead["asin"])
         lead["tp_brand"] = await transparency.brand_matches(lead["asin"])
+    if lead.get("set_id"):
+        async with db.pool.connection() as conn:
+            cur = await conn.execute("SELECT name FROM lead_sets WHERE id=%s", (lead["set_id"],))
+            r = await cur.fetchone()
+            lead["set_name"] = r["name"] if r else None
+            cur = await conn.execute("SELECT id, asin, product_name, lead_date, cost, buy_qty, qty_ordered FROM leads WHERE set_id=%s ORDER BY created_at",
+                                     (lead["set_id"],))
+            lead["set_members"] = [jsonable(dict(x)) for x in await cur.fetchall()]
     return lead
 
 
@@ -550,3 +581,82 @@ async def engine_update(updates: list[dict]) -> dict:
         changes.append(ch)
     touched = await update_leads(ENGINE_ACTOR, changes)
     return {"updated": len(touched), "ids": touched}
+
+
+# ---------------------------------------------------------------- lead sets (split sets grouped by hand; Nick, Nov 2 2026)
+
+async def group_leads(actor: Actor, ids: list[str], name: str | None = None) -> dict:
+    """Put these leads in one set. Leads already in other sets move into it; sets left with fewer than 2 leads are removed."""
+    ids = list(dict.fromkeys(str(i) for i in ids or []))
+    if len(ids) < 2:
+        raise LedgerError("Pick at least 2 leads to group as a set")
+    name = (name or "").strip()[:120] or None
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("SELECT id, set_id FROM leads WHERE id = ANY(%s::uuid[])", (ids,))
+            found = await cur.fetchall()
+            if len(found) != len(ids):
+                raise LedgerError("Some of those leads no longer exist")
+            old_sets = {r["set_id"] for r in found if r["set_id"]}
+            # reuse an existing set if every lead already belongs to the same one; otherwise make a new set
+            cur = await conn.execute("INSERT INTO lead_sets (name, created_by) VALUES (%s,%s) RETURNING id", (name, actor.user_id))
+            sid = (await cur.fetchone())["id"]
+            await conn.execute("UPDATE leads SET set_id=%s, updated_at=now() WHERE id = ANY(%s::uuid[])", (sid, ids))
+            await _tidy_sets(conn, old_sets)
+            await _audit(conn, actor, "group", "lead_set", str(sid), None, None, {"leads": ids, "name": name})
+            cur = await conn.execute("SELECT id FROM leads WHERE set_id = ANY(%s::uuid[])", (list(old_sets) + [sid],))
+            touched = [str(r["id"]) for r in await cur.fetchall()]
+            await _notify(conn, "upsert", touched, actor.label, actor.source)
+    return {"set_id": str(sid), "name": name, "leads": len(ids)}
+
+
+async def ungroup_leads(actor: Actor, ids: list[str]) -> dict:
+    """Take these leads out of their sets. A set left with fewer than 2 leads is removed."""
+    ids = list(dict.fromkeys(str(i) for i in ids or []))
+    if not ids:
+        raise LedgerError("Pick the leads to take out of their set")
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("SELECT DISTINCT set_id FROM leads WHERE id = ANY(%s::uuid[]) AND set_id IS NOT NULL", (ids,))
+            sets = {r["set_id"] for r in await cur.fetchall()}
+            cur = await conn.execute("SELECT id FROM leads WHERE set_id = ANY(%s::uuid[])", (list(sets),))
+            touched = [str(r["id"]) for r in await cur.fetchall()]
+            await conn.execute("UPDATE leads SET set_id=NULL, updated_at=now() WHERE id = ANY(%s::uuid[])", (ids,))
+            await _tidy_sets(conn, sets)
+            for sid in sets:
+                await _audit(conn, actor, "ungroup", "lead_set", str(sid), None, {"leads": ids}, None)
+            if touched:
+                await _notify(conn, "upsert", touched, actor.label, actor.source)
+    return {"ungrouped": len(ids), "sets": len(sets)}
+
+
+async def ungroup_set(actor: Actor, set_id: str) -> dict:
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT id FROM leads WHERE set_id=%s", (set_id,))
+        ids = [str(r["id"]) for r in await cur.fetchall()]
+    if not ids:
+        raise LedgerError("That set no longer exists")
+    return await ungroup_leads(actor, ids)
+
+
+async def rename_set(actor: Actor, set_id: str, name: str | None) -> dict:
+    name = (name or "").strip()[:120] or None
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("UPDATE lead_sets SET name=%s WHERE id=%s RETURNING id", (name, set_id))
+            if not await cur.fetchone():
+                raise LedgerError("That set no longer exists")
+            await _audit(conn, actor, "rename", "lead_set", str(set_id), None, None, {"name": name})
+            cur = await conn.execute("SELECT id FROM leads WHERE set_id=%s", (set_id,))
+            await _notify(conn, "upsert", [str(r["id"]) for r in await cur.fetchall()], actor.label, actor.source)
+    return {"set_id": str(set_id), "name": name}
+
+
+async def _tidy_sets(conn, set_ids) -> None:
+    """Remove sets that have fewer than 2 leads left."""
+    set_ids = [s for s in set_ids if s]
+    if not set_ids:
+        return
+    await conn.execute("UPDATE leads SET set_id=NULL WHERE set_id IN (SELECT set_id FROM leads WHERE set_id = ANY(%s::uuid[]) "
+                       "GROUP BY set_id HAVING count(*) < 2)", (set_ids,))
+    await conn.execute("DELETE FROM lead_sets s WHERE s.id = ANY(%s::uuid[]) AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.set_id = s.id)", (set_ids,))

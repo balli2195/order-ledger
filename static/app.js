@@ -467,6 +467,10 @@
     if (c.entity === 'batch') return `imported ${c.after?.orders ?? ''} orders, ${c.after?.items ?? ''} items`;
     if (c.entity === 'setting') return c.after?.daily_target != null ? `set daily target to ${moneyWhole(c.after.daily_target)}` : c.after?.leads_mode === 'home' ? 'made Myrddin Hub the home for leads' : 'changed a setting';
     if (c.entity === 'prepos') return `${c.after?.ok === false ? 'tried to send' : 'sent'} ${c.after?.lines} line${c.after?.lines === 1 ? '' : 's'} (${c.after?.units} units) to PrepOS${c.after?.kind === 'nightly' ? ' (nightly)' : ''}`;
+    if (c.entity === 'lead_set') {
+      const n = (c.after?.leads || c.before?.leads || []).length, nm = c.after?.name ? ` "${esc(c.after.name)}"` : '';
+      return c.action === 'group' ? `grouped ${n} leads as a set${nm}` : c.action === 'rename' ? `renamed a lead set to${nm || ' (no name)'}` : `took ${n} lead${n === 1 ? '' : 's'} out of a set`;
+    }
     if (c.entity === 'store' || c.entity === 'brand') return `marked ${c.entity} ${esc(c.after?.name || '')} as ${c.after?.can_source ? 'OK to source' : "can't source"}`;
     let what;
     if (c.entity === 'lead') {

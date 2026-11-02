@@ -313,7 +313,7 @@ async def api_activity(request: Request, limit: int = 100, order_id: str | None 
     return {"changes": [c for c in rows if user.can_tab(ENTITY_TAB.get(c.get("entity"), "_owner"))]}
 
 
-ENTITY_TAB = {"order": "orders", "item": "orders", "batch": "orders", "lead": "leads", "store": "stores", "brand": "stores",
+ENTITY_TAB = {"order": "orders", "item": "orders", "batch": "orders", "lead": "leads", "lead_set": "leads", "store": "stores", "brand": "stores",
               "prepos": "prepos"}   # anything else (settings, users) is owner-only
 
 # ---------------------------------------------------------------- leads API
@@ -423,6 +423,32 @@ async def api_create_lead(request: Request, body: dict = Body(...)):
 async def api_update_leads(request: Request, body: Any = Body(...)):
     user = await auth.require(request, "editor", tab="leads")
     return {"leads": await L.update_leads(web_actor(user), body if isinstance(body, list) else [body])}
+
+
+@app.post("/api/lead-sets")
+async def api_group_leads(request: Request, body: dict = Body(...)):
+    """Group leads as one set: {lead_ids: [...], name?}."""
+    user = await auth.require(request, "editor", tab="leads")
+    return await L.group_leads(web_actor(user), body.get("lead_ids") or [], body.get("name"))
+
+
+@app.post("/api/lead-sets/ungroup")
+async def api_ungroup_leads(request: Request, body: dict = Body(...)):
+    """Take leads out of their sets: {lead_ids: [...]}."""
+    user = await auth.require(request, "editor", tab="leads")
+    return await L.ungroup_leads(web_actor(user), body.get("lead_ids") or [])
+
+
+@app.delete("/api/lead-sets/{set_id}")
+async def api_ungroup_set(set_id: str, request: Request):
+    user = await auth.require(request, "editor", tab="leads")
+    return await L.ungroup_set(web_actor(user), set_id)
+
+
+@app.patch("/api/lead-sets/{set_id}")
+async def api_rename_set(set_id: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor", tab="leads")
+    return await L.rename_set(web_actor(user), set_id, body.get("name"))
 
 
 @app.delete("/api/leads/{lead_id}")

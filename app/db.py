@@ -355,6 +355,16 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE asin_flags ADD COLUMN list_ok boolean, ADD COLUMN list_reasons jsonb NOT NULL DEFAULT '[]',
         ADD COLUMN list_checked_at timestamptz;
+    """,    # 21: lead sets (split sets): leads grouped by hand stay together when the list is sorted or filtered
+    """
+    CREATE TABLE lead_sets (
+        id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        name       text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        created_by integer
+    );
+    ALTER TABLE leads ADD COLUMN set_id uuid REFERENCES lead_sets(id) ON DELETE SET NULL;
+    CREATE INDEX leads_set_idx ON leads (set_id) WHERE set_id IS NOT NULL;
     """,
 ]
 
