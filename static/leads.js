@@ -364,8 +364,8 @@
         <label>Store<input name="store" list="coStores" value="${esc(store)}" required></label>
         <label>Email<input name="email" list="coEmails" value="${esc(meta.emails?.[0] || '')}"></label>
         <label>Order total<input name="order_total" class="num" inputmode="decimal" placeholder="0.00"></label>
-        <label class="wide">Order ID<input name="order_ref" class="mono" placeholder="Order ID"></label>
-        <label class="wide">Notes<textarea name="notes" rows="2" placeholder="Notes"></textarea></label>
+        <label>Order ID<input name="order_ref" class="mono" placeholder="Order ID"></label>
+        <label>Notes<textarea name="notes" rows="1" placeholder="Notes" style="min-height:0;resize:vertical"></textarea></label>
       </div>
       <div class="section-title">Items</div>
       <div class="items"><table><thead><tr><th>ASIN</th><th>Title</th><th>Shade</th><th>Set type</th><th class="num">Qty</th><th class="num">Cost/unit</th><th></th></tr></thead>

@@ -522,8 +522,8 @@
           <label>Store<input name="store" list="dlStores" required autofocus placeholder="Store"></label>
           <label>Email<input name="email" list="dlEmails" value="${esc(S.meta.emails?.[0] || '')}" placeholder="you@example.com"></label>
           <label>Order total<input name="order_total" class="num" inputmode="decimal" placeholder="0.00"></label>
-          <label class="wide">Order ID<input name="order_ref" class="mono" placeholder="Order ID"></label>
-          <label class="wide">Notes<textarea name="notes" rows="3" placeholder="Notes"></textarea></label>
+          <label>Order ID<input name="order_ref" class="mono" placeholder="Order ID"></label>
+          <label>Notes<textarea name="notes" rows="1" placeholder="Notes" style="min-height:0;resize:vertical"></textarea></label>
         </div>
         <div class="dlg-actions"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Add order</button></div>
         </form>
