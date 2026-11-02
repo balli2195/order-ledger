@@ -14,10 +14,11 @@
       ? `<a class="pill-link" href="${esc(url)}" target="_blank" rel="noopener" data-stop title="Open the store page">${esc(n)} ↗</a>`
       : `<span>${esc(n)}</span>`).join('')}</span>`;
   };
+  const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   const COLS = {
     // Title on top; ASIN (with its warning badge) and store link underneath (Nick, Oct 30 2026)
     product: ['Product · Store', null, 'prod', (r) => `<div class="prod-title">${esc(r.product_name || '') || '<span class="muted">—</span>'}</div>`
-      + `<div class="prod-sub"><span class="badge-slot">${r.asin ? hazBadge(r) : ''}</span>${r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a>` : '<span class="muted">no ASIN</span>'}${storeCell(r)}${r.set_id ? `<span class="set-chip" title="${esc((r.set_name ? r.set_name + ' · ' : '') + 'Part of a set: stays together when you sort or filter')}">⧉ ${esc(r.set_name || 'Set')}</span>` : ''}</div>`],
+      + `<div class="prod-sub"><span class="badge-slot">${r.asin ? hazBadge(r) : ''}</span>${r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a><button class="copy-btn" data-copy="${esc(r.asin)}" data-stop title="Copy ASIN" aria-label="Copy ASIN ${esc(r.asin)}">${COPY_ICON}</button>` : '<span class="muted">no ASIN</span>'}${storeCell(r)}${r.set_id ? `<span class="set-chip" title="${esc((r.set_name ? r.set_name + ' · ' : '') + 'Part of a set: stays together when you sort or filter')}">⧉ ${esc(r.set_name || 'Set')}</span>` : ''}</div>`],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
     cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
     buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => numEditCell(r, 'buy_qty')],
@@ -172,6 +173,19 @@
   }
 
   // ------------------------------------------------------------ row delete with confirmation
+  // Copy an ASIN to the clipboard (Nick, Nov 2 2026)
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-copy]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const text = b.dataset.copy;
+    try { await navigator.clipboard.writeText(text); }
+    catch {   // older browsers / no clipboard permission
+      const t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); } finally { t.remove(); }
+    }
+    b.classList.add('done'); setTimeout(() => b.classList.remove('done'), 1200);
+    toast(`Copied ${text}`);
+  }, true);
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
   // ------------------------------------------------------------ hazmat warning (flags from Keepa, cached per ASIN)
   function hazBadge(r) {

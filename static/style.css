@@ -479,3 +479,9 @@ tr.day-row .day-claude { color: var(--ink); opacity: .85; }
 /* Leads: the filter bar stays at the top while scrolling, and the table header pins just below it */
 .sticky-bar { position: sticky; top: 0; z-index: 6; background: var(--bg); padding-top: 8px; padding-bottom: 8px; margin-bottom: 4px; }
 body.has-sticky-bar th { top: var(--bar-h, 0px); }
+
+/* Copy-ASIN button next to the ASIN on Leads */
+.copy-btn { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: -3px; border-radius: 5px; color: var(--muted); flex: 0 0 auto; }
+.copy-btn:hover { color: var(--accent); background: var(--accent-soft); }
+.copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.copy-btn.done { color: var(--ok); }
