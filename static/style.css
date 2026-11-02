@@ -470,8 +470,15 @@ tr.day-row .day-claude { color: var(--ink); opacity: .85; }
 /* each set is boxed in blue: bars down both sides, a line across the top of its first row and the bottom of its last */
 #rows tr.in-set td:first-child { box-shadow: inset 3px 0 0 #6b78d8; }
 #rows tr.in-set td:last-child { box-shadow: inset -3px 0 0 #6b78d8; }
-#rows tr.in-set.set-first td { border-top: 3px solid #6b78d8; }
-#rows tr.in-set.set-last td { border-bottom: 3px solid #6b78d8; }
+/* the top and bottom lines only reach a little way in from each side (corner brackets), to keep the table calm */
+#rows tr.in-set td:first-child, #rows tr.in-set td:last-child { position: relative; }
+#rows tr.in-set.set-first td:first-child::before, #rows tr.in-set.set-first td:last-child::before,
+#rows tr.in-set.set-last td:first-child::after, #rows tr.in-set.set-last td:last-child::after {
+  content: ''; position: absolute; width: 28px; height: 3px; background: #6b78d8; pointer-events: none; }
+#rows tr.in-set.set-first td::before { top: 0; }
+#rows tr.in-set.set-last td::after { bottom: 0; }
+#rows tr.in-set td:first-child::before, #rows tr.in-set td:first-child::after { left: 0; }
+#rows tr.in-set td:last-child::before, #rows tr.in-set td:last-child::after { right: 0; }
 #rows tr.set-gap td { padding: 0; height: 8px; border: 0; background: var(--bg); }
 #rows tr.set-gap:hover td { background: var(--bg); }
 .set-box { margin: 10px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, #5b6bd6 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, #5b6bd6 6%, var(--panel)); }
