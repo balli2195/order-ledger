@@ -467,8 +467,13 @@ tr.day-row .day-claude { color: var(--ink); opacity: .85; }
 /* Lead sets (split sets) */
 .set-chip { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 11.5px; padding: 0 7px; border-radius: 99px;
   background: color-mix(in srgb, #5b6bd6 16%, transparent); color: color-mix(in srgb, #5b6bd6 75%, var(--ink)); white-space: nowrap; }
+/* each set is boxed in blue: bars down both sides, a line across the top of its first row and the bottom of its last */
 #rows tr.in-set td:first-child { box-shadow: inset 3px 0 0 #6b78d8; }
 #rows tr.in-set td:last-child { box-shadow: inset -3px 0 0 #6b78d8; }
+#rows tr.in-set.set-first td { border-top: 3px solid #6b78d8; }
+#rows tr.in-set.set-last td { border-bottom: 3px solid #6b78d8; }
+#rows tr.set-gap td { padding: 0; height: 8px; border: 0; background: var(--bg); }
+#rows tr.set-gap:hover td { background: var(--bg); }
 .set-box { margin: 10px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, #5b6bd6 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, #5b6bd6 6%, var(--panel)); }
 .set-box .set-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
 .set-box .set-row input { flex: 1 1 200px; }

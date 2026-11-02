@@ -140,10 +140,14 @@
       return `<th draggable="true" data-col="${k}" class="${cls} ${fk || sk ? 'sortable' : ''} ${fval ? 'hf-on' : ''}" ${attrs} title="${tip}; drag to move">${label}${arrow}${ftag}</th>`;
     }).join('') + '<th class="row-act" aria-label="Delete"></th>';
     let html = '', lastDay = null;
+    let prevSet = null;
     for (const r of S.rows) {
       const day = (r.set_id && r.group_date) || r.lead_date || '';
-      if (day !== lastDay) { html += dayHtml(day); lastDay = day; }
+      if (day !== lastDay) { html += dayHtml(day); lastDay = day; prevSet = null; }
+      // a little space between two sets that sit next to each other
+      if (r.set_id && prevSet && prevSet !== r.set_id) html += `<tr class="set-gap" aria-hidden="true"><td colspan="${S.order.length + 1 + (canPick() ? 1 : 0)}"></td></tr>`;
       html += rowHtml(r);
+      prevSet = r.set_id || null;
     }
     $('#rows').innerHTML = html;
     updateSelBar();
@@ -165,8 +169,14 @@
     return `<tr class="day-row"><td colspan="${S.order.length + 1 + (canPick() ? 1 : 0)}">${cs}<b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
   }
 
+  function setEdge(r) {   // 'set-first' / 'set-last' for the top and bottom rows of a set (for the box around it)
+    const i = S.rows.indexOf(r); if (i < 0) return '';
+    const sameDay = (x) => ((x.set_id && x.group_date) || x.lead_date) === ((r.set_id && r.group_date) || r.lead_date);
+    const prev = S.rows[i - 1], next = S.rows[i + 1];
+    return [!(prev && prev.set_id === r.set_id && sameDay(prev)) ? 'set-first' : '', !(next && next.set_id === r.set_id && sameDay(next)) ? 'set-last' : ''].join(' ');
+  }
   function rowHtml(r) {
-    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''} ${S.sel.has(r.id) ? 'picked' : ''} ${S.hl === r.id ? 'hl' : ''} ${r.set_id ? 'in-set' : ''}" ${r.set_id ? `data-set="${esc(r.set_id)}"` : ''}>` +
+    return `<tr data-id="${esc(r.id)}" class="${S.openId === r.id ? 'sel' : ''} ${S.sel.has(r.id) ? 'picked' : ''} ${S.hl === r.id ? 'hl' : ''} ${r.set_id ? 'in-set ' + setEdge(r) : ''}" ${r.set_id ? `data-set="${esc(r.set_id)}"` : ''}>` +
       (canPick() ? `<td class="sel-col" data-stop><input type="checkbox" data-pick="${esc(r.id)}" ${S.sel.has(r.id) ? 'checked' : ''} aria-label="Select lead"></td>` : '') +
       S.order.map((k) => `<td class="${COLS[k][2]}" data-k="${k}">${COLS[k][3](r)}</td>`).join('') +
       `<td class="row-act">${can('editor') ? `<button class="icon-act danger" data-del="${esc(r.id)}" data-stop title="Delete lead" aria-label="Delete lead">${TRASH}</button>` : ''}</td></tr>`;
@@ -844,19 +854,22 @@
     if (m.op === 'reload') { await load().catch(() => {}); loadMeta().catch(() => {}); return; }
     if (m.op === 'delete') { await load(); if (m.ids?.includes(S.openId)) closeDrawer(); return; }
     if (m.op === 'upsert') {
-      let changedVisible = false;
+      let changedVisible = false, setsChanged = false;
       for (const id of m.ids || []) {
         if (S.byId.has(id)) {
           try {
             const fresh = await api('GET', '/api/leads/' + id);
-            const i = S.rows.findIndex((r) => r.id === id); if (i >= 0) S.rows[i] = { ...S.rows[i], ...fresh };
+            const i = S.rows.findIndex((r) => r.id === id);
+            if (i >= 0 && (fresh.set_id || S.rows[i].set_id) && fresh.set_id !== S.rows[i].set_id) setsChanged = true;   // grouped / ungrouped: reload so sets regroup
+            if (i >= 0) S.rows[i] = { ...S.rows[i], ...fresh };
             S.byId.set(id, S.rows[i]); changedVisible = true;
             const tr = $(`tr[data-id="${CSS.escape(id)}"]`); if (tr) { tr.outerHTML = rowHtml(S.rows[i]); const n = $(`tr[data-id="${CSS.escape(id)}"]`); n.classList.add('flash'); setTimeout(() => n.classList.remove('flash'), 1200); }
             if (S.openId === id) { const a = document.activeElement; if (!(a && $('#drawer').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) renderDrawer(fresh); }
           } catch { /* gone */ }
         }
       }
-      if (!changedVisible && S.offset === 0 && S.sort === 'date') await load().catch(() => setTimeout(() => load().catch(() => {}), 3000));   // probably a new lead at the top
+      if (setsChanged) await load().catch(() => {});
+      else if (!changedVisible && S.offset === 0 && S.sort === 'date') await load().catch(() => setTimeout(() => load().catch(() => {}), 3000));   // probably a new lead at the top
       else {
         const ds = [...new Set((m.ids || []).map((id) => S.byId.get(id)?.lead_date).filter(Boolean))];
         const p = new URLSearchParams({ ...filters(), limit: 1, day_totals: ds.join(',') });
