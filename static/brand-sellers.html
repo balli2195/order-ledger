@@ -44,7 +44,7 @@
   <p class="bs-sub" id="sub"></p>
 
   <div class="toolbar">
-    <div class="chips" id="scope"><button class="chip on" data-scope="">All <span class="count" id="cAll"></span></button><button class="chip" data-scope="new">Approved today <span class="count" id="cNew"></span></button></div>
+    <div class="chips" id="scope"><button class="chip on" data-scope="">All <span class="count" id="cAll"></span></button><button class="chip" data-scope="new">Approved Nov 2 <span class="count" id="cNew"></span></button></div>
     <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Search brands…" autocomplete="off"></div>
   </div>
@@ -83,7 +83,7 @@
     });
     $('#rows').innerHTML = rows.map((r) => `<tr style="cursor:default">
       <td class="num">${r.rank}</td>
-      <td>${esc(r.brand)}${r.new ? '<span class="bs-tag new">Approved today</span>' : ''}${r.thin ? '<span class="bs-tag" title="Listings don\'t clearly show this brand. Check by hand.">Thin match</span>' : ''}</td>
+      <td>${esc(r.brand)}${r.new ? '<span class="bs-tag new">Approved Nov 2</span>' : ''}${r.thin ? '<span class="bs-tag" title="Listings don\'t clearly show this brand. Check by hand.">Thin match</span>' : ''}</td>
       <td class="num"><div class="bs-bar"><div class="track"><i style="width:${Math.max(0.5, r.sellers / S.max * 100)}%"></i></div><b>${num(r.sellers)}</b></div></td>
       <td class="num">${num(r.fba)}</td>
       <td class="num">${Number(r.avg).toFixed(1)}</td>
