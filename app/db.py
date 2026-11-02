@@ -365,6 +365,23 @@ MIGRATIONS: list[str] = [
     );
     ALTER TABLE leads ADD COLUMN set_id uuid REFERENCES lead_sets(id) ON DELETE SET NULL;
     CREATE INDEX leads_set_idx ON leads (set_id) WHERE set_id IS NOT NULL;
+    """,    # 22: when a lead was last scored (shown next to its Lead Score). Set by Score now, the engine, and any score change.
+    """
+    ALTER TABLE leads ADD COLUMN lead_score_at timestamptz;
+    UPDATE leads l SET lead_score_at = a.at
+      FROM (SELECT entity_id, max(at) AS at FROM audit_log WHERE entity = 'lead' AND after ? 'lead_score_band' GROUP BY entity_id) a
+     WHERE a.entity_id = l.id AND l.lead_score_band IS NOT NULL;
+    CREATE FUNCTION leads_stamp_score() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.lead_score_band IS NOT NULL AND NEW.lead_score_at IS NULL THEN NEW.lead_score_at := now(); END IF;
+      ELSIF (NEW.lead_score_band, NEW.lead_score_roi, NEW.lead_score_notes) IS DISTINCT FROM (OLD.lead_score_band, OLD.lead_score_roi, OLD.lead_score_notes)
+            AND NEW.lead_score_at IS NOT DISTINCT FROM OLD.lead_score_at THEN
+        NEW.lead_score_at := now();
+      END IF;
+      RETURN NEW;
+    END $$;
+    CREATE TRIGGER leads_stamp_score BEFORE INSERT OR UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION leads_stamp_score();
     """,
 ]
 

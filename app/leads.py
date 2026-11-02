@@ -515,7 +515,7 @@ async def score_lead(lead_id: str) -> dict:
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await conn.execute(
-                "UPDATE leads SET lead_score_band=%s, lead_score_roi=%s, lead_score_notes=%s, updated_at=now(), "
+                "UPDATE leads SET lead_score_band=%s, lead_score_roi=%s, lead_score_notes=%s, lead_score_at=now(), updated_at=now(), "
                 "local_edits=CASE WHEN airtable_id IS NULL THEN local_edits ELSE (SELECT array_agg(DISTINCT x) FROM "
                 "unnest(local_edits || ARRAY['lead_score_band','lead_score_roi','lead_score_notes']) x) END WHERE id=%s",
                 (s.get("band"), round(float(s.get("pred_roi") or 0), 4), s.get("notes"), lead_id),
@@ -582,6 +582,11 @@ async def engine_update(updates: list[dict]) -> dict:
             raise LedgerError(f"Update for {u['id']} has no fields")
         changes.append(ch)
     touched = await update_leads(ENGINE_ACTOR, changes)
+    scored = [c["id"] for c in changes if {"lead_score_band", "lead_score_roi", "lead_score_notes"} & set(c)]
+    if scored:   # a re-score with the same result still counts as scored today
+        async with db.pool.connection() as conn:
+            await conn.execute("UPDATE leads SET lead_score_at=now() WHERE id = ANY(%s::uuid[])", (scored,))
+            await conn.commit()
     return {"updated": len(touched), "ids": touched}
 
 
