@@ -18,10 +18,12 @@ SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 ENGINE_KEY = os.environ.get("ENGINE_KEY", "")
 COOKIE = "ol_session"
+VIEW_AS_COOKIE = "ol_view_as"   # owner only: see the whole Hub as another login would (read-only)
 SESSION_DAYS = 30
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "1") == "1"
 
 _signer = URLSafeTimedSerializer(SECRET_KEY, salt="ol-session")
+_view_signer = URLSafeTimedSerializer(SECRET_KEY, salt="ol-view-as")
 
 ROLES = ("owner", "editor", "viewer")
 ROLE_RANK = {"viewer": 1, "editor": 2, "owner": 3}
@@ -46,6 +48,7 @@ class User:
     name: str
     role: str
     tabs: tuple = ()
+    viewed_by: "User | None" = None   # set while an owner is viewing the Hub as this person
 
     @property
     def label(self) -> str:
@@ -68,7 +71,10 @@ class User:
         return "/no-access"
 
     def public(self) -> dict:
-        return {"id": self.id, "email": self.email, "name": self.name, "role": self.role, "tabs": self.allowed_tabs()}
+        d = {"id": self.id, "email": self.email, "name": self.name, "role": self.role, "tabs": self.allowed_tabs()}
+        if self.viewed_by:
+            d["viewed_by"] = {"id": self.viewed_by.id, "name": self.viewed_by.label}
+        return d
 
 
 def hash_password(pw: str) -> str:
@@ -108,7 +114,34 @@ def _user(r) -> User:
     return User(r["id"], r["email"], r["name"], r["role"], tuple(r.get("tabs") or ()))
 
 
-async def current_user(request: Request) -> User | None:
+def make_view_cookie(owner_id: int, user_id: int) -> str:
+    return _view_signer.dumps({"o": owner_id, "u": user_id})
+
+
+async def current_user(request: Request, real: bool = False) -> User | None:
+    """The signed-in person. While an owner is viewing the Hub as someone else, that person instead
+    (with .viewed_by = the owner), unless real=True."""
+    user = await _session_user(request)
+    if real or not user or user.role != "owner":
+        return user
+    raw = request.cookies.get(VIEW_AS_COOKIE)
+    if not raw:
+        return user
+    try:
+        data = _view_signer.loads(raw, max_age=12 * 3600)
+    except BadSignature:
+        return user
+    if data.get("o") != user.id or data.get("u") == user.id:
+        return user
+    found = await user_by_id(int(data.get("u", 0)))
+    if not found:
+        return user
+    other = found[0]
+    other.viewed_by = user
+    return other
+
+
+async def _session_user(request: Request) -> User | None:
     raw = request.cookies.get(COOKIE)
     if not raw:
         return None
@@ -130,6 +163,8 @@ async def require(request: Request, role: str = "viewer", tab: str | tuple | Non
     user = await current_user(request)
     if not user:
         raise HTTPException(401, "Sign in required")
+    if user.viewed_by and request.method not in ("GET", "HEAD"):
+        raise HTTPException(403, f"You're viewing the Hub as {user.label}, so it's read-only. Go back to your own view to make changes.")
     if not user.can(role):
         raise HTTPException(403, f"Needs {role} access")
     if tab and not any(user.can_tab(t) for t in ((tab,) if isinstance(tab, str) else tab)):

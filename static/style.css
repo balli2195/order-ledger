@@ -497,3 +497,8 @@ body.has-sticky-bar #head th { top: var(--bar-h, 0px); }   /* only the main Lead
 .copy-btn:hover { color: var(--accent); background: var(--accent-soft); }
 .copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .copy-btn.done { color: var(--ok); }
+
+/* ---------- owner "View as…" banner */
+.viewas-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 24px; font-size: 13px;
+  background: color-mix(in srgb, var(--accent-soft) 85%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.viewas-bar b { font-weight: 600; }

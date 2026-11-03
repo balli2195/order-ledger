@@ -143,10 +143,12 @@ async def no_access(request: Request):
         return RedirectResponse("/login", 302)
     if user.home() != "/no-access":
         return RedirectResponse(user.home(), 302)
+    back = ("""<p><b>You're viewing the Hub as this login.</b> <a href="#" onclick="fetch('/api/view-as',{method:'DELETE',"""
+            """headers:{'X-Requested-With':'ledger'}}).then(()=>location.href='/')">Back to my view</a></p>""") if user.viewed_by else ""
     return HTMLResponse(f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Myrddin Hub</title><link rel="stylesheet" href="/static/style.css"><body><div class="wrap" style="padding-top:60px">
 <h1 style="font-family:var(--serif);font-weight:400">Myrddin Hub</h1><p>Hi {html.escape(user.label)}: your login doesn't have any tabs yet.
-Ask the owner to give you access.</p><p><a href="#" onclick="fetch('/api/logout',{{method:'POST',headers:{{'X-Requested-With':'ledger'}}}}).then(()=>location.href='/login')">Sign out</a></p></div></body>""")
+Ask the owner to give you access.</p>{back}<p><a href="#" onclick="fetch('/api/logout',{{method:'POST',headers:{{'X-Requested-With':'ledger'}}}}).then(()=>location.href='/login')">Sign out</a></p></div></body>""")
 
 
 @app.get("/login", include_in_schema=False)
@@ -177,6 +179,7 @@ async def api_login(body: dict = Body(...)):
 async def api_logout():
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(auth.COOKIE, path="/")
+    resp.delete_cookie(auth.VIEW_AS_COOKIE, path="/")
     return resp
 
 
@@ -193,6 +196,42 @@ async def api_invite_redeem(token: str, body: dict = Body(...)):
     user, ver = await auth.redeem_invite(token, str(body.get("password", "")))
     resp = JSONResponse({"user": user.public()})
     set_session(resp, user.id, ver)
+    return resp
+
+
+@app.post("/api/view-as")
+async def api_view_as(request: Request, body: dict = Body(...)):
+    """Owner: see the whole Hub as another login would (read-only), until Back to my view."""
+    owner = await auth.current_user(request, real=True)
+    if not owner or owner.role != "owner" or request.headers.get("x-requested-with") != "ledger":
+        raise HTTPException(403, "Only an owner can do that")
+    uid = int(body.get("user_id") or 0)
+    found = await auth.user_by_id(uid)
+    if not found or uid == owner.id:
+        raise HTTPException(400, "Pick someone else's login")
+    target = found[0]
+    resp = JSONResponse({"user": target.public(), "home": target.home()})
+    resp.set_cookie(auth.VIEW_AS_COOKIE, auth.make_view_cookie(owner.id, uid), max_age=12 * 3600,
+                    httponly=True, secure=auth.SECURE_COOKIES, samesite="lax", path="/")
+    return resp
+
+
+@app.get("/api/view-as")
+async def api_view_as_list(request: Request):
+    owner = await auth.current_user(request, real=True)
+    if not owner or owner.role != "owner":
+        raise HTTPException(403, "Only an owner can do that")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT id, email, name, role, tabs FROM users WHERE active AND id<>%s ORDER BY role DESC, lower(COALESCE(NULLIF(name,''), email))", (owner.id,))
+        rows = await cur.fetchall()
+    return {"users": [{"id": r["id"], "label": r["name"] or r["email"], "email": r["email"], "role": r["role"],
+                       "tabs": [auth.TABS[t][0] for t in auth.clean_tabs(r["tabs"])] if r["role"] != "owner" else ["all tabs"]} for r in rows]}
+
+
+@app.delete("/api/view-as")
+async def api_view_as_end():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(auth.VIEW_AS_COOKIE, path="/")
     return resp
 
 
@@ -658,9 +697,9 @@ async def api_engine_put_doc(path: str, request: Request, if_version: int | None
 # ---------------------------------------------------------------- time clock (app/timeclock.py)
 
 @app.get("/api/timeclock")
-async def api_timeclock(request: Request, week: str | None = None, as_person: int | None = None):
+async def api_timeclock(request: Request, week: str | None = None):
     user = await auth.require(request, tab="timeclock")
-    return await tc.overview(user, tc.parse_week(week), as_person=as_person)
+    return await tc.overview(user, tc.parse_week(week))
 
 
 @app.post("/api/timeclock/{direction}")
@@ -862,7 +901,7 @@ async def oauth_login_page(request: Request, req: str = "", error: str = ""):
     found = await provider.pending(req) if req else None
     if not found:
         return _oauth_page("<p>This sign-in request expired. Go back to Claude and click <b>Connect</b> again.</p>")
-    user = await auth.current_user(request)
+    user = await auth.current_user(request, real=True)
     err = f'<p class="err">{html.escape(error)}</p>' if error else ""
     r = html.escape(req)
     if user:
@@ -889,7 +928,7 @@ async def oauth_login_submit(
         back = await provider.deny(req)
         return RedirectResponse(back or "/", 302)
     if action == "allow":
-        user = await auth.current_user(request)
+        user = await auth.current_user(request, real=True)
         if not user:
             return RedirectResponse(f"/oauth/login?req={req}", 302)
         try:
