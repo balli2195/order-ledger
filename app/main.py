@@ -21,6 +21,7 @@ from . import docs as hubdocs
 from . import hazmat
 from . import transparency
 from . import sellable
+from . import timeclock as tc
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
 
@@ -128,6 +129,11 @@ async def inventory_health_frame(request: Request):
 @app.get("/brand-sellers", include_in_schema=False)
 async def brand_sellers_page(request: Request):
     return await _page(request, "brand_sellers", "brand-sellers.html")
+
+
+@app.get("/timeclock", include_in_schema=False)
+async def timeclock_page(request: Request):
+    return await _page(request, "timeclock", "timeclock.html")
 
 
 @app.get("/no-access", include_in_schema=False)
@@ -503,7 +509,7 @@ async def api_set_can_source(kind: str, name: str, request: Request, body: dict 
 async def api_events(request: Request):
     user = await auth.require(request)
     q = live.subscribe()
-    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health"}
+    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock"}
 
     def allowed(payload: str) -> bool:
         try:
@@ -647,6 +653,90 @@ async def api_engine_put_doc(path: str, request: Request, if_version: int | None
         return await hubdocs.put(path, body, if_version)
     except hubdocs.DocError as e:
         raise HTTPException(409 if "version" in str(e) else 400, str(e))
+
+
+# ---------------------------------------------------------------- time clock (app/timeclock.py)
+
+@app.get("/api/timeclock")
+async def api_timeclock(request: Request, week: str | None = None):
+    user = await auth.require(request, tab="timeclock")
+    return await tc.overview(user, tc.parse_week(week))
+
+
+@app.post("/api/timeclock/{direction}")
+async def api_timeclock_clock(direction: str, request: Request, body: dict = Body(default={})):
+    if direction not in ("in", "out"):
+        raise HTTPException(404, "Not found")
+    user = await auth.require(request, tab="timeclock")
+    return await tc.clock(web_actor(user), user, direction, str(body.get("note") or ""))
+
+
+@app.post("/api/timeclock-admin/entries")
+async def api_tc_add_entry(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "owner")
+    return await tc.add_entry(web_actor(user), body)
+
+
+@app.patch("/api/timeclock-admin/entries/{eid}")
+async def api_tc_edit_entry(eid: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "owner")
+    return await tc.update_entry(web_actor(user), eid, body)
+
+
+@app.delete("/api/timeclock-admin/entries/{eid}")
+async def api_tc_delete_entry(eid: str, request: Request):
+    user = await auth.require(request, "owner")
+    await tc.delete_entry(web_actor(user), eid)
+    return {"ok": True}
+
+
+@app.post("/api/timeclock-admin/people")
+async def api_tc_add_person(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "owner")
+    return await tc.add_person(web_actor(user), str(body.get("name") or ""), body.get("rate"))
+
+
+@app.patch("/api/timeclock-admin/people/{pid}")
+async def api_tc_edit_person(pid: int, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "owner")
+    return await tc.update_person(web_actor(user), pid, body)
+
+
+@app.post("/api/timeclock-admin/adjustments")
+async def api_tc_add_adj(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "owner")
+    return await tc.add_adjustment(web_actor(user), body)
+
+
+@app.delete("/api/timeclock-admin/adjustments/{aid}")
+async def api_tc_delete_adj(aid: str, request: Request):
+    user = await auth.require(request, "owner")
+    await tc.delete_adjustment(web_actor(user), aid)
+    return {"ok": True}
+
+
+@app.get("/api/timeclock-admin/export.csv")
+async def api_tc_export(request: Request, start: str, end: str):
+    await auth.require(request, "owner")
+    import csv, io
+    try:
+        a, b = date.fromisoformat(start[:10]), date.fromisoformat(end[:10])
+    except ValueError:
+        raise HTTPException(400, "start and end must be dates")
+    rows = await tc.export_rows(a, b)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Person", "Date", "Clock in", "Clock out", "Hours", "Note", "Source"])
+    for r in rows:
+        w.writerow([r["name"], r["day"], r["clock_in"], r["clock_out"] or "", r["hours"], r["note"], r["source"]])
+    return HTMLResponse(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="time-clock-{a}-to-{b}.csv"'})
+
+
+@app.post("/api/engine/timeclock/import")
+async def engine_tc_import(request: Request, body: dict = Body(...)):
+    auth.require_engine_key(request)
+    return await tc.import_sheet(body)
 
 
 # ---------------------------------------------------------------- engine API (X-Engine-Key): lead scoring / buy qty jobs

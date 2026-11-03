@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Time clock · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .tc-top { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 14px; margin-top: 20px; align-items: stretch; }
+  @media (max-width: 860px) { .tc-top { grid-template-columns: 1fr; } }
+  .tc-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius, 12px); padding: 18px 20px; }
+  .tc-card h3 { margin: 0 0 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .tc-state { font-size: 15px; margin: 6px 0 2px; }
+  .tc-state b { font-weight: 600; }
+  .tc-timer { font: 500 38px/1.1 var(--sans); font-variant-numeric: tabular-nums; margin: 6px 0 12px; letter-spacing: -.01em; }
+  .tc-timer.off { color: var(--muted); }
+  .tc-big { width: 100%; justify-content: center; font-size: 16px; padding: 12px 16px; border-radius: 10px; }
+  .tc-big.out { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+  .tc-note { margin-top: 8px; }
+  .tc-weekline { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .tc-on { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; vertical-align: 1px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+  .tc-weeknav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 26px 0 0; }
+  .tc-weeknav h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0 8px 0 0; }
+  .tc-weeknav .sp { flex: 1; }
+  table.tc td.d, table.tc th.d { text-align: right; font-variant-numeric: tabular-nums; width: 58px; }
+  table.tc td.d.zero { color: var(--line); }
+  table.tc td.d.today, table.tc th.d.today { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+  table.tc tr.tot td { font-weight: 600; background: var(--panel-2); }
+  table.tc tbody tr { cursor: default; }
+  table.tc tbody tr.click { cursor: pointer; }
+  .tc-adj { display: inline-flex; align-items: center; gap: 4px; background: var(--line-2); border-radius: 99px; padding: 1px 4px 1px 8px; font-size: 12px; margin: 1px 4px 1px 0; white-space: nowrap; }
+  .tc-adj.neg { color: var(--bad); }
+  .tc-adj button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }
+  .tc-link { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; font-size: 12px; }
+  .tc-rate { border: 0; background: none; cursor: pointer; font: inherit; color: var(--ink); padding: 0; text-decoration: underline dotted var(--muted); }
+  .tc-src { font-size: 11px; color: var(--muted); background: var(--line-2); padding: 1px 7px; border-radius: 99px; }
+  .tc-flag { color: var(--bad); font-size: 12px; }
+  .tc-sec { margin: 28px 0 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .tc-sec .muted { font-weight: 400; font-size: 13px; }
+  .tc-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink); margin: 0 0 6px; }
+  .tc-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .tc-chart { position: relative; }
+  .tc-chart svg { display: block; width: 100%; height: 190px; overflow: visible; }
+  .tc-chart .axis { fill: var(--muted); font-size: 11px; }
+  .tc-chart .grid { stroke: var(--line-2); }
+  .tc-chart rect.hit { fill: transparent; cursor: pointer; }
+  .tc-chart rect.hit:hover { fill: color-mix(in srgb, var(--ink) 5%, transparent); }
+  .tc-chart g.cur .seg { stroke: var(--ink); stroke-width: 1.2px; }
+  .tc-tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+            box-shadow: 0 6px 20px rgba(20,16,10,.14); white-space: nowrap; z-index: 5; }
+  .tc-tip b { font-weight: 600; }
+  .tc-tip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  .tc-tip .r { display: flex; justify-content: space-between; gap: 14px; }
+  .tc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .tc-form .wide { grid-column: 1 / -1; }
+  .tc-people td input, .tc-people td select { padding: 5px 7px; }
+  :root { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Brand sellers</a><a href="/timeclock" data-tab="timeclock" class="on">Time clock</a></nav>
+
+  <div class="tc-top">
+    <div class="tc-card" id="clockCard"></div>
+    <div class="tc-card">
+      <h3 id="chartTitle">Hours per week</h3>
+      <div class="tc-legend" id="legend"></div>
+      <div class="tc-chart" id="chart"></div>
+    </div>
+  </div>
+
+  <div class="tc-weeknav">
+    <h2 id="weekTitle">This week</h2>
+    <button class="btn small" id="prevWk" title="Previous week">‹</button>
+    <button class="btn small" id="nextWk" title="Next week">›</button>
+    <button class="btn small ghost" id="thisWk">This week</button>
+    <span class="sp"></span>
+    <span class="owner-only hidden" style="display:contents">
+      <button class="btn small" id="addTime">+ Add time</button>
+      <button class="btn small" id="exportBtn">Export CSV</button>
+    </span>
+  </div>
+
+  <div class="table-wrap"><table class="tc" id="sumTable"></table></div>
+
+  <div class="tc-sec">Entries <span class="muted" id="entriesSub"></span></div>
+  <div class="table-wrap"><table class="tc" id="entTable"></table></div>
+
+  <div class="owner-only hidden">
+    <div class="tc-sec">People <span class="muted">Link someone to their Hub login so they can clock in themselves. Rates are per hour.</span></div>
+    <div class="table-wrap"><table class="tc tc-people" id="pplTable"></table></div>
+    <form id="addPerson" class="toolbar" style="margin-top:10px">
+      <input name="name" placeholder="Name" style="max-width:200px" required>
+      <input name="rate" placeholder="Hourly rate, e.g. 15" style="max-width:170px" inputmode="decimal">
+      <button class="btn small">+ Add person</button>
+    </form>
+  </div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, $$, esc, money, api, toast, fail } = LG;
+  const TZ = 'America/Chicago';
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const COLORS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)'];
+  const S = { data: null, week: null, focus: null, timer: null };
+
+  const tFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+  const dFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' });
+  const partsFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const central = (iso) => { const p = Object.fromEntries(partsFmt.formatToParts(new Date(iso)).map((x) => [x.type, x.value])); return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` }; };
+  const day = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d, 12)); };
+  const short = (ymd, o = { month: 'short', day: 'numeric' }) => day(ymd).toLocaleDateString('en-US', { ...o, timeZone: 'UTC' });
+  const addDays = (ymd, n) => { const d = day(ymd); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const hrs = (h) => h ? h.toFixed(2) : '';
+  const hm = (h) => { const m = Math.round(h * 60); return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
+  const colorOf = (pid) => { const ids = (S.data?.history.series || []).map((s) => s.id); const i = ids.indexOf(pid); return COLORS[(i < 0 ? 0 : i) % COLORS.length]; };
+  const owner = () => S.data?.owner;
+
+  async function load() {
+    S.data = await api('GET', '/api/timeclock' + (S.week ? `?week=${S.week}` : ''));
+    S.week = S.data.week_start;
+    render();
+  }
+
+  function render() {
+    renderClock(); renderWeek(); renderEntries(); renderChart();
+    if (owner()) renderPeople();
+  }
+
+  // ------------------------------------------------ clock in / out card
+  function renderClock() {
+    const d = S.data, me = d.me, open = me?.open;
+    const hide = d.owner && !me;   // the owner only gets a clock if he's on it himself
+    $('#clockCard').hidden = hide; $('.tc-top').style.gridTemplateColumns = hide ? '1fr' : '';
+    if (hide) return;
+    const mine = me ? d.people.find((p) => p.id === me.person_id) : null;
+    const thisWeek = d.week_start === mondayOf(d.today);
+    $('#clockCard').innerHTML = `
+      <h3>${esc(me?.name || LG.st.me?.name || 'You')}</h3>
+      <div class="tc-state">${open ? `<span class="tc-on"></span>Clocked in since <b>${esc(tFmt.format(new Date(open.clock_in)))}</b>` : 'Clocked out'}</div>
+      <div class="tc-timer ${open ? '' : 'off'}" id="timer">${open ? '0h 00m' : '—'}</div>
+      ${me && !me.active ? '<p class="err" style="font-size:13px">Your time clock is turned off. Ask the owner.</p>' : `
+      <button class="btn primary tc-big ${open ? 'out' : ''}" id="clockBtn">${open ? 'Clock out' : 'Clock in'}</button>
+      <input class="tc-note" id="clockNote" placeholder="Note (optional)" maxlength="200">`}
+      <div class="tc-weekline">${mine && thisWeek ? `This week: <b>${hm(mine.hours)}</b>` : me ? '' : 'Your first clock-in starts your timesheet.'}</div>`;
+    clearInterval(S.timer);
+    if (open) {
+      const tick = () => { const el = $('#timer'); if (el) el.textContent = hm((Date.now() - new Date(open.clock_in)) / 3.6e6); };
+      tick(); S.timer = setInterval(tick, 15000);
+    }
+    $('#clockBtn')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try { await api('POST', `/api/timeclock/${open ? 'out' : 'in'}`, { note: $('#clockNote').value }); toast(open ? 'Clocked out' : 'Clocked in'); await load(); }
+      catch (err) { fail(err); e.target.disabled = false; }
+    });
+  }
+  const mondayOf = (ymd) => { const d = day(ymd); const w = (d.getUTCDay() + 6) % 7; return addDays(ymd, -w); };
+
+  // ------------------------------------------------ week summary
+  function renderWeek() {
+    const d = S.data, wk = d.week_start;
+    const isThis = wk === mondayOf(d.today);
+    $('#weekTitle').textContent = isThis ? 'This week' : `Week of ${short(wk)}`;
+    $('#thisWk').hidden = isThis;
+    const days = DOW.map((n, i) => { const ymd = addDays(wk, i); return { n, ymd, today: ymd === d.today }; });
+    const own = owner();
+    const head = `<thead><tr><th>Person</th>${days.map((x) => `<th class="d ${x.today ? 'today' : ''}">${x.n}<br><span style="font-weight:400">${short(x.ymd)}</span></th>`).join('')}
+      <th class="num">Hours</th><th class="num">Rate</th><th class="num">Hourly pay</th><th>Extras</th><th class="num">Total pay</th></tr></thead>`;
+    if (!d.people.length) { $('#sumTable').innerHTML = head + `<tbody><tr><td colspan="13" class="empty">${own ? 'No one on the time clock yet. Add a person below.' : 'No time yet. Clock in to start.'}</td></tr></tbody>`; return; }
+    const rows = d.people.map((p) => `<tr class="click ${S.focus === p.id ? 'sel' : ''}" data-pid="${p.id}">
+      <td><i style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${colorOf(p.id)};margin-right:7px"></i><b>${esc(p.name)}</b>${p.open ? ' <span class="tc-on" title="Clocked in now" style="margin-left:4px"></span>' : ''}</td>
+      ${p.days.map((h, i) => `<td class="d ${h ? '' : 'zero'} ${days[i].today ? 'today' : ''}">${h ? h.toFixed(2) : '·'}</td>`).join('')}
+      <td class="num"><b>${p.hours.toFixed(2)}</b></td>
+      <td class="num">${own ? `<button class="tc-rate" data-rate="${p.id}">${p.rate == null ? 'set' : money(p.rate)}</button>` : (p.rate == null ? '—' : money(p.rate))}</td>
+      <td class="num">${p.base_pay == null ? '—' : money(p.base_pay)}</td>
+      <td>${p.adjustments.map((a) => `<span class="tc-adj ${a.amount < 0 ? 'neg' : ''}">${esc(a.label)} ${money(a.amount)}${own ? `<button data-deladj="${a.id}" title="Remove">×</button>` : ''}</span>`).join('')}${own ? `<button class="tc-link" data-addadj="${p.id}">+ add</button>` : ''}</td>
+      <td class="num"><b>${p.pay == null ? '—' : money(p.pay)}</b></td></tr>`).join('');
+    let total = '';
+    if (d.people.length > 1) {
+      const sum = (f) => d.people.reduce((s, p) => s + (f(p) || 0), 0);
+      total = `<tr class="tot"><td>All</td>${days.map((x, i) => { const h = sum((p) => p.days[i]); return `<td class="d ${h ? '' : 'zero'}">${h ? h.toFixed(2) : '·'}</td>`; }).join('')}
+        <td class="num">${sum((p) => p.hours).toFixed(2)}</td><td></td><td class="num">${money(sum((p) => p.base_pay))}</td>
+        <td></td><td class="num">${money(sum((p) => p.pay))}</td></tr>`;
+    }
+    $('#sumTable').innerHTML = head + `<tbody>${rows}${total}</tbody>`;
+  }
+
+  // ------------------------------------------------ entries
+  function renderEntries() {
+    const d = S.data, own = owner();
+    const list = d.entries.filter((e) => !S.focus || e.person_id === S.focus);
+    const who = S.focus ? d.people.find((p) => p.id === S.focus)?.name : null;
+    $('#entriesSub').innerHTML = who ? `${esc(who)} only · <button class="tc-link" id="clearFocus">show everyone</button>` : (own ? 'click a row to fix it' : '');
+    $('#clearFocus')?.addEventListener('click', () => { S.focus = null; renderWeek(); renderEntries(); });
+    const head = `<thead><tr>${own ? '<th>Person</th>' : ''}<th>Day</th><th>In</th><th>Out</th><th class="num">Hours</th><th>Note</th><th></th></tr></thead>`;
+    if (!list.length) { $('#entTable').innerHTML = head + `<tbody><tr><td colspan="7" class="empty">No time this week.</td></tr></tbody>`; return; }
+    const name = (pid) => d.people.find((p) => p.id === pid)?.name || '';
+    $('#entTable').innerHTML = head + `<tbody>${list.map((e) => {
+      const cin = central(e.clock_in), cout = e.clock_out ? central(e.clock_out) : null;
+      const nextDay = cout && cout.date !== cin.date;
+      const zero = e.clock_out && e.clock_out === e.clock_in;
+      return `<tr class="${own ? 'click' : ''}" data-eid="${e.id}">
+        ${own ? `<td><i style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${colorOf(e.person_id)};margin-right:7px"></i>${esc(name(e.person_id))}</td>` : ''}
+        <td class="tight">${esc(short(e.day, { weekday: 'short', month: 'short', day: 'numeric' }))}</td>
+        <td class="tight">${esc(tFmt.format(new Date(e.clock_in)))}</td>
+        <td class="tight">${e.clock_out ? esc(tFmt.format(new Date(e.clock_out))) + (nextDay ? ' <span class="muted">(+1 day)</span>' : '') : '<span class="tc-on"></span>still in'}</td>
+        <td class="num">${e.hours.toFixed(2)}</td>
+        <td class="notes" style="max-width:380px">${zero ? '<span class="tc-flag">⚠ no clock-out</span> ' : ''}${esc(e.note)}</td>
+        <td class="tight">${e.source !== 'clock' ? `<span class="tc-src">${e.source === 'import' ? 'from sheet' : esc(e.source)}</span>` : ''}</td></tr>`;
+    }).join('')}</tbody>`;
+  }
+
+  // ------------------------------------------------ hours-per-week chart (stacked by person)
+  function renderChart() {
+    const h = S.data.history, el = $('#chart');
+    $('#chartTitle').textContent = owner() && h.series.length > 1 ? 'Hours per week, by person' : 'Hours per week';
+    $('#legend').innerHTML = h.series.length > 1 ? h.series.map((s) => `<span><i style="background:${colorOf(s.id)}"></i>${esc(s.name)}</span>`).join('') : '';
+    const n = h.weeks.length, totals = h.weeks.map((_, i) => h.series.reduce((a, s) => a + s.hours[i], 0));
+    const max = Math.max(10, ...totals), step = max > 40 ? 20 : max > 20 ? 10 : 5, top = Math.ceil(max / step) * step;
+    const W = Math.max(320, el.clientWidth || 600), H = 190, L = 30, B = 22, T = 6, cw = (W - L) / n, bw = Math.min(28, cw * .62);
+    const y = (v) => T + (H - T - B) * (1 - v / top);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hours per week for the last ${n} weeks">`;
+    for (let v = 0; v <= top; v += step) svg += `<line class="grid" x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+    h.weeks.forEach((wk, i) => {
+      const x = L + i * cw + (cw - bw) / 2; let acc = 0;
+      svg += `<g class="${wk === S.data.week_start ? 'cur' : ''}">`;
+      const segs = h.series.filter((s) => s.hours[i] > 0);
+      segs.forEach((s, k) => {
+        const y0 = y(acc), y1 = y(acc + s.hours[i]); acc += s.hours[i];
+        const gap = k < segs.length - 1 ? 0 : 0, hh = Math.max(1, y0 - y1 - (k > 0 ? 2 : 0));
+        const isTop = k === segs.length - 1, r = isTop ? Math.min(4, hh / 2, bw / 2) : 0;
+        svg += isTop
+          ? `<path class="seg" fill="${colorOf(s.id)}" d="M${x},${y1 + hh + gap} V${y1 + r} Q${x},${y1} ${x + r},${y1} H${x + bw - r} Q${x + bw},${y1} ${x + bw},${y1 + r} V${y1 + hh} Z"/>`
+          : `<rect class="seg" fill="${colorOf(s.id)}" x="${x}" y="${y1}" width="${bw}" height="${hh}"/>`;
+      });
+      svg += '</g>';
+      if (i % Math.ceil(n / 8) === (n - 1) % Math.ceil(n / 8)) svg += `<text class="axis" x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${short(wk)}</text>`;
+      svg += `<rect class="hit" data-wk="${i}" x="${L + i * cw}" y="${T}" width="${cw}" height="${H - T - B}"/>`;
+    });
+    el.innerHTML = svg + '</svg><div class="tc-tip" hidden></div>';
+    const tip = el.querySelector('.tc-tip');
+    el.querySelectorAll('rect.hit').forEach((r) => {
+      r.addEventListener('mousemove', (ev) => {
+        const i = +r.dataset.wk, rows = h.series.filter((s) => s.hours[i] > 0);
+        tip.innerHTML = `<b>Week of ${short(h.weeks[i])}</b>` + (rows.length ? rows.map((s) => `<div class="r"><span><i style="background:${colorOf(s.id)}"></i>${esc(s.name)}</span><span>${s.hours[i].toFixed(2)} h</span></div>`).join('')
+          + (rows.length > 1 ? `<div class="r" style="border-top:1px solid var(--line);margin-top:3px;padding-top:3px"><span>Total</span><b>${totals[i].toFixed(2)} h</b></div>` : '') : '<div class="muted">No time</div>');
+        tip.hidden = false;
+        const box = el.getBoundingClientRect(); let lx = ev.clientX - box.left + 12; if (lx + tip.offsetWidth > box.width) lx = ev.clientX - box.left - tip.offsetWidth - 12;
+        tip.style.left = lx + 'px'; tip.style.top = Math.max(0, ev.clientY - box.top - 20) + 'px';
+      });
+      r.addEventListener('mouseleave', () => { tip.hidden = true; });
+      r.addEventListener('click', () => { S.week = h.weeks[+r.dataset.wk]; load().catch(fail); });
+    });
+  }
+
+  // ------------------------------------------------ people (owner)
+  function renderPeople() {
+    const d = S.data;
+    const users = d.users || [];
+    const opts = (p) => `<option value="">— not linked —</option>` + users.map((u) => `<option value="${u.id}" ${p.user_id === u.id ? 'selected' : ''}>${esc(u.label)}</option>`).join('');
+    const all = d.people;   // active people + anyone with time this week
+    $('#pplTable').innerHTML = `<thead><tr><th>Name</th><th>Hourly rate</th><th>Hub login</th><th>On the clock</th></tr></thead><tbody>${all.map((p) => `<tr data-pid="${p.id}">
+      <td><input data-pf="name" value="${esc(p.name)}" style="max-width:200px"></td>
+      <td><input data-pf="rate" value="${p.rate ?? ''}" placeholder="15.00" style="max-width:100px" inputmode="decimal"></td>
+      <td><select data-pf="user_id" style="max-width:240px">${opts(p)}</select></td>
+      <td><label class="check" style="display:inline-flex;flex-direction:row;gap:6px;color:var(--ink)"><input type="checkbox" data-pf="active" ${p.active ? 'checked' : ''} style="width:auto"> active</label></td></tr>`).join('')}</tbody>`;
+  }
+
+  // ------------------------------------------------ dialogs
+  function dialog(title, inner, onSave, extra = '') {
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<div class="confirm-box" role="dialog" aria-modal="true" style="max-width:460px"><h3>${esc(title)}</h3><form>${inner}
+      <div class="confirm-actions">${extra}<span style="flex:1"></span><button type="button" class="btn" data-x>Cancel</button><button class="btn primary">Save</button></div></form></div>`;
+    document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-x]')) close(); });
+    wrap.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    wrap.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { await onSave(Object.fromEntries(new FormData(e.target).entries()), wrap); close(); await load(); } catch (err) { fail(err); }
+    });
+    wrap.querySelector('input,select')?.focus();
+    return { wrap, close };
+  }
+
+  function entryDialog(e) {
+    const d = S.data;
+    const cin = e ? central(e.clock_in) : { date: d.today, hm: '09:00' };
+    const cout = e?.clock_out ? central(e.clock_out) : null;
+    const people = d.people.filter((p) => p.active || (e && p.id === e.person_id));
+    const pick = e ? '' : `<label class="wide">Person<select name="person_id" required>${people.map((p) => `<option value="${p.id}" ${S.focus === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>`;
+    const inner = `<div class="tc-form">${pick}
+      <label class="wide">Day<input type="date" name="date" value="${cin.date}" required></label>
+      <label>Clock in<input type="time" name="in" value="${cin.hm}" required></label>
+      <label>Clock out<input type="time" name="out" value="${cout ? cout.hm : ''}"></label>
+      <label class="wide">Note<input name="note" value="${esc(e?.note || '')}" maxlength="500"></label>
+      <p class="muted wide" style="margin:0;font-size:12px">Central time. A clock-out earlier than the clock-in is the next morning. Leave clock-out empty only if they're still working.</p></div>`;
+    const extra = e ? '<button type="button" class="btn danger" data-del>Delete</button>' : '';
+    const { wrap, close } = dialog(e ? `Fix ${d.people.find((p) => p.id === e.person_id)?.name || ''}'s time` : 'Add time', inner, async (body) => {
+      if (e) await api('PATCH', `/api/timeclock-admin/entries/${e.id}`, body);
+      else await api('POST', '/api/timeclock-admin/entries', body);
+      toast('Saved');
+    }, extra);
+    wrap.querySelector('[data-del]')?.addEventListener('click', async () => {
+      if (!confirm('Delete this time entry?')) return;
+      try { await api('DELETE', `/api/timeclock-admin/entries/${e.id}`); close(); toast('Deleted'); await load(); } catch (err) { fail(err); }
+    });
+  }
+
+  function adjDialog(pid) {
+    const p = S.data.people.find((x) => x.id === pid);
+    dialog(`Extra pay for ${p.name}, week of ${short(S.data.week_start)}`, `<div class="tc-form">
+      <label>Label<input name="label" placeholder="Bonus, Laundry…" required maxlength="80"></label>
+      <label>Amount<input name="amount" placeholder="50 or -25" required inputmode="decimal"></label>
+      <p class="muted wide" style="margin:0;font-size:12px">Use a minus sign for a deduction (e.g. -25 for a loan payment).</p></div>`,
+    async (body) => { await api('POST', '/api/timeclock-admin/adjustments', { ...body, person_id: pid, week_start: S.data.week_start }); toast('Added'); });
+  }
+
+  // ------------------------------------------------ events
+  document.addEventListener('click', async (e) => {
+    const t = e.target;
+    if (t.closest('[data-deladj]')) { e.stopPropagation(); try { await api('DELETE', `/api/timeclock-admin/adjustments/${t.closest('[data-deladj]').dataset.deladj}`); await load(); } catch (err) { fail(err); } return; }
+    if (t.closest('[data-addadj]')) { e.stopPropagation(); adjDialog(+t.closest('[data-addadj]').dataset.addadj); return; }
+    if (t.closest('[data-rate]')) {
+      e.stopPropagation(); const pid = +t.closest('[data-rate]').dataset.rate, p = S.data.people.find((x) => x.id === pid);
+      dialog(`Hourly rate for ${p.name}`, `<div class="tc-form"><label class="wide">Rate per hour<input name="rate" value="${p.rate ?? ''}" inputmode="decimal" required></label></div>`,
+        async (body) => { await api('PATCH', `/api/timeclock-admin/people/${pid}`, { rate: body.rate }); toast('Rate saved'); });
+      return;
+    }
+    const sr = t.closest('#sumTable tr[data-pid]');
+    if (sr) { const pid = +sr.dataset.pid; S.focus = S.focus === pid ? null : pid; renderWeek(); renderEntries(); return; }
+    const er = t.closest('#entTable tr[data-eid]');
+    if (er && owner()) { entryDialog(S.data.entries.find((x) => x.id === er.dataset.eid)); }
+  });
+  $('#prevWk').addEventListener('click', () => { S.week = S.data.prev_week; load().catch(fail); });
+  $('#nextWk').addEventListener('click', () => { S.week = S.data.next_week; load().catch(fail); });
+  $('#thisWk').addEventListener('click', () => { S.week = null; load().catch(fail); });
+  $('#addTime').addEventListener('click', () => entryDialog(null));
+  $('#exportBtn').addEventListener('click', () => {
+    const wk = S.data.week_start;
+    dialog('Export time to CSV', `<div class="tc-form"><label>From<input type="date" name="start" value="${addDays(wk, -21)}" required></label>
+      <label>To<input type="date" name="end" value="${addDays(wk, 6)}" required></label></div>`,
+    async (b) => { location.href = `/api/timeclock-admin/export.csv?start=${b.start}&end=${b.end}`; });
+  });
+  $('#pplTable').addEventListener('change', async (e) => {
+    const f = e.target.dataset.pf; if (!f) return;
+    const pid = +e.target.closest('tr').dataset.pid;
+    const v = f === 'active' ? e.target.checked : e.target.value;
+    try { await api('PATCH', `/api/timeclock-admin/people/${pid}`, { [f]: v }); toast('Saved'); await load(); } catch (err) { fail(err); await load(); }
+  });
+  $('#addPerson').addEventListener('submit', async (e) => {
+    e.preventDefault(); const b = Object.fromEntries(new FormData(e.target).entries());
+    try { await api('POST', '/api/timeclock-admin/people', b); e.target.reset(); toast('Added'); await load(); } catch (err) { fail(err); }
+  });
+  let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => S.data && renderChart(), 150); });
+
+  (async () => {
+    try { await LG.header(); await load(); } catch (e) { fail(e); }
+    let pend; LG.live((m) => { if (m.t === 'timeclock') { clearTimeout(pend); pend = setTimeout(() => load().catch(() => {}), 300); } });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) load().catch(() => {}); });
+  })();
+})();
+</script>
+</body>
+</html>

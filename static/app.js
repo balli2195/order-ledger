@@ -471,6 +471,15 @@
       const n = (c.after?.leads || c.before?.leads || []).length, nm = c.after?.name ? ` "${esc(c.after.name)}"` : '';
       return c.action === 'group' ? `grouped ${n} leads as a set${nm}` : c.action === 'rename' ? `renamed a lead set to${nm || ' (no name)'}` : `took ${n} lead${n === 1 ? '' : 's'} out of a set`;
     }
+    if (c.entity === 'time_entry') {
+      const tm = (v) => v ? new Date(v).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+      if (c.action === 'delete') return `deleted a time entry (${esc(tm(c.before?.clock_in))})`;
+      if (c.after?.person && c.after?.clock_in) return `clocked ${esc(c.after.person)} in`;
+      if (c.after?.person && c.after?.clock_out) return `clocked ${esc(c.after.person)} out`;
+      return c.action === 'create' ? `added time (${esc(tm(c.after?.clock_in))})` : `fixed a time entry (${esc(tm(c.after?.clock_in))} – ${esc(tm(c.after?.clock_out))})`;
+    }
+    if (c.entity === 'tc_person') return c.action === 'import' ? `imported ${esc(c.after?.name)}'s timesheet (${c.after?.entries} entries)` : c.action === 'create' ? `added ${esc(c.after?.name)} to the time clock` : 'changed a time-clock person';
+    if (c.entity === 'tc_adjustment') return `${c.action === 'delete' ? 'removed' : 'added'} time-clock pay line ${esc((c.after || c.before)?.label || '')} ${money((c.after || c.before)?.amount)}`;
     if (c.entity === 'store' || c.entity === 'brand') return `marked ${c.entity} ${esc(c.after?.name || '')} as ${c.after?.can_source ? 'OK to source' : "can't source"}`;
     let what;
     if (c.entity === 'lead') {

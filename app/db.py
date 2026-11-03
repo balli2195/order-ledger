@@ -382,6 +382,42 @@ MIGRATIONS: list[str] = [
       RETURN NEW;
     END $$;
     CREATE TRIGGER leads_stamp_score BEFORE INSERT OR UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION leads_stamp_score();
+    """,    # 23: time clock (app/timeclock.py). People can be linked to a Hub login; one open entry per person.
+            #     Everyone who isn't an owner gets the new Time clock tab so they can clock in (Nick, Nov 2 2026).
+    """
+    CREATE TABLE tc_people (
+        id         serial PRIMARY KEY,
+        name       text NOT NULL,
+        user_id    integer UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+        rate       numeric(8,2),
+        active     boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX tc_people_name_idx ON tc_people (lower(name));
+    CREATE TABLE time_entries (
+        id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        person_id  integer NOT NULL REFERENCES tc_people(id) ON DELETE CASCADE,
+        clock_in   timestamptz NOT NULL,
+        clock_out  timestamptz,
+        note       text NOT NULL DEFAULT '',
+        source     text NOT NULL DEFAULT 'clock',
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT time_entries_check CHECK (clock_out IS NULL OR clock_out >= clock_in)
+    );
+    CREATE UNIQUE INDEX time_entries_open_idx ON time_entries (person_id) WHERE clock_out IS NULL;
+    CREATE INDEX time_entries_person_idx ON time_entries (person_id, clock_in);
+    CREATE TABLE tc_adjustments (
+        id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        person_id  integer NOT NULL REFERENCES tc_people(id) ON DELETE CASCADE,
+        week_start date NOT NULL,
+        label      text NOT NULL,
+        amount     numeric(10,2) NOT NULL,
+        source     text NOT NULL DEFAULT 'manual',
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX tc_adjustments_idx ON tc_adjustments (person_id, week_start);
+    UPDATE users SET tabs = array_append(tabs, 'timeclock') WHERE role <> 'owner' AND NOT ('timeclock' = ANY(tabs));
     """,
 ]
 
