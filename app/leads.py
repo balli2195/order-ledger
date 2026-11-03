@@ -274,6 +274,9 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
             lead["list_reasons"] = (hz["list_reasons"] or []) if hz else []
             cur = await conn.execute("SELECT count(*) n FROM leads WHERE upper(asin)=upper(%s) AND lead_date=%s", (lead["asin"], r["lead_date"]))
             lead["same_day_n"] = (await cur.fetchone())["n"]
+        cur = await conn.execute("SELECT qty, store, order_ref, order_date, reason, at FROM lead_cancellations WHERE lead_id=%s ORDER BY order_date, at",
+                                 (r["id"],))
+        lead["cancellations"] = [jsonable(dict(x)) for x in await cur.fetchall()]
     if lead.get("asin"):
         lead["transparency"] = await transparency.get(lead["asin"])
         lead["tp_brand"] = await transparency.brand_matches(lead["asin"])

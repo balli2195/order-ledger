@@ -149,8 +149,10 @@ async def confirm_queue(limit: int = 200, recheck_days: int = 14) -> list[dict]:
 
 
 async def save_confirmations(results: list) -> dict:
-    """[{id, found, mailbox, subject, sender, date, link}] from the scheduled mailbox check."""
+    """[{id, found, mailbox, subject, sender, date, link, canceled}] from the scheduled mailbox check.
+    A canceled order takes its units back off the matching leads (undo_canceled)."""
     n = found = 0
+    undone = []
     async with db.pool.connection() as conn:
         async with conn.transaction():
             for r in results or []:
@@ -160,9 +162,49 @@ async def save_confirmations(results: list) -> dict:
                     (bool(r.get("found")), json.dumps(info) if info else None, r.get("id")))
                 n += cur.rowcount
                 found += 1 if r.get("found") and cur.rowcount else 0
+                if cur.rowcount and info.get("canceled"):
+                    undone += await undo_canceled(conn, r.get("id"), info["canceled"])
             if n:
                 await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"op": "reload", "src": "confirm"}),))
-    return {"saved": n, "found": found}
+    return {"saved": n, "found": found, "leads_undone": undone}
+
+
+async def undo_canceled(conn, order_id, reason: str) -> list[dict]:
+    """Take a canceled order's units back off its leads' Ordered (Left to buy goes back up), once per order item.
+    The lead is the item's own lead, else the latest lead of that ASIN dated up to 21 days before the order
+    (same store first) that still has units ordered."""
+    actor = Actor(None, "Claude engine", "engine")
+    cur = await conn.execute(
+        "SELECT i.id, i.asin, i.qty_ordered, i.lead_id, o.store, o.order_ref, o.order_date FROM order_items i JOIN orders o ON o.id=i.order_id "
+        "WHERE i.order_id=%s AND NOT EXISTS (SELECT 1 FROM lead_cancellations c WHERE c.item_id=i.id)", (order_id,))
+    out = []
+    for it in await cur.fetchall():
+        qty = int(it["qty_ordered"] or 0)
+        lead = None
+        if it["lead_id"]:
+            c2 = await conn.execute("SELECT id, qty_ordered FROM leads WHERE id=%s", (it["lead_id"],))
+            lead = await c2.fetchone()
+        elif it["asin"]:
+            c2 = await conn.execute(
+                """SELECT l.id, l.qty_ordered FROM leads l
+                    WHERE upper(btrim(l.asin)) = upper(btrim(%s)) AND COALESCE(l.qty_ordered, 0) > 0
+                      AND l.lead_date BETWEEN %s::date - 21 AND %s::date
+                    ORDER BY (EXISTS (SELECT 1 FROM unnest(l.stores) s
+                                      WHERE regexp_replace(lower(s), '[^a-z0-9]', '', 'g') = regexp_replace(lower(%s), '[^a-z0-9]', '', 'g'))) DESC,
+                             l.lead_date DESC, l.created_at DESC LIMIT 1""",
+                (it["asin"], it["order_date"], it["order_date"], it["store"]))
+            lead = await c2.fetchone()
+        take = min(qty, int(lead["qty_ordered"] or 0)) if lead else 0
+        await conn.execute(
+            "INSERT INTO lead_cancellations (item_id, order_id, lead_id, asin, qty, store, order_ref, order_date, reason) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+            (it["id"], order_id, lead["id"] if lead else None, it["asin"], take, it["store"], it["order_ref"], it["order_date"], reason[:300]))
+        if lead and take:
+            await _bump_lead(conn, actor, lead["id"], -take)
+            if it["lead_id"]:   # so deleting the canceled order later doesn't take the units off a second time
+                await conn.execute("UPDATE order_items SET lead_id=NULL WHERE id=%s", (it["id"],))
+        out.append({"item": str(it["id"]), "asin": it["asin"], "lead": str(lead["id"]) if lead else None, "units": take})
+    return out
 
 
 async def _notify(conn, op: str, order_id: Any, by: str | None, source: str) -> None:

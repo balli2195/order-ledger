@@ -430,6 +430,22 @@ MIGRATIONS: list[str] = [
       RETURN NEW;
     END $$;
     CREATE TRIGGER orders_reset_confirm BEFORE UPDATE OF order_ref ON orders FOR EACH ROW EXECUTE FUNCTION orders_reset_confirm();
+    """,    # 25: canceled orders take their units back off the lead's Ordered (so Left to buy goes back up), with a note on
+            #     the lead card. One row per order item, so it never happens twice (Nick, Nov 3 2026).
+    """
+    CREATE TABLE lead_cancellations (
+        item_id    uuid PRIMARY KEY,
+        order_id   uuid NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        lead_id    uuid REFERENCES leads(id) ON DELETE CASCADE,
+        asin       text,
+        qty        integer NOT NULL DEFAULT 0,
+        store      text,
+        order_ref  text,
+        order_date date,
+        reason     text,
+        at         timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX lead_cancellations_lead_idx ON lead_cancellations (lead_id);
     """,
 ]
 
