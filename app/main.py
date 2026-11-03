@@ -756,6 +756,27 @@ async def api_task_delete(tid: str, request: Request):
     return {"ok": True}
 
 
+@app.get("/api/amazon-digest")
+async def api_amazon_digest(request: Request, day: str | None = None):
+    await auth.require(request, tab="tasks")
+    try:
+        d = date.fromisoformat(day[:10]) if day else None
+    except ValueError:
+        raise HTTPException(400, "day must be a date")
+    return await T.get_digest(d)
+
+
+@app.put("/api/engine/amazon-digest/{day}")
+async def engine_amazon_digest(day: str, request: Request, body: dict = Body(...)):
+    """For the daily Amazon email run: that day's summary, plus action-item tasks."""
+    auth.require_engine_key(request)
+    try:
+        d = date.fromisoformat(day[:10])
+    except ValueError:
+        raise HTTPException(400, "day must be a date")
+    return await T.put_digest(d, body)
+
+
 @app.post("/api/engine/tasks/prepos-cancel")
 async def engine_prepos_cancel_tasks(request: Request):
     """Recheck: a task for every PrepOS line holding units of canceled orders."""

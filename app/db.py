@@ -465,6 +465,13 @@ MIGRATIONS: list[str] = [
         done_by    integer REFERENCES users(id) ON DELETE SET NULL
     );
     CREATE INDEX tasks_status_idx ON tasks (status, created_at DESC);
+    """,    # 27: daily summary of Nick's Amazon emails, written by a scheduled run (shown on the Inbox & tasks tab)
+    """
+    CREATE TABLE amazon_digests (
+        day        date PRIMARY KEY,
+        data       jsonb NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
     """,
 ]
 

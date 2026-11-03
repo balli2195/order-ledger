@@ -101,10 +101,13 @@ async def delete(actor: Actor, tid: str) -> None:
             await _notify(conn)
 
 
-async def upsert_auto(conn, key: str, kind: str, title: str, details: str, link: str | None = None) -> None:
-    """A task the Hub adds itself. Created once per key; if its text changes later it's updated and reopened."""
+async def upsert_auto(conn, key: str, kind: str, title: str, details: str, link: str | None = None, update: bool = True) -> None:
+    """A task the Hub adds itself. Created once per key; if its text changes later it's updated and reopened
+    (update=False: never touched again once created)."""
     cur = await conn.execute("SELECT id, title, details FROM tasks WHERE key=%s", (key,))
     r = await cur.fetchone()
+    if r and not update:
+        return
     if not r:
         await conn.execute("INSERT INTO tasks (title, details, kind, key, link) VALUES (%s,%s,%s,%s,%s)", (title, details, kind, key, link))
     elif (r["title"], r["details"]) != (title, details):
@@ -141,3 +144,36 @@ async def prepos_cancel_tasks(conn) -> int:
                           f"https://www.amazon.com/dp/{r['asin']}")
         n += 1
     return n
+
+
+# ---------------------------------------------------------------- daily Amazon email summary
+
+async def put_digest(day: date, body: dict) -> dict:
+    """Engine: {headline, sections:[{name, items:[{title, summary, action, urgent, date, link}]}], counts:{...},
+    tasks:[{key, title, details, link}]}. Replaces that day's summary; tasks are added once each (key = email id)."""
+    tasks = body.pop("tasks", None) or []
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            await conn.execute("INSERT INTO amazon_digests (day, data) VALUES (%s,%s) ON CONFLICT (day) DO UPDATE SET data=EXCLUDED.data, updated_at=now()",
+                               (day, json.dumps(body)))
+            n = 0
+            for t in tasks:
+                if not t.get("key") or not t.get("title"):
+                    continue
+                await upsert_auto(conn, "amz:" + str(t["key"])[:200], "amazon_email", str(t["title"])[:300],
+                                  str(t.get("details") or "")[:5000], t.get("link"), update=False)
+                n += 1
+            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "task", "op": "digest"}),))
+    return {"day": day.isoformat(), "tasks": n}
+
+
+async def get_digest(day: date | None) -> dict:
+    async with db.pool.connection() as conn:
+        if day:
+            cur = await conn.execute("SELECT day, data, updated_at FROM amazon_digests WHERE day=%s", (day,))
+        else:
+            cur = await conn.execute("SELECT day, data, updated_at FROM amazon_digests ORDER BY day DESC LIMIT 1")
+        r = await cur.fetchone()
+        cur = await conn.execute("SELECT day FROM amazon_digests ORDER BY day DESC LIMIT 60")
+        days = [x["day"].isoformat() for x in await cur.fetchall()]
+    return jsonable({"day": r["day"] if r else None, "data": r["data"] if r else None, "updated_at": r["updated_at"] if r else None, "days": days})

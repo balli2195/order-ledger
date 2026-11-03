@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tasks · Myrddin Hub</title>
+<title>Inbox &amp; tasks · Myrddin Hub</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/style.css">
 <style>
@@ -24,6 +24,25 @@
   .tk .tag.late { background: var(--warn-soft); color: var(--bad); font-weight: 600; }
   .tk .acts { display: flex; gap: 2px; }
   .tk-empty { padding: 36px; text-align: center; color: var(--muted); }
+  .sec-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 26px 0 0; }
+  .sec-h h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0 6px 0 0; }
+  .sec-h select { width: auto; padding: 4px 8px; }
+  .dg-headline { margin: 8px 0 0; font-size: 15px; max-width: 900px; }
+  .dg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; margin-top: 14px; align-items: start; }
+  @media (max-width: 520px) { .dg-grid { grid-template-columns: 1fr; } }
+  .dg-sec { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 0; }
+  .dg-sec > summary { list-style: none; cursor: pointer; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dg-sec > summary::-webkit-details-marker { display: none; }
+  .dg-sec > summary .n { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 500; }
+  .dg-sec > summary .chev { color: var(--muted); transition: transform .15s; font-size: 11px; }
+  .dg-sec[open] > summary .chev { transform: rotate(90deg); }
+  .dg-it { padding: 9px 16px 10px; border-top: 1px solid var(--line-2); font-size: 13px; }
+  .dg-it .ti { font-weight: 600; }
+  .dg-it .ti .u { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; vertical-align: 1px; }
+  .dg-it .su { margin-top: 2px; }
+  .dg-it .ac { margin-top: 3px; color: var(--accent); }
+  .dg-it .mt { margin-top: 3px; color: var(--muted); font-size: 12px; }
+  .dg-empty { margin-top: 12px; padding: 26px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 </style>
 </head>
 <body>
@@ -44,9 +63,14 @@
       </div>
     </div>
   </header>
-  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/tasks" data-tab="tasks" class="on">Tasks</a><a href="/timeclock" data-tab="timeclock">Time clock</a></nav>
+  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/tasks" data-tab="tasks" class="on">Inbox &amp; tasks</a><a href="/timeclock" data-tab="timeclock">Time clock</a></nav>
 
-  <form class="tk-add editor-only" id="addForm">
+  <div class="sec-h"><h2>Amazon emails</h2><select id="dgDay" aria-label="Day"></select><span class="muted" id="dgMeta" style="font-size:13px"></span></div>
+  <p class="dg-headline" id="dgHeadline"></p>
+  <div id="dgBody"></div>
+
+  <div class="sec-h"><h2>Tasks</h2></div>
+  <form class="tk-add editor-only" id="addForm" style="margin-top:12px">
     <input name="title" placeholder="New task…" maxlength="300" required autocomplete="off">
     <input name="due" type="date" title="Due date (optional)">
     <button class="btn primary">Add task</button>
@@ -59,7 +83,7 @@
       <button class="chip" data-f="done">Done<span class="count" id="cDone"></span></button>
       <button class="chip" data-f="all">All</button>
     </div>
-    <span class="muted" style="font-size:13px">Tasks marked <b style="color:var(--accent)">Hub</b> are added automatically, e.g. canceled orders whose units were already sent to PrepOS.</span>
+    <span class="muted" style="font-size:13px">Tasks marked <b style="color:var(--accent)">Hub</b> are added automatically: canceled orders already sent to PrepOS, and Amazon emails that need action.</span>
   </div>
 
   <div class="tk-list" id="list"></div>
@@ -76,6 +100,26 @@
   const canEdit = () => LG.can('editor') && !LG.st.me?.viewed_by;
   const when = (iso) => iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
   const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+
+  // ------------------------------------------------ daily Amazon email summary
+  async function loadDigest(day) {
+    const d = await api('GET', '/api/amazon-digest' + (day ? '?day=' + day : ''));
+    const sel = $('#dgDay');
+    sel.innerHTML = d.days.map((x) => `<option value="${x}" ${x === d.day ? 'selected' : ''}>${esc(fmtDate(x))}</option>`).join('') || '<option>—</option>';
+    if (!d.data) { $('#dgHeadline').textContent = ''; $('#dgMeta').textContent = ''; $('#dgBody').innerHTML = '<div class="dg-empty">No summary yet. The daily Amazon email check runs every morning.</div>'; return; }
+    const g = d.data;
+    $('#dgHeadline').textContent = g.headline || '';
+    $('#dgMeta').textContent = [g.period, d.updated_at ? 'updated ' + when(d.updated_at) : ''].filter(Boolean).join(' · ');
+    const secs = (g.sections || []).filter((x) => (x.items || []).length);
+    $('#dgBody').innerHTML = secs.length ? `<div class="dg-grid">${secs.map((x) => {
+      const urgent = x.items.filter((i) => i.urgent).length;
+      return `<details class="dg-sec" ${x.collapsed ? '' : 'open'}><summary><span class="chev">▶</span>${esc(x.name)}<span class="n">${urgent ? `<b style="color:var(--bad)">${urgent} need action</b> · ` : ''}${x.items.length}</span></summary>
+        ${x.items.map((i) => `<div class="dg-it"><div class="ti">${i.urgent ? '<span class="u" title="Needs action"></span>' : ''}${esc(i.title)}</div>
+          ${i.summary ? `<div class="su">${esc(i.summary)}</div>` : ''}${i.action ? `<div class="ac">→ ${esc(i.action)}</div>` : ''}
+          <div class="mt">${esc(i.date || '')}${i.link ? `${i.date ? ' · ' : ''}<a href="${esc(i.link)}" target="_blank" rel="noopener">Open email ↗</a>` : ''}</div></div>`).join('')}</details>`;
+    }).join('')}</div>` : '<div class="dg-empty">No Amazon emails that day.</div>';
+  }
+  $('#dgDay').addEventListener('change', (e) => loadDigest(e.target.value).catch(fail));
 
   async function load() {
     const d = await api('GET', '/api/tasks');
@@ -94,10 +138,10 @@
       return `<div class="tk ${t.status}" data-id="${esc(t.id)}">
         <input type="checkbox" data-act="toggle" ${t.status === 'done' ? 'checked' : ''} ${ed ? '' : 'disabled'} title="${t.status === 'done' ? 'Mark not done' : 'Mark done'}">
         <div><div class="t">${esc(t.title)}</div>${t.details ? `<div class="d">${esc(t.details)}</div>` : ''}
-          <div class="m">${t.kind !== 'manual' ? '<span class="tag auto">Hub</span>' : ''}${t.due ? `<span class="tag ${late ? 'late' : ''}">due ${esc(fmtDate(t.due))}</span>` : ''}
+          <div class="m">${t.kind !== 'manual' ? `<span class="tag auto">${t.kind === 'amazon_email' ? 'Amazon email' : 'Hub'}</span>` : ''}${t.due ? `<span class="tag ${late ? 'late' : ''}">due ${esc(fmtDate(t.due))}</span>` : ''}
             <span>added ${esc(when(t.created_at))}${t.created_by_name ? ' by ' + esc(t.created_by_name) : ''}</span>
             ${t.status === 'done' ? `<span>· done ${esc(when(t.done_at))}${t.done_by_name ? ' by ' + esc(t.done_by_name) : ''}</span>` : ''}
-            ${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener">${t.link.includes('amazon.com') ? 'Amazon ↗' : 'open ↗'}</a>` : ''}</div></div>
+            ${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener">${t.link.includes('mail.google') || t.link.includes('outlook') ? 'Open email ↗' : t.link.includes('amazon.com') ? 'Amazon ↗' : 'open ↗'}</a>` : ''}</div></div>
         <div class="acts">${ed ? `<button class="icon-btn" data-act="edit" title="Edit">✎</button><button class="icon-btn" data-act="del" title="Delete">🗑</button>` : ''}</div></div>`;
     }).join('');
   }
@@ -140,9 +184,9 @@
       await LG.header();
       $$('.editor-only').forEach((el) => el.classList.toggle('hidden', !canEdit()));
       const f = store.get('taskFilter'); if (['open', 'done', 'all'].includes(f)) setF(f);
-      await load();
+      await Promise.all([load(), loadDigest()]);
     } catch (e) { fail(e); }
-    let pend; LG.live((m) => { if (m.t === 'task') { clearTimeout(pend); pend = setTimeout(() => load().catch(() => {}), 300); } });
+    let pend; LG.live((m) => { if (m.t === 'task') { clearTimeout(pend); pend = setTimeout(() => { load().catch(() => {}); if (m.op === 'digest') loadDigest().catch(() => {}); }, 300); } });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load().catch(() => {}); });
   })();
 })();
