@@ -4,6 +4,7 @@ Rules (Nick, Oct 29, 2026):
 - Orders dated on/after settings.prepos_start (Oct 29, 2026) are sent.
 - Nightly at 11:45 PM Central, with a 2-day lag (settings.prepos_lag_days): the run on day D sends unsent items from
   orders dated up to D-2, so orders cancelled (deleted here) in the meantime never reach PrepOS.
+- Orders the confirmation-email check marked canceled (orders.confirm_info.canceled) are never sent (Nick, Nov 3, 2026).
 - Every unsent item of the same ASIN is combined into one line: qty summed, cost = weighted average cost per unit.
 - PrepOS lines can't be edited through the API, so an ASIN gets at most one line per day: if an ASIN was already sent
   today (button or nightly), its new items wait for the next run.
@@ -68,6 +69,7 @@ async def pending(through: date) -> dict:
                FROM order_items i JOIN orders o ON o.id = i.order_id
                LEFT JOIN prepos_sent_items s ON s.item_id = i.id
                WHERE s.item_id IS NULL AND o.order_date >= %s AND o.order_date <= %s AND i.qty_ordered > 0
+                 AND NOT COALESCE(o.confirm_info ? 'canceled', false)
                ORDER BY o.order_date, o.created_at, i.created_at""",
             (cfg["start"], through),
         )
