@@ -702,6 +702,12 @@ async def api_timeclock(request: Request, week: str | None = None):
     return await tc.overview(user, tc.parse_week(week))
 
 
+@app.get("/api/timeclock/status")
+async def api_timeclock_status(request: Request):
+    user = await auth.require(request)
+    return await tc.status(user)
+
+
 @app.post("/api/timeclock/{direction}")
 async def api_timeclock_clock(direction: str, request: Request, body: dict = Body(default={})):
     if direction not in ("in", "out"):

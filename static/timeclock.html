@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/style.css">
 <style>
-  .tc-top { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 14px; margin-top: 20px; align-items: stretch; }
+  .tc-top { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 20px; align-items: stretch; }
   @media (max-width: 860px) { .tc-top { grid-template-columns: 1fr; } }
   .tc-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius, 12px); padding: 18px 20px; }
   .tc-card h3 { margin: 0 0 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
@@ -80,8 +80,7 @@
   </header>
   <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Brand sellers</a><a href="/timeclock" data-tab="timeclock" class="on">Time clock</a></nav>
 
-  <div class="tc-top">
-    <div class="tc-card" id="clockCard"></div>
+  <div class="tc-top owner-only hidden">
     <div class="tc-card">
       <h3 id="chartTitle">Hours per week</h3>
       <div class="tc-legend" id="legend"></div>
@@ -118,6 +117,7 @@
 </div>
 <div id="toasts" class="toasts"></div>
 <script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
 <script src="/static/common.js"></script>
 <script>
 (() => {
@@ -146,37 +146,10 @@
   }
 
   function render() {
-    renderClock(); renderWeek(); renderEntries(); renderChart();
-    if (owner()) renderPeople();
+    renderWeek(); renderEntries();
+    if (owner()) { renderChart(); renderPeople(); }
   }
 
-  // ------------------------------------------------ clock in / out card
-  function renderClock() {
-    const d = S.data, me = d.me, open = me?.open;
-    const hide = d.owner && !me;   // the owner only gets a clock if he's on it himself
-    $('#clockCard').hidden = hide; $('.tc-top').style.gridTemplateColumns = hide ? '1fr' : '';
-    if (hide) return;
-    const mine = me ? d.people.find((p) => p.id === me.person_id) : null;
-    const thisWeek = d.week_start === mondayOf(d.today);
-    $('#clockCard').innerHTML = `
-      <h3>${esc(me?.name || LG.st.me?.name || 'You')}</h3>
-      <div class="tc-state">${open ? `<span class="tc-on"></span>Clocked in since <b>${esc(tFmt.format(new Date(open.clock_in)))}</b>` : 'Clocked out'}</div>
-      <div class="tc-timer ${open ? '' : 'off'}" id="timer">${open ? '0h 00m' : '—'}</div>
-      ${me && !me.active ? '<p class="err" style="font-size:13px">Your time clock is turned off. Ask the owner.</p>' : `
-      <button class="btn primary tc-big ${open ? 'out' : ''}" id="clockBtn" ${LG.st.me?.viewed_by ? 'disabled title="Off while you view the Hub as someone else"' : ''}>${open ? 'Clock out' : 'Clock in'}</button>
-      <input class="tc-note" id="clockNote" placeholder="Note (optional)" maxlength="200">`}
-      <div class="tc-weekline">${mine && thisWeek ? `This week: <b>${hm(mine.hours)}</b>` : me ? '' : 'Your first clock-in starts your timesheet.'}</div>`;
-    clearInterval(S.timer);
-    if (open) {
-      const tick = () => { const el = $('#timer'); if (el) el.textContent = hm((Date.now() - new Date(open.clock_in)) / 3.6e6); };
-      tick(); S.timer = setInterval(tick, 15000);
-    }
-    $('#clockBtn')?.addEventListener('click', async (e) => {
-      e.target.disabled = true;
-      try { await api('POST', `/api/timeclock/${open ? 'out' : 'in'}`, { note: $('#clockNote').value }); toast(open ? 'Clocked out' : 'Clocked in'); await load(); }
-      catch (err) { fail(err); e.target.disabled = false; }
-    });
-  }
   const mondayOf = (ymd) => { const d = day(ymd); const w = (d.getUTCDay() + 6) % 7; return addDays(ymd, -w); };
 
   // ------------------------------------------------ week summary
@@ -189,7 +162,7 @@
     const own = owner();
     const head = `<thead><tr><th>Person</th>${days.map((x) => `<th class="d ${x.today ? 'today' : ''}">${x.n}<br><span style="font-weight:400">${short(x.ymd)}</span></th>`).join('')}
       <th class="num">Hours</th><th class="num">Rate</th><th class="num">Hourly pay</th><th>Extras</th><th class="num">Total pay</th></tr></thead>`;
-    if (!d.people.length) { $('#sumTable').innerHTML = head + `<tbody><tr><td colspan="13" class="empty">${own ? 'No one on the time clock yet. Add a person below.' : 'No time yet. Clock in to start.'}</td></tr></tbody>`; return; }
+    if (!d.people.length) { $('#sumTable').innerHTML = head + `<tbody><tr><td colspan="13" class="empty">${own ? 'No one on the time clock yet. Add a person below.' : 'No time yet. Use Clock in at the top right to start.'}</td></tr></tbody>`; return; }
     const rows = d.people.map((p) => `<tr class="click ${S.focus === p.id ? 'sel' : ''}" data-pid="${p.id}">
       <td><i style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${colorOf(p.id)};margin-right:7px"></i><b>${esc(p.name)}</b>${p.open ? ' <span class="tc-on" title="Clocked in now" style="margin-left:4px"></span>' : ''}</td>
       ${p.days.map((h, i) => `<td class="d ${h ? '' : 'zero'} ${days[i].today ? 'today' : ''}">${h ? h.toFixed(2) : '·'}</td>`).join('')}
@@ -375,11 +348,12 @@
     e.preventDefault(); const b = Object.fromEntries(new FormData(e.target).entries());
     try { await api('POST', '/api/timeclock-admin/people', b); e.target.reset(); toast('Added'); await load(); } catch (err) { fail(err); }
   });
-  let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => S.data && renderChart(), 150); });
+  let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => S.data && owner() && renderChart(), 150); });
+  addEventListener('timeclock:changed', () => load().catch(() => {}));
 
   (async () => {
     try { await LG.header(); await load(); } catch (e) { fail(e); }
-    let pend; LG.live((m) => { if (m.t === 'timeclock') { clearTimeout(pend); pend = setTimeout(() => load().catch(() => {}), 300); } });
+    let pend; LG.live((m) => { if (m.t === 'timeclock') { clearTimeout(pend); pend = setTimeout(() => { load().catch(() => {}); window.TimeClock?.refresh(); }, 300); } });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load().catch(() => {}); });
   })();
 })();

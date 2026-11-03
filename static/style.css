@@ -502,3 +502,14 @@ body.has-sticky-bar #head th { top: var(--bar-h, 0px); }   /* only the main Lead
 .viewas-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 24px; font-size: 13px;
   background: color-mix(in srgb, var(--accent-soft) 85%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .viewas-bar b { font-weight: 600; }
+
+/* ---------- Clock in / Clock out under the Menu button (static/clock.js) */
+.who.has-clock { flex-wrap: wrap; justify-content: flex-end; }
+.who.has-clock .menu { top: 46px; }
+.clock-mini { flex-basis: 100%; display: flex; justify-content: flex-end; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.clock-mini[hidden] { display: none; }
+.clock-mini b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.clock-mini .cm-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin-right: 6px; vertical-align: 1px; }
+.clock-mini .cm-dot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+.clock-mini .cm-btn { min-width: 88px; justify-content: center; }
+.clock-mini .cm-btn.out { background: var(--ink); border-color: var(--ink); color: var(--panel); }

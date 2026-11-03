@@ -53,6 +53,7 @@
     $$('.owner-only').forEach((el) => el.classList.toggle('hidden', !can('owner')));
     $$('.editor-only').forEach((el) => el.classList.toggle('hidden', !can('editor')));
     window.ViewAs?.init(S.me);
+    window.TimeClock?.init(S.me);
     await Promise.all([loadOrders(), loadMeta()]);
     connectLive();
     const hash = location.hash.match(/^#order=(.+)$/);

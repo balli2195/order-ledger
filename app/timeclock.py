@@ -286,6 +286,29 @@ async def delete_adjustment(actor: Actor, aid: str) -> None:
             await _notify(conn)
 
 
+# ---------------------------------------------------------------- the clock in the header of every page
+
+async def status(user) -> dict:
+    """For the Clock in / Clock out button under the Menu: shown to anyone on the time clock (not to an owner unless
+    he's on it himself)."""
+    if not user.can_tab("timeclock"):
+        return {"show": False}
+    async with db.pool.connection() as conn:
+        p = await person_for_user(conn, user.id)
+        if not p and user.role != "owner":
+            p = await _link_by_name(conn, user)
+            if p:
+                await conn.commit()
+        if not p:
+            return {"show": user.role != "owner", "person": None, "open": None, "today_hours": 0}
+        cur = await conn.execute(
+            f"SELECT (SELECT clock_in FROM time_entries WHERE person_id=%s AND clock_out IS NULL) AS open_in, "
+            f"COALESCE((SELECT sum({HOURS}) FROM time_entries e WHERE e.person_id=%s AND {DAY} = (now() AT TIME ZONE '{TZ}')::date), 0) AS today",
+            (p["id"], p["id"]))
+        r = await cur.fetchone()
+    return jsonable({"show": True, "person": p["name"], "active": p["active"], "open": r["open_in"], "today_hours": round(float(r["today"]), 2)})
+
+
 # ---------------------------------------------------------------- the page's data
 
 async def overview(user, week: date | None, history_weeks: int = 16) -> dict:

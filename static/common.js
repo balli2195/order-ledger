@@ -42,6 +42,7 @@ window.LG = (() => {
     applyTabs(st.me);
     $$('.owner-only').forEach((el) => el.classList.toggle('hidden', st.me.role !== 'owner'));
     window.ViewAs?.init(st.me);
+    window.TimeClock?.init(st.me);
     $('#menuBtn').addEventListener('click', () => $('#menu').classList.toggle('hidden'));
     document.addEventListener('click', async (e) => {
       if (!e.target.closest('#menu') && e.target !== $('#menuBtn')) $('#menu').classList.add('hidden');
