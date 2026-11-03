@@ -162,7 +162,7 @@
   }
 
   // ------------------------------------------------------------ inline cell editing on the orders table
-  const OE_FIELDS = ['order_date', 'store', 'email', 'order_total', 'order_ref', 'notes'];
+  const OE_FIELDS = ['order_date', 'store', 'order_total', 'order_ref', 'notes'];
   function oeCell(o, f, shown) {
     if (!can('editor')) return shown;
     return `<span class="oe" data-oe="${f}" title="Click to edit">${shown === '' ? '<span class="muted">—</span>' : shown}</span>`;
@@ -223,7 +223,6 @@
     const missTitle = o.missing.length ? 'Missing: ' + o.missing.join(', ') : 'All item fields filled in';
     return `<tr data-id="${esc(o.id)}" class="${S.openId === o.id ? 'sel' : ''}">
       <td>${oeCell(o, 'order_date', esc(fmtDate(o.order_date)))}</td><td class="store-name">${oeCell(o, 'store', esc(o.store))}</td>
-      <td class="email">${oeCell(o, 'email', esc(o.email || ''))}</td>
       <td class="placed">${o.placed_by ? esc(o.placed_by) : '<span class="muted" title="Not recorded: brought over from the old ledger, which didn\'t track who placed orders">—</span>'}</td>
       <td class="num">${oeCell(o, 'order_total', money(o.order_total))}</td><td class="mono">${oeCell(o, 'order_ref', esc(o.order_ref || ''))}</td>
       <td class="notes" title="${esc(o.notes || '')}">${oeCell(o, 'notes', esc(o.notes || '—'))}</td>
