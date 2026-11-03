@@ -136,6 +136,29 @@ async def timeclock_page(request: Request):
     return await _page(request, "timeclock", "timeclock.html")
 
 
+@app.get("/api/brand-sellers/sourced")
+async def api_brand_sellers_sourced(request: Request, since: str = "2026-10-30"):
+    """Brands with a Sephora lead on or after `since` (for the Sephora brands page's "Not sourced yet" box).
+    A lead's brands are its Hub brands plus the Keepa brand of its ASIN, keyed with brand_key()."""
+    await auth.require(request, tab="brand_sellers")
+    try:
+        d = date.fromisoformat(since[:10])
+    except ValueError:
+        raise HTTPException(400, "since must be a date")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT k.key, min(k.name) AS name, count(DISTINCT l.id) AS leads, max(COALESCE(l.lead_date, l.created_at::date)) AS last
+                 FROM leads l
+                 CROSS JOIN LATERAL (SELECT brand_key(b) AS key, b AS name FROM unnest(l.brands) b
+                                     UNION SELECT brand_key(f.brand), f.brand FROM asin_flags f WHERE f.asin = upper(btrim(l.asin))) k
+                WHERE COALESCE(l.lead_date, l.created_at::date) >= %s
+                  AND EXISTS (SELECT 1 FROM unnest(l.stores) st WHERE st ILIKE '%%sephora%%')
+                  AND k.key IS NOT NULL
+                GROUP BY k.key""", (d,))
+        rows = await cur.fetchall()
+    return {"since": d.isoformat(), "brands": [{"key": r["key"], "name": r["name"], "leads": r["leads"], "last": r["last"].isoformat()} for r in rows]}
+
+
 @app.get("/no-access", include_in_schema=False)
 async def no_access(request: Request):
     user = await auth.current_user(request)

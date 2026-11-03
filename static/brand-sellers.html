@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Brand sellers · Myrddin Hub</title>
+<title>Sephora brands · Myrddin Hub</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/style.css">
 <style>
@@ -18,6 +18,11 @@
   .bs-notes { margin: 16px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
   .bs-notes li { margin: 3px 0; }
   .bs-hist { color: var(--muted); font-size: 12px; }
+  .bs-check { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); font-weight: 500; cursor: pointer; }
+  .bs-check input { width: auto; }
+  .bs-since { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .bs-since input { width: auto; padding: 4px 7px; }
+  .bs-src { color: var(--ok); font-weight: 600; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -38,20 +43,24 @@
       </div>
     </div>
   </header>
-  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers" class="on">Brand sellers</a><a href="/timeclock" data-tab="timeclock">Time clock</a></nav>
+  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers" class="on">Sephora brands</a><a href="/timeclock" data-tab="timeclock">Time clock</a></nav>
 
-  <h2 class="bs-title" id="title">Third-party sellers by brand</h2>
+  <h2 class="bs-title" id="title">Sephora brands</h2>
   <p class="bs-sub" id="sub"></p>
 
   <div class="toolbar">
     <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Search brands…" autocomplete="off"></div>
+    <label class="bs-check"><input type="checkbox" id="notSourced"> Not sourced yet</label>
+    <span class="bs-since">Sephora sale leads since <input type="date" id="since"></span>
+    <span class="muted" id="srcCount" style="font-size:13px"></span>
   </div>
 
   <div class="table-wrap"><table>
     <thead><tr id="head">
       <th class="num sortable" data-k="rank">Rank</th>
       <th class="sortable" data-k="brand">Brand</th>
+      <th class="num sortable" data-k="src" title="Sephora leads in the Hub for this brand since the date above">Sourced</th>
       <th class="center sortable" data-k="new" title="Approved through the Seller Central request on Nov 2, 2026">Approved Nov 2</th>
       <th class="num sortable" data-k="sellers">3rd-party sellers</th>
       <th class="num sortable" data-k="fba">FBA sellers</th>
@@ -74,10 +83,32 @@
 <script>
 (async () => {
   const { $, $$, esc, num, api, fail } = LG;
-  const S = { rows: [], k: 'rank', dir: 1, max: 1 };
+  const S = { rows: [], k: 'rank', dir: 1, max: 1, sourced: [] };
+  const SALE_START = '2026-10-30';   // first Sephora lead of the fall 2026 sale
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
+  // same as the database's brand_key(): lower case, & -> and, drop filler words, letters and digits only
+  const bkey = (t) => String(t || '').toLowerCase().replace(/&/g, 'and').replace(/\b(the|beauty|cosmetics|skincare|new york)\b/g, ' ').replace(/[^a-z0-9]/g, '');
+  const ALIAS = { sephora: 'sephoracollection' };   // a lead brand of just "SEPHORA" is Sephora Collection, not Sephora Favorites
+  const same = (a, b) => { b = ALIAS[b] || b; return a === b || (Math.min(a.length, b.length) >= 5 && (a.startsWith(b) || b.startsWith(a))); };   // "rhode" = "Rhode Skin"
+  function matchSourced() {
+    S.rows.forEach((r) => {
+      const k = bkey(r.brand); const hits = k ? S.sourced.filter((b) => same(k, b.key)) : [];
+      r.src = hits.reduce((n, b) => n + b.leads, 0);
+      r.src_last = hits.map((b) => b.last).sort().pop() || '';
+      r.src_names = [...new Set(hits.map((b) => b.name))].join(', ');
+    });
+  }
+  async function loadSourced() {
+    const since = $('#since').value || SALE_START;
+    try { S.sourced = (await api('GET', '/api/brand-sellers/sourced?since=' + since)).brands; } catch (e) { fail(e); S.sourced = []; }
+    matchSourced();
+  }
   function render() {
     const q = $('#q').value.trim().toLowerCase();
-    const rows = S.rows.filter((r) => !q || r.brand.toLowerCase().includes(q));
+    const hide = $('#notSourced').checked;
+    const done = S.rows.filter((r) => r.src > 0).length;
+    $('#srcCount').textContent = `${done} of ${S.rows.length} brands sourced` + (hide ? ` · showing the ${S.rows.length - done} not sourced yet` : '');
+    const rows = S.rows.filter((r) => (!q || r.brand.toLowerCase().includes(q)) && (!hide || !r.src));
     rows.sort((a, b) => {
       const x = a[S.k], y = b[S.k];
       const c = typeof x === 'string' ? x.localeCompare(y) : Number(x) - Number(y);
@@ -86,6 +117,7 @@
     $('#rows').innerHTML = rows.map((r) => `<tr style="cursor:default">
       <td class="num">${r.rank}</td>
       <td>${esc(r.brand)}${r.thin ? '<span class="bs-tag" title="Listings don\'t clearly show this brand. Check by hand.">Thin match</span>' : ''}</td>
+      <td class="num">${r.src ? `<span class="bs-src" title="${esc(r.src_names)} · last lead ${LG.fmtDate(r.src_last)}">✓ ${r.src} lead${r.src === 1 ? '' : 's'}</span>` : ''}</td>
       <td class="center">${r.new ? '<span class="bs-yes">✓</span>' : ''}</td>
       <td class="num"><div class="bs-bar"><div class="track"><i style="width:${Math.max(0.5, r.sellers / S.max * 100)}%"></i></div><b>${num(r.sellers)}</b></div></td>
       <td class="num">${num(r.fba)}</td>
@@ -103,6 +135,10 @@
     });
   }
   $('#q').addEventListener('input', render);
+  $('#since').value = store.get('bsSince') || SALE_START;
+  $('#notSourced').checked = store.get('bsNotSourced') === '1';
+  $('#notSourced').addEventListener('change', () => { store.set('bsNotSourced', $('#notSourced').checked ? '1' : '0'); render(); });
+  $('#since').addEventListener('change', async () => { store.set('bsSince', $('#since').value); await loadSourced(); render(); });
   $('#head').addEventListener('click', (e) => {
     const th = e.target.closest('th.sortable'); if (!th) return;
     const k = th.dataset.k;
@@ -117,7 +153,9 @@
     S.max = Math.max(1, ...S.rows.map((r) => r.sellers));
     $('#sub').textContent = data.label || '';
     $('#notes').innerHTML = (data.notes || []).map((n) => `<li>${esc(n)}</li>`).join('');
+    await loadSourced();
     render();
+    let t; LG.live((m) => { if (m.t === 'lead') { clearTimeout(t); t = setTimeout(async () => { await loadSourced(); render(); }, 1500); } });
   } catch (e) {
     if (String(e.message || e).includes('404')) { $('#empty').textContent = 'No ranking has been loaded yet.'; $('#empty').classList.remove('hidden'); }
     else fail(e);
