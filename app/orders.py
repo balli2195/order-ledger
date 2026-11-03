@@ -164,6 +164,9 @@ async def save_confirmations(results: list) -> dict:
                 found += 1 if r.get("found") and cur.rowcount else 0
                 if cur.rowcount and info.get("canceled"):
                     undone += await undo_canceled(conn, r.get("id"), info["canceled"])
+            if any(x.get("canceled") for x in results or []):
+                from .tasks import prepos_cancel_tasks   # canceled units already at PrepOS -> a task to remove them by hand
+                await prepos_cancel_tasks(conn)
             if n:
                 await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"op": "reload", "src": "confirm"}),))
     return {"saved": n, "found": found, "leads_undone": undone}

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tasks · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .tk-add { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; margin: 22px 0 4px; align-items: start; }
+  .tk-add textarea { grid-column: 1 / 3; min-height: 38px; resize: vertical; }
+  @media (max-width: 700px) { .tk-add { grid-template-columns: 1fr; } .tk-add textarea { grid-column: auto; } }
+  .tk-list { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .tk { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line-2); align-items: start; }
+  .tk:last-child { border-bottom: 0; }
+  .tk input[type=checkbox] { width: 18px; height: 18px; margin-top: 2px; cursor: pointer; accent-color: var(--ok); }
+  .tk .t { font-weight: 600; }
+  .tk.done .t { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+  .tk .d { white-space: pre-wrap; color: var(--ink); font-size: 13px; margin-top: 3px; }
+  .tk.done .d { color: var(--muted); }
+  .tk .m { font-size: 12px; color: var(--muted); margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tk .tag { font-size: 11px; border-radius: 99px; padding: 1px 8px; background: var(--line-2); color: var(--muted); }
+  .tk .tag.auto { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .tk .tag.late { background: var(--warn-soft); color: var(--bad); font-weight: 600; }
+  .tk .acts { display: flex; gap: 2px; }
+  .tk-empty { padding: 36px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/tasks" data-tab="tasks" class="on">Tasks</a><a href="/timeclock" data-tab="timeclock">Time clock</a></nav>
+
+  <form class="tk-add editor-only" id="addForm">
+    <input name="title" placeholder="New task…" maxlength="300" required autocomplete="off">
+    <input name="due" type="date" title="Due date (optional)">
+    <button class="btn primary">Add task</button>
+    <textarea name="details" placeholder="Details (optional)" rows="1" maxlength="5000"></textarea>
+  </form>
+
+  <div class="toolbar" style="margin-top:16px">
+    <div class="chips" role="tablist">
+      <button class="chip on" data-f="open">Open<span class="count" id="cOpen"></span></button>
+      <button class="chip" data-f="done">Done<span class="count" id="cDone"></span></button>
+      <button class="chip" data-f="all">All</button>
+    </div>
+    <span class="muted" style="font-size:13px">Tasks marked <b style="color:var(--accent)">Hub</b> are added automatically, e.g. canceled orders whose units were already sent to PrepOS.</span>
+  </div>
+
+  <div class="tk-list" id="list"></div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, $$, esc, api, toast, fail, fmtDate } = LG;
+  const S = { tasks: [], f: 'open' };
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
+  const canEdit = () => LG.can('editor') && !LG.st.me?.viewed_by;
+  const when = (iso) => iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+
+  async function load() {
+    const d = await api('GET', '/api/tasks');
+    S.tasks = d.tasks; render();
+    window.dispatchEvent(new Event('tasks:changed'));
+  }
+
+  function render() {
+    const open = S.tasks.filter((t) => t.status === 'open'), done = S.tasks.filter((t) => t.status === 'done');
+    $('#cOpen').textContent = open.length || ''; $('#cDone').textContent = done.length || '';
+    const list = S.f === 'open' ? open : S.f === 'done' ? done : S.tasks;
+    if (!list.length) { $('#list').innerHTML = `<div class="tk-empty">${S.f === 'open' ? 'Nothing to do. 🎉' : 'No tasks here.'}</div>`; return; }
+    const ed = canEdit();
+    $('#list').innerHTML = list.map((t) => {
+      const late = t.status === 'open' && t.due && t.due < todayStr();
+      return `<div class="tk ${t.status}" data-id="${esc(t.id)}">
+        <input type="checkbox" data-act="toggle" ${t.status === 'done' ? 'checked' : ''} ${ed ? '' : 'disabled'} title="${t.status === 'done' ? 'Mark not done' : 'Mark done'}">
+        <div><div class="t">${esc(t.title)}</div>${t.details ? `<div class="d">${esc(t.details)}</div>` : ''}
+          <div class="m">${t.kind !== 'manual' ? '<span class="tag auto">Hub</span>' : ''}${t.due ? `<span class="tag ${late ? 'late' : ''}">due ${esc(fmtDate(t.due))}</span>` : ''}
+            <span>added ${esc(when(t.created_at))}${t.created_by_name ? ' by ' + esc(t.created_by_name) : ''}</span>
+            ${t.status === 'done' ? `<span>· done ${esc(when(t.done_at))}${t.done_by_name ? ' by ' + esc(t.done_by_name) : ''}</span>` : ''}
+            ${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener">${t.link.includes('amazon.com') ? 'Amazon ↗' : 'open ↗'}</a>` : ''}</div></div>
+        <div class="acts">${ed ? `<button class="icon-btn" data-act="edit" title="Edit">✎</button><button class="icon-btn" data-act="del" title="Delete">🗑</button>` : ''}</div></div>`;
+    }).join('');
+  }
+
+  function editDialog(t) {
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<div class="confirm-box" role="dialog" aria-modal="true" style="max-width:520px"><h3>Edit task</h3><form style="display:grid;gap:10px">
+      <label>Title<input name="title" value="${esc(t.title)}" maxlength="300" required></label>
+      <label>Details<textarea name="details" rows="5" maxlength="5000">${esc(t.details || '')}</textarea></label>
+      <label>Due<input name="due" type="date" value="${esc(t.due || '')}"></label>
+      <div class="confirm-actions"><button type="button" class="btn" data-x>Cancel</button><button class="btn primary">Save</button></div></form></div>`;
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-x]')) wrap.remove(); });
+    wrap.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { await api('PATCH', `/api/tasks/${t.id}`, Object.fromEntries(new FormData(e.target).entries())); wrap.remove(); toast('Saved'); await load(); } catch (err) { fail(err); }
+    });
+    wrap.querySelector('input').focus();
+  }
+
+  $('#list').addEventListener('click', async (e) => {
+    const row = e.target.closest('.tk'); if (!row) return;
+    const t = S.tasks.find((x) => x.id === row.dataset.id); if (!t) return;
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    try {
+      if (act === 'toggle') { await api('PATCH', `/api/tasks/${t.id}`, { status: t.status === 'done' ? 'open' : 'done' }); await load(); }
+      else if (act === 'edit') editDialog(t);
+      else if (act === 'del') { if (confirm(`Delete "${t.title}"?`)) { await api('DELETE', `/api/tasks/${t.id}`); toast('Deleted'); await load(); } }
+    } catch (err) { fail(err); await load(); }
+  });
+  $('#addForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await api('POST', '/api/tasks', Object.fromEntries(new FormData(e.target).entries())); e.target.reset(); toast('Added'); S.f === 'done' && setF('open'); await load(); } catch (err) { fail(err); }
+  });
+  function setF(f) { S.f = f; store.set('taskFilter', f); $$('.chip[data-f]').forEach((c) => c.classList.toggle('on', c.dataset.f === f)); render(); }
+  $$('.chip[data-f]').forEach((c) => c.addEventListener('click', () => setF(c.dataset.f)));
+
+  (async () => {
+    try {
+      await LG.header();
+      $$('.editor-only').forEach((el) => el.classList.toggle('hidden', !canEdit()));
+      const f = store.get('taskFilter'); if (['open', 'done', 'all'].includes(f)) setF(f);
+      await load();
+    } catch (e) { fail(e); }
+    let pend; LG.live((m) => { if (m.t === 'task') { clearTimeout(pend); pend = setTimeout(() => load().catch(() => {}), 300); } });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) load().catch(() => {}); });
+  })();
+})();
+</script>
+</body>
+</html>

@@ -503,6 +503,7 @@
       const n = (c.after?.leads || c.before?.leads || []).length, nm = c.after?.name ? ` "${esc(c.after.name)}"` : '';
       return c.action === 'group' ? `grouped ${n} leads as a set${nm}` : c.action === 'rename' ? `renamed a lead set to${nm || ' (no name)'}` : `took ${n} lead${n === 1 ? '' : 's'} out of a set`;
     }
+    if (c.entity === 'task') return `${c.action === 'create' ? 'added' : c.action === 'delete' ? 'deleted' : c.after?.status === 'done' ? 'finished' : c.after?.status === 'open' ? 'reopened' : 'edited'} task "${esc((c.after || c.before)?.title || '')}"`;
     if (c.entity === 'time_entry') {
       const tm = (v) => v ? new Date(v).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
       if (c.action === 'delete') return `deleted a time entry (${esc(tm(c.before?.clock_in))})`;

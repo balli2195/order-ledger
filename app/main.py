@@ -22,6 +22,7 @@ from . import hazmat
 from . import transparency
 from . import sellable
 from . import timeclock as tc
+from . import tasks as T
 from . import orders as o
 from .mcp_server import BASE_URL, mcp, provider
 
@@ -129,6 +130,11 @@ async def inventory_health_frame(request: Request):
 @app.get("/brand-sellers", include_in_schema=False)
 async def brand_sellers_page(request: Request):
     return await _page(request, "brand_sellers", "brand-sellers.html")
+
+
+@app.get("/tasks", include_in_schema=False)
+async def tasks_page(request: Request):
+    return await _page(request, "tasks", "tasks.html")
 
 
 @app.get("/timeclock", include_in_schema=False)
@@ -386,7 +392,7 @@ async def api_activity(request: Request, limit: int = 100, order_id: str | None 
     return {"changes": [c for c in rows if user.can_tab(ENTITY_TAB.get(c.get("entity"), "_owner"))]}
 
 
-ENTITY_TAB = {"order": "orders", "item": "orders", "batch": "orders", "lead": "leads", "lead_set": "leads", "store": "stores", "brand": "stores",
+ENTITY_TAB = {"order": "orders", "item": "orders", "batch": "orders", "lead": "leads", "lead_set": "leads", "task": "tasks", "store": "stores", "brand": "stores",
               "prepos": "prepos"}   # anything else (settings, users) is owner-only
 
 # ---------------------------------------------------------------- leads API
@@ -571,7 +577,7 @@ async def api_set_can_source(kind: str, name: str, request: Request, body: dict 
 async def api_events(request: Request):
     user = await auth.require(request)
     q = live.subscribe()
-    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock"}
+    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock", "task": "tasks"}
 
     def allowed(payload: str) -> bool:
         try:
@@ -715,6 +721,48 @@ async def api_engine_put_doc(path: str, request: Request, if_version: int | None
         return await hubdocs.put(path, body, if_version)
     except hubdocs.DocError as e:
         raise HTTPException(409 if "version" in str(e) else 400, str(e))
+
+
+# ---------------------------------------------------------------- tasks (app/tasks.py)
+
+@app.get("/api/tasks")
+async def api_tasks(request: Request):
+    await auth.require(request, tab="tasks")
+    return await T.list_tasks()
+
+
+@app.get("/api/tasks/count")
+async def api_tasks_count(request: Request):
+    user = await auth.require(request)
+    return {"open": await T.open_count() if user.can_tab("tasks") else 0}
+
+
+@app.post("/api/tasks")
+async def api_task_add(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor", tab="tasks")
+    return await T.create(web_actor(user), body)
+
+
+@app.patch("/api/tasks/{tid}")
+async def api_task_edit(tid: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor", tab="tasks")
+    return await T.update(web_actor(user), tid, body)
+
+
+@app.delete("/api/tasks/{tid}")
+async def api_task_delete(tid: str, request: Request):
+    user = await auth.require(request, "editor", tab="tasks")
+    await T.delete(web_actor(user), tid)
+    return {"ok": True}
+
+
+@app.post("/api/engine/tasks/prepos-cancel")
+async def engine_prepos_cancel_tasks(request: Request):
+    """Recheck: a task for every PrepOS line holding units of canceled orders."""
+    auth.require_engine_key(request)
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            return {"lines": await T.prepos_cancel_tasks(conn)}
 
 
 # ---------------------------------------------------------------- time clock (app/timeclock.py)

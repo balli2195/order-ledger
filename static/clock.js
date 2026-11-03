@@ -54,9 +54,21 @@ window.TimeClock = (() => {
     }
   }
 
+  async function taskBadge() {   // open-task count on the Tasks tab
+    const a = document.querySelector('nav.tabs a[data-tab="tasks"]'); if (!a || a.hidden) return;
+    try {
+      const { open } = await call('GET', '/api/tasks/count');
+      let b = a.querySelector('.tab-count'); if (!b) { b = document.createElement('span'); b.className = 'tab-count'; a.appendChild(b); }
+      b.textContent = open || ''; b.hidden = !open;
+    } catch { /* ignore */ }
+  }
+
   function init(me) {
     st.me = me;
     ownerMenu(me);
+    taskBadge(); setInterval(() => { if (!document.hidden) taskBadge(); }, 120000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) taskBadge(); });
+    window.addEventListener('tasks:changed', taskBadge);
     if (!me || !(me.tabs || []).includes('timeclock')) return;
     const who = document.querySelector('.who'); if (!who || st.el) return;
     st.el = document.createElement('div'); st.el.className = 'clock-mini'; st.el.hidden = true;
@@ -67,5 +79,5 @@ window.TimeClock = (() => {
     setInterval(() => { if (!document.hidden) refresh(); }, 120000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   }
-  return { init, refresh };
+  return { init, refresh, taskBadge };
 })();

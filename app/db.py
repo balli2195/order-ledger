@@ -446,6 +446,25 @@ MIGRATIONS: list[str] = [
         at         timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX lead_cancellations_lead_idx ON lead_cancellations (lead_id);
+    """,    # 26: Tasks tab: to-dos for Nick, typed in by hand or added by the Hub (e.g. "remove a canceled order's units
+            #     from PrepOS"). key = dedupe key for tasks the Hub adds, so each one is created once and kept up to date.
+    """
+    CREATE TABLE tasks (
+        id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        title      text NOT NULL,
+        details    text NOT NULL DEFAULT '',
+        status     text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+        kind       text NOT NULL DEFAULT 'manual',
+        key        text UNIQUE,
+        link       text,
+        due        date,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        created_by integer REFERENCES users(id) ON DELETE SET NULL,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        done_at    timestamptz,
+        done_by    integer REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX tasks_status_idx ON tasks (status, created_at DESC);
     """,
 ]
 
