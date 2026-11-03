@@ -518,3 +518,4 @@ body.has-sticky-bar #head th { top: var(--bar-h, 0px); }   /* only the main Lead
 .clock-mini .cm-dot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
 .clock-mini .cm-btn { min-width: 88px; justify-content: center; }
 .clock-mini .cm-btn.out { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+td.placed { white-space: nowrap; }

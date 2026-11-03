@@ -163,6 +163,7 @@ class Actor:
 SUMMARY_SQL = """
 SELECT o.id, o.order_date, o.store, o.email, o.order_total, o.order_ref, o.notes,
        o.created_at, o.updated_at,
+       (SELECT COALESCE(NULLIF(u.name, ''), u.email) FROM users u WHERE u.id = o.created_by) AS placed_by,
        COALESCE(SUM(i.qty_ordered * COALESCE(i.cost_per_unit, 0)), 0)::numeric(14,2) AS items_total,
        COALESCE(SUM(i.qty_ordered), 0)::int AS units,
        COUNT(i.id)::int AS item_count,
