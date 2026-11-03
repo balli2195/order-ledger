@@ -14,7 +14,7 @@
   .bs-bar .track { flex: 1; min-width: 70px; max-width: 170px; display: flex; }
   .bs-bar b { min-width: 32px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
   .bs-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 99px; font-size: 11px; background: var(--line-2); color: var(--muted); white-space: nowrap; }
-  .bs-tag.new { background: var(--accent-soft); color: var(--accent); }
+  .bs-yes { color: var(--ok); font-weight: 600; }
   .bs-notes { margin: 16px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
   .bs-notes li { margin: 3px 0; }
   .bs-hist { color: var(--muted); font-size: 12px; }
@@ -44,7 +44,6 @@
   <p class="bs-sub" id="sub"></p>
 
   <div class="toolbar">
-    <div class="chips" id="scope"><button class="chip on" data-scope="">All <span class="count" id="cAll"></span></button><button class="chip" data-scope="new">Approved Nov 2 <span class="count" id="cNew"></span></button></div>
     <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Search brands…" autocomplete="off"></div>
   </div>
@@ -53,6 +52,7 @@
     <thead><tr id="head">
       <th class="num sortable" data-k="rank">Rank</th>
       <th class="sortable" data-k="brand">Brand</th>
+      <th class="center sortable" data-k="new" title="Approved through the Seller Central request on Nov 2, 2026">Approved Nov 2</th>
       <th class="num sortable" data-k="sellers">3rd-party sellers</th>
       <th class="num sortable" data-k="fba">FBA sellers</th>
       <th class="num sortable" data-k="avg">Avg per ASIN</th>
@@ -72,18 +72,19 @@
 <script>
 (async () => {
   const { $, $$, esc, num, api, fail } = LG;
-  const S = { rows: [], scope: '', k: 'rank', dir: 1, max: 1 };
+  const S = { rows: [], k: 'rank', dir: 1, max: 1 };
   function render() {
     const q = $('#q').value.trim().toLowerCase();
-    const rows = S.rows.filter((r) => (!S.scope || r.new) && (!q || r.brand.toLowerCase().includes(q)));
+    const rows = S.rows.filter((r) => !q || r.brand.toLowerCase().includes(q));
     rows.sort((a, b) => {
       const x = a[S.k], y = b[S.k];
-      const c = typeof x === 'string' ? x.localeCompare(y) : x - y;
+      const c = typeof x === 'string' ? x.localeCompare(y) : Number(x) - Number(y);
       return (c * S.dir) || (a.rank - b.rank);
     });
     $('#rows').innerHTML = rows.map((r) => `<tr style="cursor:default">
       <td class="num">${r.rank}</td>
-      <td>${esc(r.brand)}${r.new ? '<span class="bs-tag new">Approved Nov 2</span>' : ''}${r.thin ? '<span class="bs-tag" title="Listings don\'t clearly show this brand. Check by hand.">Thin match</span>' : ''}</td>
+      <td>${esc(r.brand)}${r.thin ? '<span class="bs-tag" title="Listings don\'t clearly show this brand. Check by hand.">Thin match</span>' : ''}</td>
+      <td class="center">${r.new ? '<span class="bs-yes">✓</span>' : ''}</td>
       <td class="num"><div class="bs-bar"><div class="track"><i style="width:${Math.max(0.5, r.sellers / S.max * 100)}%"></i></div><b>${num(r.sellers)}</b></div></td>
       <td class="num">${num(r.fba)}</td>
       <td class="num">${Number(r.avg).toFixed(1)}</td>
@@ -100,12 +101,6 @@
     });
   }
   $('#q').addEventListener('input', render);
-  $('#scope').addEventListener('click', (e) => {
-    const b = e.target.closest('.chip'); if (!b) return;
-    S.scope = b.dataset.scope;
-    $$('#scope .chip').forEach((c) => c.classList.toggle('on', c === b));
-    render();
-  });
   $('#head').addEventListener('click', (e) => {
     const th = e.target.closest('th.sortable'); if (!th) return;
     const k = th.dataset.k;
@@ -119,8 +114,6 @@
     S.rows = data.rows || [];
     S.max = Math.max(1, ...S.rows.map((r) => r.sellers));
     $('#sub').textContent = data.label || '';
-    $('#cAll').textContent = S.rows.length;
-    $('#cNew').textContent = S.rows.filter((r) => r.new).length;
     $('#notes').innerHTML = (data.notes || []).map((n) => `<li>${esc(n)}</li>`).join('');
     render();
   } catch (e) {
