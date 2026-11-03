@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <style>
   .tk-add { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; margin: 22px 0 4px; align-items: start; }
-  .tk-add textarea { grid-column: 1 / 3; min-height: 38px; resize: vertical; }
+  .tk-add textarea { grid-column: 1 / -1; min-height: 38px; resize: vertical; }
   @media (max-width: 700px) { .tk-add { grid-template-columns: 1fr; } .tk-add textarea { grid-column: auto; } }
   .tk-list { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
   .tk { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line-2); align-items: start; }
@@ -28,9 +28,12 @@
   .sec-h h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0 6px 0 0; }
   .sec-h select { width: auto; padding: 4px 8px; }
   .dg-headline { margin: 8px 0 0; font-size: 15px; max-width: 900px; }
-  .dg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; margin-top: 14px; align-items: start; }
-  @media (max-width: 520px) { .dg-grid { grid-template-columns: 1fr; } }
-  .dg-sec { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 0; }
+  .inbox-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  @media (max-width: 1000px) { .inbox-grid { grid-template-columns: minmax(0, 1fr); } }
+  .dg-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-top: 14px; overflow: hidden; }
+  .dg-sec { border-top: 1px solid var(--line); padding: 2px 0; }
+  .dg-sec:first-child { border-top: 0; }
+  .dg-sec > summary { background: var(--panel-2); }
   .dg-sec > summary { list-style: none; cursor: pointer; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-weight: 600; }
   .dg-sec > summary::-webkit-details-marker { display: none; }
   .dg-sec > summary .n { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -65,9 +68,11 @@
   </header>
   <nav class="tabs"><a href="/tasks" data-tab="tasks" class="on">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/timeclock" data-tab="timeclock">Time clock</a></nav>
 
+  <div class="inbox-grid"><div class="col-mail">
   <div class="sec-h"><h2>Amazon emails</h2><select id="dgDay" aria-label="Day"></select><span class="muted" id="dgMeta" style="font-size:13px"></span></div>
   <p class="dg-headline" id="dgHeadline"></p>
   <div id="dgBody"></div>
+  </div><div class="col-tasks">
 
   <div class="sec-h"><h2>Tasks</h2></div>
   <form class="tk-add editor-only" id="addForm" style="margin-top:12px">
@@ -83,10 +88,11 @@
       <button class="chip" data-f="done">Done<span class="count" id="cDone"></span></button>
       <button class="chip" data-f="all">All</button>
     </div>
-    <span class="muted" style="font-size:13px">Tasks marked <b style="color:var(--accent)">Hub</b> are added automatically: canceled orders already sent to PrepOS, and Amazon emails that need action.</span>
+    <span class="muted" style="font-size:13px">Tagged tasks are added automatically: <b style="color:var(--accent)">Hub</b> for canceled orders already sent to PrepOS, <b style="color:var(--accent)">Amazon email</b> for emails that need action.</span>
   </div>
 
   <div class="tk-list" id="list"></div>
+  </div></div>
 </div>
 <div id="toasts" class="toasts"></div>
 <script src="/static/viewas.js"></script>
@@ -111,7 +117,7 @@
     $('#dgHeadline').textContent = g.headline || '';
     $('#dgMeta').textContent = [g.period, d.updated_at ? 'updated ' + when(d.updated_at) : ''].filter(Boolean).join(' · ');
     const secs = (g.sections || []).filter((x) => (x.items || []).length);
-    $('#dgBody').innerHTML = secs.length ? `<div class="dg-grid">${secs.map((x) => {
+    $('#dgBody').innerHTML = secs.length ? `<div class="dg-panel">${secs.map((x) => {
       const urgent = x.items.filter((i) => i.urgent).length;
       return `<details class="dg-sec" ${x.collapsed ? '' : 'open'}><summary><span class="chev">▶</span>${esc(x.name)}<span class="n">${urgent ? `<b style="color:var(--bad)">${urgent} need action</b> · ` : ''}${x.items.length}</span></summary>
         ${x.items.map((i) => `<div class="dg-it"><div class="ti">${i.urgent ? '<span class="u" title="Needs action"></span>' : ''}${esc(i.title)}</div>
