@@ -222,8 +222,9 @@
     const discTitle = o.discrepancy ? `Items total ${money(o.items_total)} vs order total ${money(o.order_total)}` : 'Items total matches order total';
     const missTitle = o.missing.length ? 'Missing: ' + o.missing.join(', ') : 'All item fields filled in';
     return `<tr data-id="${esc(o.id)}" class="${S.openId === o.id ? 'sel' : ''}">
-      <td>${oeCell(o, 'order_date', esc(fmtDate(o.order_date)))}</td><td class="store-name">${oeCell(o, 'store', esc(o.store))}</td>
+      <td>${oeCell(o, 'order_date', esc(fmtDate(o.order_date)))}</td>
       <td class="placed">${o.placed_by ? esc(o.placed_by) : '<span class="muted" title="Not recorded: brought over from the old ledger, which didn\'t track who placed orders">—</span>'}</td>
+      <td class="store-name">${oeCell(o, 'store', esc(o.store))}</td>
       <td class="num">${oeCell(o, 'order_total', money(o.order_total))}</td><td class="mono">${oeCell(o, 'order_ref', esc(o.order_ref || ''))}</td>
       <td class="notes" title="${esc(o.notes || '')}">${oeCell(o, 'notes', esc(o.notes || '—'))}</td>
       <td class="center"><span class="dot ${o.discrepancy ? 'bad' : ''}" title="${esc(discTitle)}"></span></td>
