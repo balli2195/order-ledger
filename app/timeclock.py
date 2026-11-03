@@ -48,14 +48,24 @@ async def person_for_user(conn, user_id: int) -> dict | None:
     return await cur.fetchone()
 
 
+async def _link_by_name(conn, user) -> dict | None:
+    """Join a login to an unlinked time-clock person with its name: the full name, its first word, or the email name
+    (e.g. the imported "Abby" timesheet and the login "Abby Smith")."""
+    first = (user.name or "").strip().split(" ")[0]
+    local = (user.email or "").split("@")[0]
+    cur = await conn.execute(
+        "UPDATE tc_people SET user_id=%s WHERE id = (SELECT id FROM tc_people WHERE user_id IS NULL AND active "
+        "AND lower(name) IN (lower(%s), lower(%s), lower(%s)) ORDER BY (lower(name)=lower(%s)) DESC, id LIMIT 1) RETURNING *",
+        (user.id, user.label, first or user.label, local, user.label))
+    return await cur.fetchone()
+
+
 async def _ensure_person(conn, user) -> dict:
     """The time-clock person for this login: linked already, else an unlinked person with the same name, else a new one."""
     p = await person_for_user(conn, user.id)
     if p:
         return p
-    cur = await conn.execute("UPDATE tc_people SET user_id=%s WHERE user_id IS NULL AND lower(name)=lower(%s) RETURNING *",
-                             (user.id, user.label))
-    p = await cur.fetchone()
+    p = await _link_by_name(conn, user)
     if p:
         return p
     cur = await conn.execute("INSERT INTO tc_people (name, user_id) VALUES (%s,%s) "
@@ -285,6 +295,10 @@ async def overview(user, week: date | None, history_weeks: int = 16) -> dict:
         today = (await cur.fetchone())["d"]
         wk = week or monday(today)
         me = await person_for_user(conn, user.id)
+        if not me and not owner:
+            me = await _link_by_name(conn, user)   # their imported timesheet shows up the first time they open the page
+            if me:
+                await conn.commit()
         my_open = None
         if me:
             cur = await conn.execute("SELECT id, clock_in, note FROM time_entries WHERE person_id=%s AND clock_out IS NULL", (me["id"],))
