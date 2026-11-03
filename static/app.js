@@ -147,7 +147,7 @@
     if (oe && !oe.done) { S.pendingRender = true; return; }   // don't redraw the table under an open cell editor
     S.pendingRender = false;
     const base = filtered();
-    const disc = base.filter((o) => o.discrepancy), miss = base.filter((o) => o.missing.length), noconf = base.filter((o) => confirmState(o) === 'bad');
+    const disc = base.filter((o) => o.discrepancy), miss = base.filter((o) => o.missing.length), noconf = base.filter((o) => ['bad', 'canceled'].includes(confirmState(o)));
     $('#cDisc').textContent = disc.length || ''; $('#cMiss').textContent = miss.length || ''; $('#cConf').textContent = noconf.length || '';
     const list = S.filter === 'discrepancy' ? disc : S.filter === 'missing' ? miss : S.filter === 'noconfirm' ? noconf : base;
     const total = list.reduce((s, o) => s + (o.order_total || 0), 0);
@@ -224,7 +224,7 @@
   function confirmState(o) {
     if ((o.order_date || '') < CONFIRM_FROM) return '';
     if (!REF_OK.test((o.order_ref || '').trim())) return 'bad';
-    if (o.confirm_found === true) return 'ok';
+    if (o.confirm_found === true) return o.confirm_info?.canceled ? 'canceled' : 'ok';
     if (o.confirm_found === false) return 'bad';
     return 'pending';
   }
@@ -234,6 +234,11 @@
     if (st === 'ok') {
       const t = [i.subject, i.sender, i.date, i.mailbox ? 'in ' + i.mailbox : ''].filter(Boolean).join(' · ');
       const dot = `<span class="dot" title="${esc(t || 'Confirmation email found')}"></span>`;
+      return i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener" class="dot-link">${dot}</a>` : dot;
+    }
+    if (st === 'canceled') {
+      const t = `${i.canceled}. Confirmation: ${[i.subject, i.date].filter(Boolean).join(' · ')}`;
+      const dot = `<span class="dot bad" title="${esc(t)}"></span>`;
       return i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener" class="dot-link">${dot}</a>` : dot;
     }
     if (st === 'pending') return '<span class="dot pending" title="Not checked yet. The mailbox check runs every few hours."></span>';

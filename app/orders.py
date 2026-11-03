@@ -154,7 +154,7 @@ async def save_confirmations(results: list) -> dict:
     async with db.pool.connection() as conn:
         async with conn.transaction():
             for r in results or []:
-                info = {k: str(r[k])[:300] for k in ("mailbox", "subject", "sender", "date", "link") if r.get(k)}
+                info = {k: str(r[k])[:300] for k in ("mailbox", "subject", "sender", "date", "link", "canceled") if r.get(k)}
                 cur = await conn.execute(
                     "UPDATE orders SET confirm_found=%s, confirm_checked_at=now(), confirm_info=%s WHERE id=%s",
                     (bool(r.get("found")), json.dumps(info) if info else None, r.get("id")))
