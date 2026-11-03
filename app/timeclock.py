@@ -278,13 +278,22 @@ async def delete_adjustment(actor: Actor, aid: str) -> None:
 
 # ---------------------------------------------------------------- the page's data
 
-async def overview(user, week: date | None, history_weeks: int = 16) -> dict:
+async def overview(user, week: date | None, history_weeks: int = 16, as_person: int | None = None) -> dict:
+    """as_person: the owner previews exactly what that person sees (read-only on the page)."""
     owner = user.role == "owner"
+    preview = None
     async with db.pool.connection() as conn:
         cur = await conn.execute(f"SELECT (now() AT TIME ZONE '{TZ}')::date AS d")
         today = (await cur.fetchone())["d"]
         wk = week or monday(today)
-        me = await person_for_user(conn, user.id)
+        if owner and as_person:
+            cur = await conn.execute("SELECT * FROM tc_people WHERE id=%s", (as_person,))
+            me = await cur.fetchone()
+            if not me:
+                raise HTTPException(404, "No such person")
+            owner, preview = False, dict(id=me["id"], name=me["name"])
+        else:
+            me = await person_for_user(conn, user.id)
         my_open = None
         if me:
             cur = await conn.execute("SELECT id, clock_in, note FROM time_entries WHERE person_id=%s AND clock_out IS NULL", (me["id"],))
@@ -339,7 +348,7 @@ async def overview(user, week: date | None, history_weeks: int = 16) -> dict:
         if 0 <= i < history_weeks:
             history[h["person_id"]][i] = round(float(h["hours"]), 2)
     return jsonable(dict(
-        owner=owner, today=today, week_start=wk, prev_week=wk - timedelta(weeks=1), next_week=wk + timedelta(weeks=1),
+        owner=owner, preview=preview, today=today, week_start=wk, prev_week=wk - timedelta(weeks=1), next_week=wk + timedelta(weeks=1),
         me=dict(person_id=me["id"], name=me["name"], active=me["active"], open=dict(my_open) if my_open else None) if me else None,
         people=rows, entries=[dict(e, hours=round(float(e["hours"]), 2)) for e in entries],
         history=dict(weeks=weeks, series=[dict(id=p["id"], name=p["name"], hours=history[p["id"]]) for p in people]),

@@ -658,9 +658,9 @@ async def api_engine_put_doc(path: str, request: Request, if_version: int | None
 # ---------------------------------------------------------------- time clock (app/timeclock.py)
 
 @app.get("/api/timeclock")
-async def api_timeclock(request: Request, week: str | None = None):
+async def api_timeclock(request: Request, week: str | None = None, as_person: int | None = None):
     user = await auth.require(request, tab="timeclock")
-    return await tc.overview(user, tc.parse_week(week))
+    return await tc.overview(user, tc.parse_week(week), as_person=as_person)
 
 
 @app.post("/api/timeclock/{direction}")
