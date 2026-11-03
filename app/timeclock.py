@@ -383,6 +383,45 @@ async def overview(user, week: date | None, history_weeks: int = 16) -> dict:
         users=[dict(u) for u in users]))
 
 
+async def weeks(user) -> dict:
+    """Every week that has time or pay lines (plus this week), newest first, with hours and pay per person."""
+    owner = user.role == "owner"
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(f"SELECT (now() AT TIME ZONE '{TZ}')::date AS d")
+        today = (await cur.fetchone())["d"]
+        if owner:
+            cur = await conn.execute("SELECT * FROM tc_people p WHERE p.active OR EXISTS (SELECT 1 FROM time_entries e WHERE e.person_id=p.id) "
+                                     "ORDER BY lower(p.name)")
+            people = await cur.fetchall()
+        else:
+            me = await person_for_user(conn, user.id)
+            people = [me] if me else []
+        ids = [p["id"] for p in people]
+        cur = await conn.execute(
+            f"SELECT e.person_id, date_trunc('week', {DAY})::date AS wk, sum({HOURS}) AS h, bool_or(e.clock_out IS NULL) AS open "
+            f"FROM time_entries e WHERE e.person_id = ANY(%s) GROUP BY 1, 2", (ids,))
+        hrs = await cur.fetchall()
+        cur = await conn.execute("SELECT person_id, week_start AS wk, sum(amount) AS a FROM tc_adjustments WHERE person_id = ANY(%s) GROUP BY 1, 2", (ids,))
+        adj = await cur.fetchall()
+    rate = {p["id"]: _n(p["rate"]) for p in people}
+    cur_wk = monday(today)
+    by = {cur_wk: {}}
+    for r in hrs:
+        by.setdefault(r["wk"], {}).setdefault(r["person_id"], dict(h=0.0, a=0.0, open=False)).update(h=float(r["h"]), open=bool(r["open"]))
+    for r in adj:
+        by.setdefault(r["wk"], {}).setdefault(r["person_id"], dict(h=0.0, a=0.0, open=False))["a"] = float(r["a"])
+    out = []
+    for wk in sorted(by, reverse=True):
+        cells = {}
+        for pid, v in by[wk].items():
+            base = v["h"] * rate[pid] if rate.get(pid) is not None else 0.0
+            cells[pid] = dict(hours=round(v["h"], 2), pay=round(base + v["a"], 2), open=v["open"])
+        out.append(dict(week=wk, end=wk + timedelta(days=6), people=cells,
+                        hours=round(sum(c["hours"] for c in cells.values()), 2), pay=round(sum(c["pay"] for c in cells.values()), 2),
+                        open=any(c["open"] for c in cells.values())))
+    return jsonable(dict(owner=owner, today=today, current_week=cur_wk, people=[dict(id=p["id"], name=p["name"]) for p in people], weeks=out))
+
+
 async def export_rows(start: date, end: date) -> list[dict]:
     async with db.pool.connection() as conn:
         cur = await conn.execute(

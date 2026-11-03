@@ -702,6 +702,12 @@ async def api_timeclock(request: Request, week: str | None = None):
     return await tc.overview(user, tc.parse_week(week))
 
 
+@app.get("/api/timeclock/weeks")
+async def api_timeclock_weeks(request: Request):
+    user = await auth.require(request, tab="timeclock")
+    return await tc.weeks(user)
+
+
 @app.get("/api/timeclock/status")
 async def api_timeclock_status(request: Request):
     user = await auth.require(request)
