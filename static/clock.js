@@ -42,8 +42,21 @@ window.TimeClock = (() => {
     } catch (e) { say(e.message, true); btn.disabled = false; }
   }
 
+  function ownerMenu(me) {   // owner: Time clock lives in the Menu instead of the tab bar (Nick, Nov 2 2026)
+    if (me?.role !== 'owner') return;
+    const tab = document.querySelector('nav.tabs a[data-tab="timeclock"]');
+    if (tab && !tab.classList.contains('on')) tab.hidden = true;   // still shown while you're on the page
+    const menu = document.getElementById('menu');
+    if (menu && !menu.querySelector('[data-go="/timeclock"]')) {
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.go = '/timeclock'; b.textContent = 'Time clock';
+      b.addEventListener('click', () => { location.href = '/timeclock'; });
+      menu.insertBefore(b, menu.firstChild);
+    }
+  }
+
   function init(me) {
     st.me = me;
+    ownerMenu(me);
     if (!me || !(me.tabs || []).includes('timeclock')) return;
     const who = document.querySelector('.who'); if (!who || st.el) return;
     st.el = document.createElement('div'); st.el.className = 'clock-mini'; st.el.hidden = true;
