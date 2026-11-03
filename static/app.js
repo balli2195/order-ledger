@@ -147,9 +147,9 @@
     if (oe && !oe.done) { S.pendingRender = true; return; }   // don't redraw the table under an open cell editor
     S.pendingRender = false;
     const base = filtered();
-    const disc = base.filter((o) => o.discrepancy), miss = base.filter((o) => o.missing.length);
-    $('#cDisc').textContent = disc.length || ''; $('#cMiss').textContent = miss.length || '';
-    const list = S.filter === 'discrepancy' ? disc : S.filter === 'missing' ? miss : base;
+    const disc = base.filter((o) => o.discrepancy), miss = base.filter((o) => o.missing.length), noconf = base.filter((o) => confirmState(o) === 'bad');
+    $('#cDisc').textContent = disc.length || ''; $('#cMiss').textContent = miss.length || ''; $('#cConf').textContent = noconf.length || '';
+    const list = S.filter === 'discrepancy' ? disc : S.filter === 'missing' ? miss : S.filter === 'noconfirm' ? noconf : base;
     const total = list.reduce((s, o) => s + (o.order_total || 0), 0);
     if ($('#summary')) $('#summary').textContent = `${S.orders.length.toLocaleString()} orders tracked · ${money(total)} shown` +
       (list.length !== S.orders.length ? ` (${list.length.toLocaleString()} matching)` : '');
@@ -218,6 +218,29 @@
     if (op) { e.preventDefault(); e.stopPropagation(); openOrder(op.dataset.openRow); }
   }, true);
 
+  // Confirmation email (orders from Oct 1, 2026 on): found = green, not found / no order ID = red, not checked yet = hollow
+  const CONFIRM_FROM = '2026-10-01';
+  const REF_OK = /^[A-Za-z0-9-]{5,}$/;
+  function confirmState(o) {
+    if ((o.order_date || '') < CONFIRM_FROM) return '';
+    if (!REF_OK.test((o.order_ref || '').trim())) return 'bad';
+    if (o.confirm_found === true) return 'ok';
+    if (o.confirm_found === false) return 'bad';
+    return 'pending';
+  }
+  function confirmCell(o) {
+    const st = confirmState(o); if (!st) return '';
+    const i = o.confirm_info || {}, when = o.confirm_checked_at ? new Date(o.confirm_checked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    if (st === 'ok') {
+      const t = [i.subject, i.sender, i.date, i.mailbox ? 'in ' + i.mailbox : ''].filter(Boolean).join(' · ');
+      const dot = `<span class="dot" title="${esc(t || 'Confirmation email found')}"></span>`;
+      return i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener" class="dot-link">${dot}</a>` : dot;
+    }
+    if (st === 'pending') return '<span class="dot pending" title="Not checked yet. The mailbox check runs every few hours."></span>';
+    const why = !REF_OK.test((o.order_ref || '').trim()) ? 'No order ID to look up' : `No confirmation email found for #${o.order_ref}${when ? ' (checked ' + when + ')' : ''}`;
+    return `<span class="dot bad" title="${esc(why)}"></span>`;
+  }
+
   function rowHtml(o) {
     const discTitle = o.discrepancy ? `Items total ${money(o.items_total)} vs order total ${money(o.order_total)}` : 'Items total matches order total';
     const missTitle = o.missing.length ? 'Missing: ' + o.missing.join(', ') : 'All item fields filled in';
@@ -229,6 +252,7 @@
       <td class="notes" title="${esc(o.notes || '')}">${oeCell(o, 'notes', esc(o.notes || '—'))}</td>
       <td class="center"><span class="dot ${o.discrepancy ? 'bad' : ''}" title="${esc(discTitle)}"></span></td>
       <td class="center"><span class="dot ${o.missing.length ? 'bad' : ''}" title="${esc(missTitle)}"></span></td>
+      <td class="center">${confirmCell(o)}</td>
       <td class="order-act">${can('editor') ? `<button class="icon-act" data-add-items="${esc(o.id)}" title="Add items" aria-label="Add items">${I_BOX}</button>` : ''}<button class="icon-act" data-open-row="${esc(o.id)}" title="${can('editor') ? 'Open / edit order' : 'Open order'}" aria-label="Open order">${I_PEN}</button>${can('editor') ? `<button class="icon-act" data-dup-order="${esc(o.id)}" title="Duplicate order" aria-label="Duplicate order">${I_COPY}</button><button class="icon-act danger" data-del-order="${esc(o.id)}" title="Delete order" aria-label="Delete order">${I_TRASH}</button>` : ''}</td></tr>`;
   }
 
@@ -667,7 +691,7 @@
   }
 
   function exportCsv() {
-    const cols = ['order_date', 'store', 'email', 'order_total', 'order_ref', 'notes', 'items_total', 'units', 'discrepancy', 'missing'];
+    const cols = ['order_date', 'store', 'email', 'order_total', 'order_ref', 'notes', 'items_total', 'units', 'discrepancy', 'missing', 'confirm_found'];
     const q = (v) => { const s = Array.isArray(v) ? v.join('; ') : String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const lines = [cols.join(',')].concat(filtered().map((o) => cols.map((c) => q(o[c])).join(',')));
     const a = document.createElement('a');
@@ -773,7 +797,7 @@
     const v = JSON.parse(localStorage.getItem('orderFilters') || 'null');
     if (v) {
       if (typeof v.q === 'string') { S.q = v.q; $('#q').value = v.q; }
-      if (['all', 'discrepancy', 'missing'].includes(v.filter)) { S.filter = v.filter; $$('.chip[data-filter]').forEach((x) => x.classList.toggle('on', x.dataset.filter === v.filter)); }
+      if (['all', 'discrepancy', 'missing', 'noconfirm'].includes(v.filter)) { S.filter = v.filter; $$('.chip[data-filter]').forEach((x) => x.classList.toggle('on', x.dataset.filter === v.filter)); }
     }
   } catch { /* storage blocked or old value */ }
   let qTimer;

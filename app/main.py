@@ -807,6 +807,19 @@ async def api_tc_export(request: Request, start: str, end: str):
                         headers={"Content-Disposition": f'attachment; filename="time-clock-{a}-to-{b}.csv"'})
 
 
+@app.get("/api/engine/orders/confirm-queue")
+async def engine_confirm_queue(request: Request, limit: int = 200):
+    """For the scheduled confirmation-email check: orders (from Oct 1, 2026) still waiting for a confirmation email."""
+    auth.require_engine_key(request)
+    return {"orders": await o.confirm_queue(min(limit, 500))}
+
+
+@app.post("/api/engine/orders/confirmations")
+async def engine_confirmations(request: Request, body: dict = Body(...)):
+    auth.require_engine_key(request)
+    return await o.save_confirmations(body.get("results") or [])
+
+
 @app.post("/api/engine/timeclock/import")
 async def engine_tc_import(request: Request, body: dict = Body(...)):
     auth.require_engine_key(request)

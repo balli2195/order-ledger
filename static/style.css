@@ -519,3 +519,5 @@ body.has-sticky-bar #head th { top: var(--bar-h, 0px); }   /* only the main Lead
 .clock-mini .cm-btn { min-width: 88px; justify-content: center; }
 .clock-mini .cm-btn.out { background: var(--ink); border-color: var(--ink); color: var(--panel); }
 td.placed { white-space: nowrap; }
+.dot.pending { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); opacity: .6; }
+a.dot-link { display: inline-block; line-height: 0; }

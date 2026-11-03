@@ -38,6 +38,7 @@
       <button class="chip on" data-filter="all">All</button>
       <button class="chip" data-filter="discrepancy">Discrepancy<span class="count" id="cDisc"></span></button>
       <button class="chip" data-filter="missing">Missing info<span class="count" id="cMiss"></span></button>
+      <button class="chip" data-filter="noconfirm">No confirmation<span class="count" id="cConf"></span></button>
     </div>
     <div class="spacer"></div>
     <button id="preposBtn" class="btn" data-needs-tab="prepos" title="Send order items to Network Prep (PrepOS)">PrepOS</button>
@@ -51,7 +52,7 @@
       <thead>
         <tr>
           <th>Date</th><th class="placed">Placed by</th><th>Store</th><th class="num">Order total</th>
-          <th>Order ID</th><th class="notes">Notes</th><th class="center">Discrepancy</th><th class="center">Missing info</th><th class="order-act"></th>
+          <th>Order ID</th><th class="notes">Notes</th><th class="center">Discrepancy</th><th class="center">Missing info</th><th class="center" title="Order confirmation email found in your Gmail or Outlook by the order ID (orders from Oct 1, 2026 on)">Confirmation</th><th class="order-act"></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>

@@ -129,6 +129,42 @@ def clean_item(data: dict, partial: bool, strict: bool = True) -> dict:
     return out
 
 
+CONFIRM_FROM = "2026-10-01"   # confirmation emails are checked for orders from Oct 1, 2026 on (Nick, Nov 3)
+_REF_OK = r"^[A-Za-z0-9-]{5,}$"
+
+
+async def confirm_queue(limit: int = 200, recheck_days: int = 14) -> list[dict]:
+    """Orders whose confirmation email hasn't been found yet: never checked, or not found and placed in the last
+    `recheck_days` days (checked again at most every 6 hours, in case the email came late)."""
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            f"""SELECT o.id, o.order_date, o.store, o.email, btrim(o.order_ref) AS order_ref, o.order_total, o.confirm_checked_at
+                  FROM orders o
+                 WHERE o.order_date >= %s AND btrim(COALESCE(o.order_ref, '')) ~ %s
+                   AND (o.confirm_checked_at IS NULL
+                        OR (o.confirm_found IS NOT TRUE AND o.order_date >= current_date - %s AND o.confirm_checked_at < now() - interval '6 hours'))
+                 ORDER BY o.confirm_checked_at NULLS FIRST, o.order_date DESC LIMIT %s""",
+            (CONFIRM_FROM, _REF_OK, recheck_days, limit))
+        return [jsonable(dict(r)) for r in await cur.fetchall()]
+
+
+async def save_confirmations(results: list) -> dict:
+    """[{id, found, mailbox, subject, sender, date, link}] from the scheduled mailbox check."""
+    n = found = 0
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            for r in results or []:
+                info = {k: str(r[k])[:300] for k in ("mailbox", "subject", "sender", "date", "link") if r.get(k)}
+                cur = await conn.execute(
+                    "UPDATE orders SET confirm_found=%s, confirm_checked_at=now(), confirm_info=%s WHERE id=%s",
+                    (bool(r.get("found")), json.dumps(info) if info else None, r.get("id")))
+                n += cur.rowcount
+                found += 1 if r.get("found") and cur.rowcount else 0
+            if n:
+                await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"op": "reload", "src": "confirm"}),))
+    return {"saved": n, "found": found}
+
+
 async def _notify(conn, op: str, order_id: Any, by: str | None, source: str) -> None:
     payload = json.dumps({"op": op, "id": str(order_id), "by": by, "src": source})
     await conn.execute("SELECT pg_notify('ledger', %s)", (payload,))
@@ -164,6 +200,7 @@ SUMMARY_SQL = """
 SELECT o.id, o.order_date, o.store, o.email, o.order_total, o.order_ref, o.notes,
        o.created_at, o.updated_at,
        (SELECT COALESCE(NULLIF(u.name, ''), u.email) FROM users u WHERE u.id = o.created_by) AS placed_by,
+       o.confirm_found, o.confirm_checked_at, o.confirm_info,
        COALESCE(SUM(i.qty_ordered * COALESCE(i.cost_per_unit, 0)), 0)::numeric(14,2) AS items_total,
        COALESCE(SUM(i.qty_ordered), 0)::int AS units,
        COUNT(i.id)::int AS item_count,

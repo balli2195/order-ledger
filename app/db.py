@@ -418,6 +418,18 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX tc_adjustments_idx ON tc_adjustments (person_id, week_start);
     UPDATE users SET tabs = array_append(tabs, 'timeclock') WHERE role <> 'owner' AND NOT ('timeclock' = ANY(tabs));
+    """,    # 24: order confirmation emails, found by searching Nick's mailboxes for the order ID (a scheduled run posts the
+            #     results through the engine API). Changing the order ID clears the result so it's checked again.
+    """
+    ALTER TABLE orders ADD COLUMN confirm_found boolean, ADD COLUMN confirm_checked_at timestamptz, ADD COLUMN confirm_info jsonb;
+    CREATE FUNCTION orders_reset_confirm() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.order_ref IS DISTINCT FROM OLD.order_ref THEN
+        NEW.confirm_found := NULL; NEW.confirm_checked_at := NULL; NEW.confirm_info := NULL;
+      END IF;
+      RETURN NEW;
+    END $$;
+    CREATE TRIGGER orders_reset_confirm BEFORE UPDATE OF order_ref ON orders FOR EACH ROW EXECUTE FUNCTION orders_reset_confirm();
     """,
 ]
 
