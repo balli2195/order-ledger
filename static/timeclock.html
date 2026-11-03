@@ -92,14 +92,6 @@
   </header>
   <nav class="tabs"><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Brand sellers</a><a href="/timeclock" data-tab="timeclock" class="on">Time clock</a></nav>
 
-  <div class="tc-top owner-only hidden">
-    <div class="tc-card">
-      <h3 id="chartTitle">Hours per week</h3>
-      <div class="tc-legend" id="legend"></div>
-      <div class="tc-chart" id="chart"></div>
-    </div>
-  </div>
-
   <div class="tc-weeknav">
     <h2>Weeks</h2>
     <span class="muted" style="font-size:13px">click a week to open it</span>
@@ -159,7 +151,7 @@
 
   function render() {
     renderWeeks();
-    if (owner()) { renderChart(); renderPeople(); }
+    if (owner()) renderPeople();
   }
 
   // ------------------------------------------------ the weeks table (click a week to open its days and entries)
@@ -244,49 +236,6 @@
     if (S.open.has(wk) && !forceOpen) { S.open.delete(wk); renderWeeks(); return; }
     S.open.add(wk); renderWeeks();
     if (!S.cache[wk]) { try { await fetchWeek(wk); } catch (e) { fail(e); } renderWeeks(); }
-  }
-
-  // ------------------------------------------------ hours-per-week chart (stacked by person)
-  function renderChart() {
-    const h = S.base.history, el = $('#chart');
-    $('#chartTitle').textContent = owner() && h.series.length > 1 ? 'Hours per week, by person' : 'Hours per week';
-    $('#legend').innerHTML = h.series.length > 1 ? h.series.map((s) => `<span><i style="background:${colorOf(s.id)}"></i>${esc(s.name)}</span>`).join('') : '';
-    const n = h.weeks.length, totals = h.weeks.map((_, i) => h.series.reduce((a, s) => a + s.hours[i], 0));
-    const max = Math.max(10, ...totals), step = max > 40 ? 20 : max > 20 ? 10 : 5, top = Math.ceil(max / step) * step;
-    const W = Math.max(320, el.clientWidth || 600), H = 190, L = 30, B = 22, T = 6, cw = (W - L) / n, bw = Math.min(28, cw * .62);
-    const y = (v) => T + (H - T - B) * (1 - v / top);
-    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Hours per week for the last ${n} weeks">`;
-    for (let v = 0; v <= top; v += step) svg += `<line class="grid" x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
-    h.weeks.forEach((wk, i) => {
-      const x = L + i * cw + (cw - bw) / 2; let acc = 0;
-      svg += `<g class="${S.open?.has(wk) ? 'cur' : ''}">`;
-      const segs = h.series.filter((s) => s.hours[i] > 0);
-      segs.forEach((s, k) => {
-        const y0 = y(acc), y1 = y(acc + s.hours[i]); acc += s.hours[i];
-        const gap = k < segs.length - 1 ? 0 : 0, hh = Math.max(1, y0 - y1 - (k > 0 ? 2 : 0));
-        const isTop = k === segs.length - 1, r = isTop ? Math.min(4, hh / 2, bw / 2) : 0;
-        svg += isTop
-          ? `<path class="seg" fill="${colorOf(s.id)}" d="M${x},${y1 + hh + gap} V${y1 + r} Q${x},${y1} ${x + r},${y1} H${x + bw - r} Q${x + bw},${y1} ${x + bw},${y1 + r} V${y1 + hh} Z"/>`
-          : `<rect class="seg" fill="${colorOf(s.id)}" x="${x}" y="${y1}" width="${bw}" height="${hh}"/>`;
-      });
-      svg += '</g>';
-      if (i % Math.ceil(n / 8) === (n - 1) % Math.ceil(n / 8)) svg += `<text class="axis" x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${short(wk)}</text>`;
-      svg += `<rect class="hit" data-wk="${i}" x="${L + i * cw}" y="${T}" width="${cw}" height="${H - T - B}"/>`;
-    });
-    el.innerHTML = svg + '</svg><div class="tc-tip" hidden></div>';
-    const tip = el.querySelector('.tc-tip');
-    el.querySelectorAll('rect.hit').forEach((r) => {
-      r.addEventListener('mousemove', (ev) => {
-        const i = +r.dataset.wk, rows = h.series.filter((s) => s.hours[i] > 0);
-        tip.innerHTML = `<b>Week of ${short(h.weeks[i])}</b>` + (rows.length ? rows.map((s) => `<div class="r"><span><i style="background:${colorOf(s.id)}"></i>${esc(s.name)}</span><span>${s.hours[i].toFixed(2)} h</span></div>`).join('')
-          + (rows.length > 1 ? `<div class="r" style="border-top:1px solid var(--line);margin-top:3px;padding-top:3px"><span>Total</span><b>${totals[i].toFixed(2)} h</b></div>` : '') : '<div class="muted">No time</div>');
-        tip.hidden = false;
-        const box = el.getBoundingClientRect(); let lx = ev.clientX - box.left + 12; if (lx + tip.offsetWidth > box.width) lx = ev.clientX - box.left - tip.offsetWidth - 12;
-        tip.style.left = lx + 'px'; tip.style.top = Math.max(0, ev.clientY - box.top - 20) + 'px';
-      });
-      r.addEventListener('mouseleave', () => { tip.hidden = true; });
-      r.addEventListener('click', async () => { const wk = h.weeks[+r.dataset.wk]; await toggleWeek(wk, true); renderChart(); document.querySelector(`#wkTable tr.wk-row[data-wk="${wk}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
-    });
   }
 
   // ------------------------------------------------ people (owner)
@@ -388,7 +337,6 @@
     e.preventDefault(); const b = Object.fromEntries(new FormData(e.target).entries());
     try { await api('POST', '/api/timeclock-admin/people', b); e.target.reset(); toast('Added'); await load(); } catch (err) { fail(err); }
   });
-  let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => S.base && owner() && renderChart(), 150); });
   addEventListener('timeclock:changed', () => load().catch(() => {}));
 
   (async () => {
