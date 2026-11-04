@@ -20,11 +20,17 @@ window.TimeClock = (() => {
     const viewing = !!st.me?.viewed_by;
     const off = d.person && d.active === false;
     const since = open ? (Date.now() - open) / 3.6e6 : 0;
-    el.innerHTML = open
+    const team = (d.team || []).map((t) => {
+      const at = t.open ? new Date(t.open) : null;
+      const tip = at ? `${t.name}: clocked in since ${tFmt.format(at)} (${hm((Date.now() - at) / 3.6e6)})` : `${t.name}: clocked out`;
+      return `<a class="tm-dot ${at ? 'on' : ''}" href="/timeclock" title="${tip}" aria-label="${tip}">${t.initial}</a>`;
+    }).join('');
+    if (d.team && !d.person) { el.innerHTML = `<span class="tm-row">${team}</span>`; return; }
+    el.innerHTML = (team ? `<span class="tm-row">${team}</span>` : '') + (open
       ? `<span class="cm-state" title="Clocked in at ${tFmt.format(open)}"><span class="cm-dot on"></span>In since ${tFmt.format(open)} · <b>${hm(since)}</b></span>
          <button class="btn small cm-btn out" data-cm="out" ${viewing ? 'disabled title="Off while you view the Hub as someone else"' : ''}>Clock out</button>`
       : `<span class="cm-state"><span class="cm-dot"></span>${off ? 'Time clock off' : 'Clocked out'}${d.today_hours ? ` · today ${hm(d.today_hours)}` : ''}</span>
-         <button class="btn small primary cm-btn" data-cm="in" ${viewing || off ? 'disabled' : ''} ${viewing ? 'title="Off while you view the Hub as someone else"' : ''}>Clock in</button>`;
+         <button class="btn small primary cm-btn" data-cm="in" ${viewing || off ? 'disabled' : ''} ${viewing ? 'title="Off while you view the Hub as someone else"' : ''}>Clock in</button>`);
   }
 
   async function refresh() {
@@ -78,7 +84,13 @@ window.TimeClock = (() => {
     st.el.addEventListener('click', (e) => { const b = e.target.closest('[data-cm]'); if (b) punch(b.dataset.cm, b); });
     refresh();
     clearInterval(st.timer); st.timer = setInterval(() => { if (!document.hidden) { if (st.data?.open) draw(); } }, 30000);
-    setInterval(() => { if (!document.hidden) refresh(); }, 120000);
+    setInterval(() => { if (!document.hidden) refresh(); }, me.role === 'owner' ? 45000 : 120000);
+    if (me.role === 'owner') {   // the team circles change when someone clocks in or out
+      try {
+        const es = new EventSource('/api/events'); let t = null;
+        es.onmessage = (ev) => { try { if (JSON.parse(ev.data).t === 'timeclock') { clearTimeout(t); t = setTimeout(refresh, 800); } } catch { /* ignore */ } };
+      } catch { /* ignore */ }
+    }
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   }
   return { init, refresh, taskBadge };

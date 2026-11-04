@@ -84,7 +84,7 @@ window.OrderBonus = (() => {
   async function refresh() {
     let b;
     try { const r = await fetch('/api/order-bonus', { headers: { 'X-Requested-With': 'ledger' } }); if (!r.ok) return; b = (await r.json()).bonus; } catch { return; }
-    if (!b) { if (st.el) st.el.hidden = true; return; }
+    if (!b || !b.self) { if (st.el) st.el.hidden = true; return; }   // Nick, Nov 4 2026: only the person earning it sees the bar
     if (!st.el) {
       const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
       st.el = document.createElement('div'); st.el.className = 'ob';

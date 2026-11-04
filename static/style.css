@@ -513,6 +513,10 @@ body.has-sticky-bar #head th { top: var(--bar-h, 0px); }   /* only the main Lead
   .clock-mini { position: static; flex-basis: 100%; }
 }
 .clock-mini[hidden] { display: none; }
+.clock-mini .tm-row { display: inline-flex; gap: 6px; }
+.clock-mini .tm-dot { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: var(--muted); border: 1.5px solid var(--line); background: transparent; text-decoration: none; }
+.clock-mini .tm-dot.on { background: var(--ok); border-color: var(--ok); color: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
 .clock-mini b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .clock-mini .cm-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin-right: 6px; vertical-align: 1px; }
 .clock-mini .cm-dot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }

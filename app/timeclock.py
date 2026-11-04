@@ -294,19 +294,32 @@ async def status(user) -> dict:
     if not user.can_tab("timeclock"):
         return {"show": False}
     async with db.pool.connection() as conn:
+        team = None
+        if user.role == "owner":   # Nick, Nov 4 2026: a small circle per person under the Menu, green while clocked in
+            cur = await conn.execute(
+                "SELECT p.name, (SELECT e.clock_in FROM time_entries e WHERE e.person_id=p.id AND e.clock_out IS NULL) AS open_in "
+                "FROM tc_people p WHERE p.active ORDER BY lower(p.name)")
+            rows = await cur.fetchall()
+            team = []
+            for r in rows:
+                nm = (r["name"] or "?").strip()
+                ini = nm[:1].upper()
+                if sum(1 for x in rows if (x["name"] or "?").strip()[:1].upper() == ini) > 1:
+                    ini = nm[:2].title()
+                team.append({"name": nm, "initial": ini, "open": r["open_in"]})
         p = await person_for_user(conn, user.id)
         if not p and user.role != "owner":
             p = await _link_by_name(conn, user)
             if p:
                 await conn.commit()
         if not p:
-            return {"show": user.role != "owner", "person": None, "open": None, "today_hours": 0}
+            return jsonable({"show": user.role != "owner" or bool(team), "person": None, "open": None, "today_hours": 0, "team": team})
         cur = await conn.execute(
             f"SELECT (SELECT clock_in FROM time_entries WHERE person_id=%s AND clock_out IS NULL) AS open_in, "
             f"COALESCE((SELECT sum({HOURS}) FROM time_entries e WHERE e.person_id=%s AND {DAY} = (now() AT TIME ZONE '{TZ}')::date), 0) AS today",
             (p["id"], p["id"]))
         r = await cur.fetchone()
-    return jsonable({"show": True, "person": p["name"], "active": p["active"], "open": r["open_in"], "today_hours": round(float(r["today"]), 2)})
+    return jsonable({"show": True, "person": p["name"], "active": p["active"], "open": r["open_in"], "today_hours": round(float(r["today"]), 2), "team": team})
 
 
 # ---------------------------------------------------------------- the page's data
