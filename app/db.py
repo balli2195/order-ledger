@@ -502,6 +502,20 @@ MIGRATIONS: list[str] = [
     """,    # 30: Nick doesn't want tasks made from his email (Nov 3, 2026): remove the ones the email summary added
     """
     DELETE FROM tasks WHERE kind = 'amazon_email';
+    """,    # 31: leads' products added to Nick's Amazon catalog when a Buy qty is entered (app/catalog.py)
+    """
+    CREATE TABLE catalog_adds (
+        asin           text PRIMARY KEY,
+        status         text NOT NULL,             -- listed (already on his account) / added (the Hub listed it) / failed
+        sku            text,
+        added_by_hub   boolean NOT NULL DEFAULT false,
+        issues         jsonb NOT NULL DEFAULT '[]',
+        listing_status jsonb,
+        error          text,
+        rechecks       integer NOT NULL DEFAULT 0,
+        created_at     timestamptz NOT NULL DEFAULT now(),
+        checked_at     timestamptz
+    );
     """,
 ]
 

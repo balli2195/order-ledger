@@ -21,6 +21,7 @@ from . import docs as hubdocs
 from . import hazmat
 from . import transparency
 from . import sellable
+from . import catalog
 from . import timeclock as tc
 from . import tasks as T
 from . import orders as o
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     syncer = asyncio.create_task(airtable_sync.loop())
     prepos_task = asyncio.create_task(prepos.nightly_loop())
     brand_task = asyncio.create_task(hazmat.brand_backfill_loop())   # Keepa brands for the Transparency brand warning
+    catalog_task = asyncio.create_task(catalog.loop())   # Buy qty entered -> product added to Nick's Amazon catalog
     hazmat_task = asyncio.create_task(sellable.backfill_loop())   # Amazon FBA eligibility (Keepa hazmat comes with title lookups)
     async with mcp.session_manager.run():
         yield
@@ -49,6 +51,7 @@ async def lifespan(app: FastAPI):
     syncer.cancel()
     prepos_task.cancel()
     hazmat_task.cancel()
+    catalog_task.cancel()
     brand_task.cancel()
     await db.close_pool()
 
@@ -429,8 +432,11 @@ async def api_hazmat(asin: str, request: Request):
                 f[k] = f[k].isoformat()
         f["reason_text"] = [{"code": c, "text": sellable.REASONS.get(c, "")} for c in (f.get("fba_reasons") or [])]
         f["hazmat_reason"] = bool(set(f.get("fba_reasons") or []) & sellable.HAZMAT_CODES)
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT status, sku, added_by_hub, issues, error, created_at, checked_at FROM catalog_adds WHERE asin=upper(btrim(%s))", (asin,))
+        cat = await cur.fetchone()
     return {"flag": f, "status": sellable.status, "listing_access": sellable.listing_access.get("ok"), "transparency": await transparency.get(asin),
-            "tp_brand": await transparency.brand_matches(asin)}
+            "tp_brand": await transparency.brand_matches(asin), "catalog": o.jsonable(dict(cat)) if cat else None}
 
 
 @app.get("/api/transparency")
@@ -464,6 +470,8 @@ async def engine_diag(request: Request):
         out["brand_pending"] = (await (await conn.execute(
             "SELECT count(DISTINCT upper(btrim(l.asin))) n FROM leads l LEFT JOIN asin_flags f ON f.asin = upper(btrim(l.asin)) "
             "WHERE l.lead_date >= current_date - 60 AND length(btrim(l.asin)) = 10 AND f.brand_checked_at IS NULL")).fetchone())["n"]
+        out["catalog_counts"] = {r["status"]: r["n"] for r in await (await conn.execute("SELECT status, count(*) n FROM catalog_adds GROUP BY 1")).fetchall()}
+    out["catalog"] = catalog.status
     return out
 
 

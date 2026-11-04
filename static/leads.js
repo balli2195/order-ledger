@@ -197,10 +197,10 @@
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
   // ------------------------------------------------------------ hazmat warning (flags from Keepa, cached per ASIN)
   function hazBadge(r) {
-    const dup = (r.same_day_n || 0) > 1, nolist = r.list_ok === false, bad = r.fba_eligible === false || nolist, tp = !!r.transparency, tb = (r.tp_brand_asins || []).length;
+    const dup = (r.same_day_n || 0) > 1, nolist = r.list_ok === false, bad = r.fba_eligible === false || nolist || r.cat_bad === true, tp = !!r.transparency, tb = (r.tp_brand_asins || []).length;
     if (bad || dup || tp || tb) {
       const tip = [tp ? 'Enrolled in Transparency: units need Transparency codes' : '', tb && !tp ? `Same brand as ${tb} Transparency ASIN${tb === 1 ? '' : 's'}` : '',
-        nolist ? "Amazon won't let your account list this" : '', r.fba_eligible === false ? "Amazon says you can't send this to FBA right now" : '', dup ? `Entered ${r.same_day_n} times on this day` : ''].filter(Boolean).join(' · ');
+        nolist ? "Amazon won't let your account list this" : '', r.cat_bad ? 'Amazon flagged your listing of this ASIN' : '', r.fba_eligible === false ? "Amazon says you can't send this to FBA right now" : '', dup ? `Entered ${r.same_day_n} times on this day` : ''].filter(Boolean).join(' · ');
       const label = tp && !bad ? 'T' : bad ? '!' : dup ? r.same_day_n + '×' : 'B';
       return `<button class="hz-badge ${bad || tp ? '' : 'warn'}" data-hz="${esc(r.asin)}" data-hz-day="${esc(r.lead_date || '')}" data-stop title="${esc(tip)}. Click for details." aria-label="Warnings">${label}</button>`;
     }
@@ -230,7 +230,8 @@
     const same = sameRes?.leads || [];
     const bad = f?.fba_eligible === false, dup = same.length > 1;   // bad = FBA can't receive it
     const tb = !tp && tbm.length > 0;
-    const nWarn = [bad, dup, !!tp, tb, nolist].filter(Boolean).length;
+    const cat = h?.catalog || null, catErr = (cat?.issues || []).filter((x) => x.severity === 'ERROR');
+    const nWarn = [bad, dup, !!tp, tb, nolist, catErr.length > 0].filter(Boolean).length;
     const shortD = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     const reasons = f?.reason_text || [];
     const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name'];
@@ -242,6 +243,8 @@
       ${nolist ? `<div class="hz-sec"><p><b>Amazon won't let your account list this ASIN</b> (new condition). Amazon's reason${lreasons.length === 1 ? '' : 's'}:</p>
         <ul class="hz-reasons">${lreasons.map((x) => `<li>${esc(x.message || 'No details given.')} <span class="muted mono">${esc(x.code || '')}</span>${x.link ? ` · <a href="${esc(x.link)}" target="_blank" rel="noopener">Request approval</a>` : ''}</li>`).join('') || '<li>No reason given.</li>'}</ul>
         <p class="muted" style="font-size:13px">${lreasons.some((x) => x.code === 'APPROVAL_REQUIRED') ? "Approval required: you can apply to sell it in Seller Central, but don't buy until you're approved." : "Not eligible: there's no way to apply. Don't buy it to sell on Amazon."}</p></div>` : ''}
+      ${catErr.length ? `<div class="hz-sec"><p><b>Amazon flagged ${cat.added_by_hub ? 'the listing the Hub added to your catalog' : 'your listing'}</b> (SKU <span class="mono">${esc(cat.sku || '')}</span>):</p>
+        <ul class="hz-reasons">${catErr.map((x) => `<li>${esc(x.message || '')} <span class="muted mono">${esc(x.code || '')}</span></li>`).join('')}</ul></div>` : ''}
       ${tp ? `<div class="hz-sec"><p><b>Amazon told you this ASIN is enrolled in Transparency.</b> Every unit needs the brand's Transparency (or serial number) code from the manufacturer. Units without one are marked unfulfillable at the warehouse, so <b>don't buy it to send to FBA</b>.</p>
         <ul class="hz-reasons">${(tp.emails || []).map((m) => `<li>${m.kind === 'rejected' ? `<b>${m.units_rejected ? num(m.units_rejected) + ' units' : 'Units'} rejected</b> at Amazon warehouses (email of ${esc(shortD(m.email_date))})` : m.kind === 'removed' ? `<b>Listing removed / inventory set aside</b> for missing Transparency codes (email of ${esc(shortD(m.email_date))})` : `Enrollment notice emailed ${esc(shortD(m.email_date))}${m.effective_date ? `; units without codes can't be sold after ${esc(shortD(m.effective_date))}` : ''}`}</li>`).join('')}</ul></div>` : ''}
       ${tb ? `<div class="hz-sec"><p><b>Same brand as ${tbm.length} ASIN${tbm.length === 1 ? '' : 's'} Amazon told you ${tbm.length === 1 ? 'is' : 'are'} enrolled in Transparency</b> (${esc([...new Set(tbm.map((m) => m.brand))].join(', '))}). Brands usually add more of their products over time, and Amazon only emails you about ASINs you've listed, so this one may need Transparency codes too. Check the packaging or listing for a Transparency code before buying a lot.</p>
@@ -725,6 +728,17 @@
     $$('#rows tr.sel').forEach((tr) => tr.classList.remove('sel'));
   }
 
+  function catalogBanner(l) {   // the Hub adds a lead's product to the Amazon catalog once a Buy qty is entered
+    const c = l.catalog; if (!c) return '';
+    const errs = (c.issues || []).filter((x) => x.severity === 'ERROR');
+    const list = errs.length ? `<ul class="hz-reasons">${errs.map((x) => `<li>${esc(x.message || '')} <span class="muted mono">${esc(x.code || '')}</span></li>`).join('')}</ul>` : '';
+    const sc = `<a href="https://sellercentral.amazon.com/myinventory/inventory?searchTerm=${encodeURIComponent(c.sku || l.asin)}" target="_blank" rel="noopener">Seller Central ↗</a>`;
+    if (c.status === 'failed') return `<div class="hz-banner warn"><b>Couldn't add this to your Amazon catalog.</b> ${esc(c.error || '')} ${list}</div>`;
+    if (errs.length) return `<div class="hz-banner"><b>! Amazon flagged ${c.added_by_hub ? 'the listing the Hub added' : 'your listing'}</b> (SKU <span class="mono">${esc(c.sku || '')}</span>). Check before buying. ${sc}${list}</div>`;
+    if (c.added_by_hub) return `<div class="hz-banner ok"><b>✓ Added to your Amazon catalog</b> ${esc(LG.fmtDate((c.created_at || '').slice(0, 10)))} as SKU <span class="mono">${esc(c.sku || '')}</span> (no price, no stock). No restrictions showed up${c.checked_at ? ` as of ${esc(new Date(c.checked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}` : ''}. ${sc}</div>`;
+    return '';
+  }
+
   async function openLead(id) {
     S.openId = id; history.replaceState(null, '', '#lead=' + id);
     $$('#rows tr').forEach((tr) => tr.classList.toggle('sel', tr.dataset.id === id));
@@ -752,6 +766,7 @@
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">
+        ${catalogBanner(l)}
         ${(l.cancellations || []).length ? `<div class="hz-banner warn"><b>Canceled order${l.cancellations.length === 1 ? '' : 's'}.</b> ${l.cancellations.map((c) => `${esc(c.store || 'Order')} #${esc(c.order_ref || '?')} (${esc(LG.fmtDate(c.order_date))}) was canceled${c.qty ? `: ${num(c.qty)} unit${c.qty === 1 ? '' : 's'} taken off Ordered and added back to Left to buy` : ''}.`).join(' ')} <span class="muted">${esc(l.cancellations[0].reason || '')}</span></div>` : ''}
         ${l.transparency ? `<div class="hz-banner"><b>! Enrolled in Transparency.</b> Units need Transparency codes from the manufacturer; without them Amazon marks them unfulfillable${l.transparency.units_rejected ? ` (${num(l.transparency.units_rejected)} of your units already rejected)` : ''}. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Details</button></div>` : ''}
         ${!l.transparency && (l.tp_brand || []).length ? `<div class="hz-banner warn"><b>This brand uses Transparency.</b> Amazon told you ${l.tp_brand.length} other ASIN${l.tp_brand.length === 1 ? ' of this brand is' : 's of this brand are'} enrolled (${esc([...new Set(l.tp_brand.map((m) => m.brand))].join(', '))}). Check this one has Transparency codes before buying. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Which ones</button></div>` : ''}

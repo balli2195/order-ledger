@@ -203,6 +203,7 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
             f"WITH tb AS MATERIALIZED (SELECT asin, key FROM transparency_brands) "
             f"SELECT {LIST_COLS}, {bsql}, ls.name AS set_name, count(*) OVER ({GROUP}) AS set_shown, "
             f"max(l.lead_date) OVER ({GROUP}) AS group_date, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, hf.list_ok, hf.list_checked_at, "
+            f"(SELECT EXISTS (SELECT 1 FROM jsonb_array_elements(ca.issues) x WHERE x->>'severity' = 'ERROR') FROM catalog_adds ca WHERE ca.asin = upper(btrim(l.asin))) AS cat_bad, "
             f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
             f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
             f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency, "
@@ -277,6 +278,11 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
         cur = await conn.execute("SELECT qty, store, order_ref, order_date, reason, at FROM lead_cancellations WHERE lead_id=%s ORDER BY order_date, at",
                                  (r["id"],))
         lead["cancellations"] = [jsonable(dict(x)) for x in await cur.fetchall()]
+        if lead.get("asin"):
+            cur = await conn.execute("SELECT status, sku, added_by_hub, issues, error, created_at, checked_at FROM catalog_adds WHERE asin=upper(btrim(%s))",
+                                     (lead["asin"],))
+            c = await cur.fetchone()
+            lead["catalog"] = jsonable(dict(c)) if c else None
     if lead.get("asin"):
         lead["transparency"] = await transparency.get(lead["asin"])
         lead["tp_brand"] = await transparency.brand_matches(lead["asin"])
