@@ -56,9 +56,9 @@
   <div class="cm-head"><h2>Commissions</h2><span class="muted" id="whoLine"></span></div>
   <p class="cm-rule" id="ruleLine"></p>
   <div class="stats" id="stats"></div>
-  <div class="cm-card"><h3>By month</h3><div class="cm-chart" id="chart"></div></div>
+  <div class="cm-card"><h3>Last 12 weeks</h3><div class="cm-chart" id="chart"></div></div>
 
-  <div class="cm-head" style="margin-top:22px"><h2 style="font-size:22px">Months</h2><span class="muted" style="font-size:13px">click a month to see its leads</span></div>
+  <div class="cm-head" style="margin-top:22px"><h2 style="font-size:22px">Weeks</h2><span class="muted" style="font-size:13px">click a week to see its leads</span></div>
   <div class="table-wrap"><table class="mo" id="moTable"></table></div>
 </div>
 <div id="toasts" class="toasts"></div>
@@ -69,64 +69,64 @@
 (() => {
   const { $, esc, money, api, fail } = LG;
   const S = { data: null, open: new Set(), cache: {} };
-  const mLabel = (ym, long) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: long ? 'long' : 'short', year: 'numeric', timeZone: 'UTC' }); };
-  const prevMonth = (ym) => { const [y, m] = ym.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; };
+  const day = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d, 12)); };
+  const addDays = (ymd, n) => { const d = day(ymd); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const short = (ymd, o = { month: 'short', day: 'numeric' }) => day(ymd).toLocaleDateString('en-US', { ...o, timeZone: 'UTC' });
+  const wkLabel = (w, year) => { const e = addDays(w, 6); return `${short(w)} – ${w.slice(5, 7) === e.slice(5, 7) ? short(e, { day: 'numeric' }) : short(e)}${year ? ', ' + e.slice(0, 4) : ''}`; };
   const pctTxt = (r) => (r * 100).toFixed(r * 100 % 1 ? 1 : 0) + '%';
-  const shortDate = (d) => { const [y, m, dd] = d.split('-').map(Number); return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }); };
 
   async function load() {
     S.data = await api('GET', '/api/commissions');
-    if (!S.open.size) S.open.add(S.data.this_month);
-    await Promise.all([...S.open].map(fetchMonth));
+    if (!S.open.size) S.open.add(S.data.this_week);
+    await Promise.all([...S.open].map(fetchWeek));
     render();
   }
-  async function fetchMonth(ym) { if (!S.cache[ym]) S.cache[ym] = await api('GET', '/api/commissions/' + ym); }
+  async function fetchWeek(w) { if (!S.cache[w]) S.cache[w] = await api('GET', '/api/commissions/' + w); }
 
   function render() {
-    const D = S.data, by = Object.fromEntries(D.months.map((m) => [m.month, m]));
+    const D = S.data, by = Object.fromEntries(D.weeks.map((w) => [w.week, w]));
     $('#whoLine').textContent = D.owner ? `${D.who} · ${pctTxt(D.rate)} of spend` : `${pctTxt(D.rate)} of spend`;
-    $('#ruleLine').textContent = `${D.owner ? D.who + ' earns' : 'You earn'} ${pctTxt(D.rate)} of what's actually bought (cost × units ordered) on leads ${D.owner ? 'he' : 'you'} sourced and added ${D.owner ? 'himself' : 'yourself'}. Leads someone else added don't count, even if ${D.owner ? 'he' : 'you'} sourced that product before. Months go by the lead's date; canceled orders come off automatically.`;
-    const cur = by[D.this_month], last = by[prevMonth(D.this_month)];
+    $('#ruleLine').textContent = `${D.owner ? D.who + ' earns' : 'You earn'} ${pctTxt(D.rate)} of what's actually bought (cost × units ordered) on leads ${D.owner ? 'he' : 'you'} sourced and added ${D.owner ? 'himself' : 'yourself'}. Leads someone else added don't count, even if ${D.owner ? 'he' : 'you'} sourced that product before. Weeks run Monday to Sunday by the lead's date; canceled orders come off automatically.`;
+    const cur = by[D.this_week], last = by[addDays(D.this_week, -7)];
     const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
     $('#stats').innerHTML =
-      stat(mLabel(D.this_month, true), money(cur?.commission || 0), `${money(cur?.spend || 0, 0)} bought · ${cur?.bought || 0} leads`, true) +
-      stat(mLabel(prevMonth(D.this_month), true), money(last?.commission || 0), `${money(last?.spend || 0, 0)} bought · ${last?.bought || 0} leads`) +
+      stat('This week', money(cur?.commission || 0), `${wkLabel(D.this_week)} · ${money(cur?.spend || 0, 0)} bought`, true) +
+      stat('Last week', money(last?.commission || 0), `${wkLabel(addDays(D.this_week, -7))} · ${money(last?.spend || 0, 0)} bought`) +
       stat('All time', money(D.total), `${money(D.total_spend, 0)} bought`);
     renderChart();
-    renderMonths();
+    renderWeeks();
   }
 
   function renderChart() {
-    const D = S.data, by = Object.fromEntries(D.months.map((m) => [m.month, m]));
-    const months = []; let ym = D.this_month;
-    for (let i = 0; i < 12; i++) { months.unshift(ym); ym = prevMonth(ym); }
-    const vals = months.map((m) => by[m]?.commission || 0), max = Math.max(...vals, 1);
-    const W = Math.max($('#chart').clientWidth || 760, 320), H = 170, pl = 8, pb = 22, pt = 16, bw = (W - pl) / months.length;
+    const D = S.data, by = Object.fromEntries(D.weeks.map((w) => [w.week, w]));
+    const weeks = []; for (let i = 11; i >= 0; i--) weeks.push(addDays(D.this_week, -7 * i));
+    const vals = weeks.map((w) => by[w]?.commission || 0), max = Math.max(...vals, 1);
+    const W = Math.max($('#chart').clientWidth || 760, 320), H = 170, pl = 8, pb = 22, pt = 16, bw = (W - pl) / weeks.length;
     const y = (v) => H - pb - (v / max) * (H - pb - pt);
-    const bars = months.map((m, i) => {
-      const v = vals[i], x = pl + i * bw + bw * 0.18, w = bw * 0.64, top = y(v);
-      return `<g><title>${mLabel(m, true)}: ${money(v)}</title>
-        <rect class="bar ${m === D.this_month ? 'cur' : ''}" x="${x}" y="${top}" width="${w}" height="${Math.max(H - pb - top, v ? 1 : 0)}" rx="3"></rect>
-        ${v && bw >= 52 ? `<text class="val" x="${x + w / 2}" y="${top - 4}" text-anchor="middle">${money(v, 0)}</text>` : ''}
-        <text class="axis" x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${mLabel(m).replace(' 20', " '")}</text></g>`;
+    const bars = weeks.map((w, i) => {
+      const v = vals[i], x = pl + i * bw + bw * 0.18, bwid = bw * 0.64, top = y(v);
+      return `<g><title>${wkLabel(w, true)}: ${money(v)}</title>
+        <rect class="bar ${w === D.this_week ? 'cur' : ''}" x="${x}" y="${top}" width="${bwid}" height="${Math.max(H - pb - top, v ? 1 : 0)}" rx="3"></rect>
+        ${v && bw >= 52 ? `<text class="val" x="${x + bwid / 2}" y="${top - 4}" text-anchor="middle">${money(v, 0)}</text>` : ''}
+        <text class="axis" x="${x + bwid / 2}" y="${H - 6}" text-anchor="middle">${short(w)}</text></g>`;
     }).join('');
-    $('#chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Commission by month">
+    $('#chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Commission by week (last 12 weeks)">
       <line class="grid" x1="${pl}" x2="${W}" y1="${H - pb}" y2="${H - pb}"></line>${bars}</svg>`;
   }
 
-  function renderMonths() {
-    const D = S.data;
-    const head = `<thead><tr><th>Month</th><th class="num">Leads bought</th><th class="num">Units</th><th class="num">Spend</th><th class="num">Commission</th><th class="num">Not counted</th></tr></thead>`;
-    if (!D.months.length) { $('#moTable').innerHTML = head + '<tbody><tr><td colspan="6" class="empty">No leads yet.</td></tr></tbody>'; return; }
-    const body = D.months.map((m) => {
-      const open = S.open.has(m.month);
-      const row = `<tr class="mo-row ${open ? 'open' : ''}" data-m="${m.month}">
-        <td><span class="chev">▸</span> <b>${mLabel(m.month, true)}</b>${m.month === D.this_month ? '<span class="cur">this month</span>' : ''}</td>
-        <td class="num">${m.bought}</td><td class="num">${Number(m.units).toLocaleString()}</td><td class="num">${money(m.spend)}</td>
-        <td class="num"><b>${money(m.commission)}</b></td>
-        <td class="num dim" title="Leads with ${esc(D.who)} as the sourcer that someone else added">${m.other_n ? `${m.other_n} · ${money(m.other_spend, 0)}` : '·'}</td></tr>`;
+  function renderWeeks() {
+    const D = S.data, yr = D.this_week.slice(0, 4);
+    const head = `<thead><tr><th>Week</th><th class="num">Leads bought</th><th class="num">Units</th><th class="num">Spend</th><th class="num">Commission</th><th class="num">Not counted</th></tr></thead>`;
+    if (!D.weeks.length) { $('#moTable').innerHTML = head + '<tbody><tr><td colspan="6" class="empty">No leads yet.</td></tr></tbody>'; return; }
+    const body = D.weeks.map((w) => {
+      const open = S.open.has(w.week);
+      const row = `<tr class="mo-row ${open ? 'open' : ''}" data-w="${w.week}">
+        <td><span class="chev">▸</span> <b>${wkLabel(w.week, addDays(w.week, 6).slice(0, 4) !== yr)}</b>${w.week === D.this_week ? '<span class="cur">this week</span>' : ''}</td>
+        <td class="num">${w.bought}</td><td class="num">${Number(w.units).toLocaleString()}</td><td class="num">${money(w.spend)}</td>
+        <td class="num"><b>${money(w.commission)}</b></td>
+        <td class="num dim" title="Leads with ${esc(D.who)} as the sourcer that someone else added">${w.other_n ? `${w.other_n} · ${money(w.other_spend, 0)}` : '·'}</td></tr>`;
       if (!open) return row;
-      const d = S.cache[m.month];
+      const d = S.cache[w.week];
       return row + `<tr class="mo-detail"><td colspan="6">${d ? detail(d) : '<div class="muted" style="padding:10px">Loading…</div>'}</td></tr>`;
     }).join('');
     $('#moTable').innerHTML = head + `<tbody>${body}</tbody>`;
@@ -136,7 +136,7 @@
     if (!d.leads.length) return '<div class="muted" style="padding:10px">Nothing bought on these leads yet.</div>';
     return `<div class="table-wrap" style="margin-top:8px"><table class="ld"><thead><tr><th>Date</th><th>Product</th><th>Store</th>
       <th class="num">Cost</th><th class="num">Bought</th><th class="num">Spend</th><th class="num">Commission</th></tr></thead><tbody>
-      ${d.leads.map((l) => `<tr class="${l.counts ? '' : 'no'}"><td>${shortDate(l.lead_date)}</td>
+      ${d.leads.map((l) => `<tr class="${l.counts ? '' : 'no'}"><td>${short(l.lead_date, { weekday: 'short', month: 'short', day: 'numeric' })}</td>
         <td class="prod" title="${esc(l.product_name || '')}"><span class="mono">${esc(l.asin || '')}</span> ${esc(l.product_name || '')}</td>
         <td>${esc((l.stores || []).join(', '))}</td><td class="num">${money(l.cost)}</td><td class="num">${l.qty_ordered}</td>
         <td class="num">${money(l.actual_spend)}</td>
@@ -146,9 +146,9 @@
 
   $('#moTable').addEventListener('click', async (e) => {
     const r = e.target.closest('tr.mo-row'); if (!r) return;
-    const m = r.dataset.m;
-    if (S.open.has(m)) S.open.delete(m); else { S.open.add(m); renderMonths(); try { await fetchMonth(m); } catch (err) { fail(err); } }
-    renderMonths();
+    const w = r.dataset.w;
+    if (S.open.has(w)) S.open.delete(w); else { S.open.add(w); renderWeeks(); try { await fetchWeek(w); } catch (err) { fail(err); } }
+    renderWeeks();
   });
 
   LG.header().then(load).catch(fail);

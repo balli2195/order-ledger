@@ -5,7 +5,7 @@ leads he sourced. A lead counts only if he also added it himself: if Nick (or an
 count, even when Ariane sourced that product at an earlier date. Leads copied from Airtable carry who added them in
 sourced_by; leads added on the Hub also need created_by to be his login (leads.COMMISSION_COND).
 
-Months go by the lead's date. The owner sees the bonus sourcer's commissions; anyone else sees only their own.
+Weeks (Mon-Sun, Nick Nov 4 2026: shown weekly) go by the lead's date. The owner sees the bonus sourcer's commissions; anyone else sees only their own.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ async def summary(user: User) -> dict:
     rate, who = await _who(user)
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            f"""SELECT to_char(date_trunc('month', l.lead_date), 'YYYY-MM') AS month,
+            f"""SELECT to_char(date_trunc('week', l.lead_date), 'YYYY-MM-DD') AS week,
                        count(*) FILTER (WHERE {COMMISSION_COND}) AS leads,
                        count(*) FILTER (WHERE {COMMISSION_COND} AND COALESCE(l.qty_ordered, 0) > 0) AS bought,
                        COALESCE(sum(l.qty_ordered) FILTER (WHERE {COMMISSION_COND}), 0) AS units,
@@ -39,28 +39,28 @@ async def summary(user: User) -> dict:
                  WHERE l.sourced_by = %s AND l.lead_date IS NOT NULL
                  GROUP BY 1 ORDER BY 1 DESC""",
             [who, who] * 6 + [who])
-        months = []
+        weeks = []
         for r in await cur.fetchall():
             d = jsonable(dict(r))
             d["commission"] = round(float(r["spend"]) * rate, 2)
-            months.append(d)
+            weeks.append(d)
         cur = await conn.execute(
-            "SELECT to_char((now() AT TIME ZONE 'America/Chicago')::date, 'YYYY-MM') AS m")
-        this_month = (await cur.fetchone())["m"]
-    total = round(sum(m["commission"] for m in months), 2)
-    return {"who": who, "rate": rate, "owner": user.role == "owner", "this_month": this_month,
-            "months": months, "total": total, "total_spend": round(sum(float(m["spend"]) for m in months), 2)}
+            "SELECT to_char(date_trunc('week', (now() AT TIME ZONE 'America/Chicago')::date), 'YYYY-MM-DD') AS w")
+        this_week = (await cur.fetchone())["w"]
+    total = round(sum(w["commission"] for w in weeks), 2)
+    return {"who": who, "rate": rate, "owner": user.role == "owner", "this_week": this_week,
+            "weeks": weeks, "total": total, "total_spend": round(sum(float(w["spend"]) for w in weeks), 2)}
 
 
-async def month(user: User, ym: str) -> dict:
+async def week(user: User, start: str) -> dict:
+    """One week's bought leads; start is the Monday (YYYY-MM-DD)."""
     rate, who = await _who(user)
-    start = ym + "-01"
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             f"""SELECT l.id, l.lead_date, l.asin, l.product_name, l.stores, l.cost, l.buy_qty, l.qty_ordered, l.actual_spend,
                        {COMMISSION_COND} AS counts, cu.name AS added_by
                   FROM leads l LEFT JOIN users cu ON cu.id = l.created_by
-                 WHERE l.sourced_by = %s AND l.lead_date >= %s::date AND l.lead_date < (%s::date + interval '1 month')
+                 WHERE l.sourced_by = %s AND l.lead_date >= %s::date AND l.lead_date < (%s::date + 7)
                    AND COALESCE(l.qty_ordered, 0) > 0
                  ORDER BY {COMMISSION_COND} DESC, l.lead_date DESC, l.actual_spend DESC NULLS LAST""",
             [who, who, who, start, start, who, who])
@@ -69,4 +69,4 @@ async def month(user: User, ym: str) -> dict:
             d = jsonable(dict(r))
             d["commission"] = round(float(r["actual_spend"] or 0) * rate, 2) if r["counts"] else 0
             rows.append(d)
-    return {"month": ym, "who": who, "rate": rate, "leads": rows}
+    return {"week": start, "who": who, "rate": rate, "leads": rows}

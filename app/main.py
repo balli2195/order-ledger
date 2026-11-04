@@ -158,12 +158,14 @@ async def api_commissions(request: Request):
     return await comm.summary(user)
 
 
-@app.get("/api/commissions/{ym}")
-async def api_commissions_month(ym: str, request: Request):
+@app.get("/api/commissions/{wk}")
+async def api_commissions_week(wk: str, request: Request):
     user = await auth.require(request, tab="commissions")
-    if not re.fullmatch(r"\d{4}-\d{2}", ym):
-        raise HTTPException(400, "Month should look like 2026-11")
-    return await comm.month(user, ym)
+    try:
+        d = date.fromisoformat(wk)
+    except ValueError:
+        raise HTTPException(400, "Week should be its Monday, like 2026-11-02")
+    return await comm.week(user, (d - timedelta(days=d.weekday())).isoformat())
 
 
 @app.get("/api/brand-sellers/sourced")
