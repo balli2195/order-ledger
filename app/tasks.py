@@ -155,7 +155,8 @@ async def prepos_cancel_tasks(conn) -> int:
 async def put_digest(day: date, body: dict) -> dict:
     """Engine: {headline, sections:[{name, items:[{title, summary, action, urgent, date, link}]}], counts:{...},
     tasks:[{key, title, details, link}]}. Replaces that day's summary; tasks are added once each (key = email id)."""
-    tasks = body.pop("tasks", None) or []
+    body.pop("tasks", None)
+    tasks = []   # Nick, Nov 3 2026: don't add tasks from email; the summary alone shows what needs action
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await conn.execute("INSERT INTO amazon_digests (day, data) VALUES (%s,%s) ON CONFLICT (day) DO UPDATE SET data=EXCLUDED.data, updated_at=now()",

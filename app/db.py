@@ -499,6 +499,9 @@ MIGRATIONS: list[str] = [
         ('Check stranded inventory', 'weekly', '{0}', 11), ('Pay credit cards', 'weekly', '{0}', 12),
         ('Pay out Chase Ink cashback', 'weekly', '{0}', 13), ('Pay out Fluz', 'weekly', '{0}', 14),
         ('Pay Abby', 'weekly', '{0}', 15), ('Pay Ma', 'weekly', '{0}', 16), ('Pay Huntington loan', 'weekly', '{0}', 17);
+    """,    # 30: Nick doesn't want tasks made from his email (Nov 3, 2026): remove the ones the email summary added
+    """
+    DELETE FROM tasks WHERE kind = 'amazon_email';
     """,
 ]
 
