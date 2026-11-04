@@ -35,12 +35,12 @@
   .sec-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 26px 0 0; }
   .sec-h h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0 6px 0 0; }
   .sec-h select { width: auto; padding: 4px 8px; }
-  .dg-headline { margin: 8px 0 0; font-size: 15px; max-width: 900px; }
+  .dg-headline { margin: 0; padding: 14px 16px; font-size: 14.5px; line-height: 1.5; border-bottom: 1px solid var(--line); }
   .inbox-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
   @media (max-width: 1000px) { .inbox-grid { grid-template-columns: minmax(0, 1fr); } }
   .dg-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-top: 14px; overflow: hidden; }
   .dg-sec { border-top: 1px solid var(--line); padding: 2px 0; }
-  .dg-sec:first-child { border-top: 0; }
+  .dg-sec:first-child, .dg-headline + .dg-sec { border-top: 0; }
   .dg-sec > summary { background: var(--panel-2); }
   .dg-sec > summary { list-style: none; cursor: pointer; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-weight: 600; }
   .dg-sec > summary::-webkit-details-marker { display: none; }
@@ -78,7 +78,6 @@
 
   <div class="inbox-grid"><div class="col-mail">
   <div class="sec-h"><h2>Amazon emails</h2><select id="dgDay" aria-label="Day"></select><span class="muted" id="dgMeta" style="font-size:13px"></span></div>
-  <p class="dg-headline" id="dgHeadline"></p>
   <div id="dgBody"></div>
   </div><div class="col-tasks">
 
@@ -121,18 +120,18 @@
     const d = await api('GET', '/api/amazon-digest' + (day ? '?day=' + day : ''));
     const sel = $('#dgDay');
     sel.innerHTML = d.days.map((x) => `<option value="${x}" ${x === d.day ? 'selected' : ''}>${esc(fmtDate(x))}</option>`).join('') || '<option>—</option>';
-    if (!d.data) { $('#dgHeadline').textContent = ''; $('#dgMeta').textContent = ''; $('#dgBody').innerHTML = '<div class="dg-empty">No summary yet. The daily Amazon email check runs every morning.</div>'; return; }
+    if (!d.data) { $('#dgMeta').textContent = ''; $('#dgBody').innerHTML = '<div class="dg-empty">No summary yet. The daily Amazon email check runs every morning.</div>'; return; }
     const g = d.data;
-    $('#dgHeadline').textContent = g.headline || '';
     $('#dgMeta').textContent = [g.period, d.updated_at ? 'updated ' + when(d.updated_at) : ''].filter(Boolean).join(' · ');
     const secs = (g.sections || []).filter((x) => (x.items || []).length);
-    $('#dgBody').innerHTML = secs.length ? `<div class="dg-panel">${secs.map((x) => {
+    const head = g.headline ? `<p class="dg-headline">${esc(g.headline)}</p>` : '';
+    $('#dgBody').innerHTML = `<div class="dg-panel">${head}${secs.length ? secs.map((x) => {
       const urgent = x.items.filter((i) => i.urgent).length;
       return `<details class="dg-sec" ${x.collapsed ? '' : 'open'}><summary><span class="chev">▶</span>${esc(x.name)}<span class="n">${urgent ? `<b style="color:var(--bad)">${urgent} need action</b> · ` : ''}${x.items.length}</span></summary>
         ${x.items.map((i) => `<div class="dg-it"><div class="ti">${i.urgent ? '<span class="u" title="Needs action"></span>' : ''}${esc(i.title)}</div>
           ${i.summary ? `<div class="su">${esc(i.summary)}</div>` : ''}${i.action ? `<div class="ac">→ ${esc(i.action)}</div>` : ''}
           <div class="mt">${esc(i.date || '')}${i.link ? `${i.date ? ' · ' : ''}<a href="${esc(i.link)}" target="_blank" rel="noopener">Open email ↗</a>` : ''}</div></div>`).join('')}</details>`;
-    }).join('')}</div>` : '<div class="dg-empty">No Amazon emails that day.</div>';
+    }).join('') : '<div class="tk-empty">No Amazon emails that day.</div>'}</div>`;
   }
   $('#dgDay').addEventListener('change', (e) => loadDigest(e.target.value).catch(fail));
 
