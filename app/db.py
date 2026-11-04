@@ -493,6 +493,12 @@ MIGRATIONS: list[str] = [
     INSERT INTO task_templates (title, position) VALUES
         ('Address buyer messages', 1), ('Remove negative feedback', 2), ('Request Amazon disbursement', 3),
         ('Turn on repricer for new products', 4), ('Check account health', 5);
+    """,    # 29: Nick's Monday tasks (Nov 3, 2026)
+    """
+    INSERT INTO task_templates (title, freq, days, position) VALUES
+        ('Check stranded inventory', 'weekly', '{0}', 11), ('Pay credit cards', 'weekly', '{0}', 12),
+        ('Pay out Chase Ink cashback', 'weekly', '{0}', 13), ('Pay out Fluz', 'weekly', '{0}', 14),
+        ('Pay Abby', 'weekly', '{0}', 15), ('Pay Ma', 'weekly', '{0}', 16), ('Pay Huntington loan', 'weekly', '{0}', 17);
     """,
 ]
 
