@@ -11,7 +11,8 @@ Refreshed daily by the Hub itself from SP-API:
 Case status comes from Amazon's case emails, read daily by Claude (the "Nightly hub refresh" task) and posted to
 POST /api/engine/inbound/cases in the same shape as claude/inbound-nightly/decisions.json.
 
-Claim window: setting reimb_window_days (70) days after the shipment closed, the rule used for the claim queue.
+Claim window (Nick, Nov 4 2026): lost inbound is claimable up to 9 months after the shipment was delivered (first check-in;
+setting reimb_window_months). Zero-received shipments have no check-in, so delivery is estimated as plan date + 30 days.
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ from .orders import jsonable
 
 log = logging.getLogger("ledger.inbound")
 status: dict = {"last_run": None, "last_error": None, "shipments": 0}
-LOOKBACK_DAYS = 150
+LOOKBACK_DAYS = 330   # 9-month window + time to deliver
 ACTIVE = ("SHIPPED", "IN_TRANSIT", "DELIVERED", "CHECKED_IN", "RECEIVING", "CLOSED")
 
 
@@ -47,6 +48,13 @@ def plan_of(name: str | None) -> tuple[str, date | None]:
     if m:
         return m.group(0), date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     return n.strip() or "?", None
+
+
+def _add_months(d: date, n: int) -> date:
+    y, m = divmod(d.month - 1 + n, 12)
+    y, m = d.year + y, m + 1
+    import calendar
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
 
 
 def _day(v) -> date | None:
@@ -115,6 +123,38 @@ async def _report(c, rtype: str, start: datetime, end: datetime | None = None) -
         if st in ("CANCELLED", "FATAL"):
             return []   # CANCELLED = no data in the range
     raise RuntimeError(f"report {rtype} timed out")
+
+
+async def _ledger(c, start: datetime, now: datetime) -> list[dict]:
+    """Inventory ledger rows from start to now. Ledger reports made in the last 24 hours (by this Hub or by Claude's
+    nightly run) are reused when together they cover the range; only the gaps get new 90-day reports, because
+    Amazon allows very few new ledger reports per hour."""
+    since = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    have, p = [], {"reportTypes": "GET_LEDGER_DETAIL_VIEW_DATA", "processingStatuses": "DONE", "createdSince": since, "pageSize": 100}
+    for _ in range(5):
+        j = await _get(c, "/reports/2021-06-30/reports", p)
+        for x in j.get("reports", []):
+            a, b = _ts(x.get("dataStartTime")), _ts(x.get("dataEndTime"))
+            if a and b and b - a > timedelta(days=2) and x.get("reportDocumentId"):
+                have.append((a, b, x["reportDocumentId"]))
+        if not j.get("nextToken"):
+            break
+        p = {"nextToken": j["nextToken"]}
+    rows, cur, stop = [], start, now - timedelta(days=1)
+    for _ in range(12):
+        if cur >= stop:
+            break
+        cands = [h for h in have if h[0] <= cur + timedelta(days=1) and h[1] > cur + timedelta(days=1)]
+        if cands:
+            a, b, doc = max(cands, key=lambda h: h[1])
+            rows += await _download(c, doc)
+            cur = b
+        else:
+            nxt = min([h[0] for h in have if h[0] > cur] or [now])
+            end = min(cur + timedelta(days=89), nxt + timedelta(days=1), now - timedelta(hours=1))
+            rows += await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", cur, end)
+            cur = end
+    return rows
 
 
 async def sync() -> dict:
@@ -191,24 +231,17 @@ async def sync() -> dict:
         # 3. receipts from the inventory ledger (90-day windows)
         rec: dict = {}
         titles: dict = {}
-        start = now - timedelta(days=LOOKBACK_DAYS)
-        stop = now - timedelta(hours=1)
-        for _ in range(4):   # 90-day windows (Amazon's limit for this report)
-            if start >= stop:
-                break
-            end = min(start + timedelta(days=89), stop)
-            for row in await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", start, end):
-                if (row.get("Event Type") or "").strip() != "Receipts":
-                    continue
-                sid = (row.get("Reference ID") or "").strip()
-                d = _day(row.get("Date") or row.get("Date and Time"))
-                if not d:
-                    continue
-                a, b = rec.get(sid, (d, d))
-                rec[sid] = (min(a, d), max(b, d))
-                if row.get("MSKU") and row.get("ASIN"):
-                    titles[row["MSKU"].strip()] = (row["ASIN"].strip(), (row.get("FNSKU") or "").strip(), (row.get("Title") or "").strip()[:300])
-            start = end
+        for row in await _ledger(c, now - timedelta(days=LOOKBACK_DAYS), now):
+            if (row.get("Event Type") or "").strip() != "Receipts":
+                continue
+            sid = (row.get("Reference ID") or "").strip()
+            d = _day(row.get("Date") or row.get("Date and Time"))
+            if not d:
+                continue
+            a, b = rec.get(sid, (d, d))
+            rec[sid] = (min(a, d), max(b, d))
+            if row.get("MSKU") and row.get("ASIN"):
+                titles[row["MSKU"].strip()] = (row["ASIN"].strip(), (row.get("FNSKU") or "").strip(), (row.get("Title") or "").strip()[:300])
         # 4. reimbursements
         rb = await _report(c, "GET_FBA_REIMBURSEMENTS_DATA", now - timedelta(days=LOOKBACK_DAYS + 30))
     async with db.pool.connection() as conn:
@@ -286,7 +319,7 @@ async def save_cases(data: dict) -> dict:
 
 
 async def page(include_all: bool = False) -> dict:
-    window = int(await get_setting("reimb_window_days", 70) or 70)
+    months = int(await get_setting("reimb_window_months", 9) or 9)
     chat = await get_setting("reimb_chat_url", None)
     today = datetime.now().astimezone().date()
     async with db.pool.connection() as conn:
@@ -340,15 +373,13 @@ async def page(include_all: bool = False) -> dict:
             rows = by_ship.get(sid, [])
             shipped, received = sum(r["shipped"] for r in rows), sum(r["received"] for r in rows)
             short = sum(max(0, r["shipped"] - r["received"]) for r in rows)
-            closed, est = None, False
+            closed = None
             if s["status"] == "CLOSED":
-                if s["last_receipt"]:
-                    closed = s["last_receipt"]
-                elif s["closed_seen_at"]:
-                    closed = s["closed_seen_at"].date()
-                elif s["plan_created"]:   # nothing checked in: no receipt date, so estimate a month after the plan
-                    closed, est = s["plan_created"] + timedelta(days=30), True
-            deadline = closed + timedelta(days=window) if closed else None
+                closed = s["last_receipt"] or (s["closed_seen_at"].date() if s["closed_seen_at"] else None)
+            delivered, est = s["first_receipt"], False
+            if not delivered and s["status"] in ("CLOSED", "RECEIVING", "CHECKED_IN", "DELIVERED") and s["plan_created"]:
+                delivered, est = s["plan_created"] + timedelta(days=30), True   # nothing checked in: estimate
+            deadline = _add_months(delivered, months) if delivered else None
             cs = cases.get(sid)
             cdata = (cs or {}).get("data") or {}
             ids = list(cdata.get("reimb") or [])
@@ -371,7 +402,7 @@ async def page(include_all: bool = False) -> dict:
                         "denied_units": denied, "rereview": (cdata.get("rereview") or {}).get("case"),
                         "deny": [{"fnsku": k, "units": v[0], "note": v[1] if len(v) > 1 else ""} for k, v in (cdata.get("deny") or {}).items()]}
             shp.append({"id": sid, "fc": s["fc"], "status": s["status"], "shipped": shipped, "received": received, "short": short,
-                        "first_receipt": s["first_receipt"], "closed": closed, "closed_est": est, "deadline": deadline,
+                        "delivered": delivered, "delivered_est": est, "closed": closed, "deadline": deadline,
                         "days_left": (deadline - today).days if deadline else None, "case": case})
             for r in rows:
                 g = agg.setdefault(r["sku"], {"sku": r["sku"], "fnsku": r["fnsku"], "shipped": 0, "received": 0, "by": {}})
@@ -407,7 +438,7 @@ async def page(include_all: bool = False) -> dict:
         sku_rows.sort(key=lambda r: (-(r["missing"] * (r["cost"] or 0)), -r["missing"]))
         all_closed = all(s["status"] == "CLOSED" for s in shp)
         unfiled = [s for s in shp if not s["case"] and s["short"] > 0]
-        open_deadlines = [s["deadline"] for s in unfiled if s["deadline"] and s["deadline"] >= today]
+        open_deadlines = [s["deadline"] for s in unfiled if s["status"] == "CLOSED" and s["deadline"] and s["deadline"] >= today]
         pending = [s for s in shp if s["case"] and s["case"]["status"] != "decided"]
         decided = [s for s in shp if s["case"] and s["case"]["status"] == "decided"]
         if missing == 0 and not any(s["case"] for s in shp):
@@ -433,7 +464,7 @@ async def page(include_all: bool = False) -> dict:
             "deadline": min(open_deadlines) if open_deadlines else None,
             "days_left": (min(open_deadlines) - today).days if open_deadlines else None,
             "state": state, "skus": sku_rows, "unfiled": len(unfiled),
-            "to_file": sum(1 for x in unfiled if x["deadline"] and x["deadline"] >= today)})
+            "to_file": sum(1 for x in unfiled if x["status"] == "CLOSED" and x["deadline"] and x["deadline"] >= today)})
     order = {"eligible": 0, "case_open": 1, "receiving": 2, "decided": 3, "expired": 4, "none": 5}
     out.sort(key=lambda p: (order.get(p["state"], 9), p["deadline"] or date(2100, 1, 1), -(p["missing_value"] or 0)))
     if not include_all:
@@ -441,5 +472,5 @@ async def page(include_all: bool = False) -> dict:
     async with db.pool.connection() as conn:
         cur = await conn.execute("SELECT value FROM settings WHERE key='inbound_synced_at'")
         r = await cur.fetchone()
-    return jsonable({"plans": out, "chat": chat, "window_days": window, "synced_at": r["value"] if r else None,
+    return jsonable({"plans": out, "chat": chat, "window_months": months, "synced_at": r["value"] if r else None,
                      "status": {k: v for k, v in status.items() if k != "result"}})

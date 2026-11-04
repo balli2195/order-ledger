@@ -646,6 +646,9 @@ MIGRATIONS: list[str] = [
       ('reimb_chat_url', '"https://claude.ai/chat/5017fbab-e53b-42d0-ba5e-a97636114bb7"'),
       ('reimb_window_days', '70')
     ON CONFLICT (key) DO NOTHING;
+    """,    # 43: lost inbound is claimable up to 9 months after delivery (Nick, Nov 4 2026)
+    """
+    INSERT INTO settings (key, value) VALUES ('reimb_window_months', '9') ON CONFLICT (key) DO NOTHING;
     """,
 ]
 

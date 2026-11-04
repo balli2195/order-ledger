@@ -83,7 +83,7 @@
   function render() {
     const D = S.d, P = D.plans;
     const synced = D.synced_at ? new Date(D.synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'not yet';
-    $('#meta').textContent = `Amazon data ${synced} · claim window ${D.window_days} days after a shipment closes`;
+    $('#meta').textContent = `Amazon data ${synced} · lost inbound claimable up to ${D.window_months} months after delivery`;
     const el = P.filter((p) => p.state === 'eligible'), co = P.filter((p) => p.state === 'case_open');
     const next = el.filter((p) => p.deadline).sort((a, b) => a.deadline < b.deadline ? -1 : 1)[0];
     const stat = (k, v, sub) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
@@ -105,7 +105,7 @@
         <td class="num"><b>${p.missing}</b><div class="sub">${p.missing_value ? money(p.missing_value, 0) + ' est.' : ''}</div></td>
         <td class="num">${p.paid ? money(p.paid) : '·'}${p.paid_units ? `<div class="sub">${p.paid_units} units</div>` : ''}</td>
         <td class="num">${p.denied_units || '·'}</td>
-        <td>${p.deadline ? `<span class="dl ${p.days_left <= 10 ? 'soon' : ''}">${sd(p.deadline)}</span><div class="sub">${p.days_left} day${p.days_left === 1 ? '' : 's'} left</div>` : '·'}</td>
+        <td>${p.deadline ? `<span class="dl ${p.days_left <= 14 ? 'soon' : ''}">${sd(p.deadline)}</span><div class="sub">${p.days_left} day${p.days_left === 1 ? '' : 's'} left</div>` : '·'}</td>
         <td>${D.chat ? `<a class="chat" href="${esc(D.chat)}" target="_blank" rel="noopener" data-stop>Chat ↗</a>` : ''}</td></tr>`;
       return open ? row + `<tr class="pl-detail"><td colspan="9">${detail(p)}</td></tr>` : row;
     }).join('') + '</tbody>';
@@ -114,17 +114,17 @@
   function detail(p) {
     const sh = p.shipments.map((s) => {
       const c = s.case;
-      const cs = c ? `<b>${esc(c.id || '?')}</b> · ${c.status === 'decided' ? 'decided ' + sd(c.decided) : 'open since ' + sd(c.opened)}${c.rereview ? ` · re-review ${esc(c.rereview)}` : ''}` : (s.short ? (s.deadline && s.days_left >= 0 ? '<span class="st eligible">Not filed</span>' : s.status !== 'CLOSED' ? 'still receiving' : '<span class="st expired">Window passed</span>') : '—');
+      const cs = c ? `<b>${esc(c.id || '?')}</b> · ${c.status === 'decided' ? 'decided ' + sd(c.decided) : 'open since ' + sd(c.opened)}${c.rereview ? ` · re-review ${esc(c.rereview)}` : ''}` : (s.short ? (s.status !== 'CLOSED' ? 'still receiving' : s.deadline && s.days_left >= 0 ? '<span class="st eligible">Not filed</span>' : '<span class="st expired">Window passed</span>') : '—');
       return `<tr><td><a class="mono" href="${sc(s.id)}" target="_blank" rel="noopener">${esc(s.id)}</a></td><td>${esc(s.fc || '')}</td><td>${esc(s.status)}</td>
         <td class="num">${s.shipped}</td><td class="num">${s.received}</td><td class="num">${s.short || '·'}</td>
-        <td>${sd(s.closed)}${s.closed_est ? ' <span class="sub" title="Nothing was checked in, so there is no receipt date; estimated as a month after the plan">(est.)</span>' : ''}</td><td>${s.deadline ? `<span class="dl ${s.days_left <= 10 ? 'soon' : ''}">${sd(s.deadline)}</span>${s.days_left >= 0 ? ` <span class="sub">(${s.days_left}d)</span>` : ''}` : '·'}</td>
+        <td>${sd(s.delivered)}${s.delivered_est ? ' <span class="sub" title="Nothing was checked in, so there is no check-in date; estimated as a month after the plan">(est.)</span>' : ''}</td><td>${s.deadline ? `<span class="dl ${s.days_left <= 14 ? 'soon' : ''}">${sd(s.deadline)}</span>${s.days_left >= 0 ? ` <span class="sub">(${s.days_left}d)</span>` : ''}` : '·'}</td>
         <td>${cs}</td><td class="num">${c && c.paid ? money(c.paid) : '·'}</td><td class="num">${c && c.denied_units ? c.denied_units : '·'}</td></tr>
         ${c && c.deny && c.deny.length ? `<tr><td></td><td colspan="10"><div class="deny">${c.deny.slice(0, 8).map((x) => `<b>${esc(x.fnsku)} ×${x.units}</b> ${esc(x.note || '')}`).join('<br>')}${c.deny.length > 8 ? `<br>…and ${c.deny.length - 8} more` : ''}</div></td></tr>` : ''}`;
     }).join('');
     const sk = p.skus.slice(0, 60).map((r) => `<tr><td class="mono">${esc(r.sku)}</td><td class="mono">${esc(r.asin || '')}</td><td class="prod" title="${esc(r.title || '')}">${esc(r.title || '')}</td>
       <td class="num">${r.shipped}</td><td class="num">${r.received}</td><td class="num">${r.missing ? `<b>${r.missing}</b>` : '·'}</td><td class="num">${r.extra || '·'}</td>
       <td class="num">${r.cost ? money(r.cost) : '·'}</td><td class="num">${r.paid_units || '·'}</td></tr>`).join('');
-    return `<div class="rb-sec">Shipments</div><div class="table-wrap"><table class="ins"><thead><tr><th>Shipment</th><th>FC</th><th>Amazon status</th><th class="num">Shipped</th><th class="num">Received</th><th class="num">Missing</th><th>Closed</th><th>File by</th><th>Case</th><th class="num">Paid</th><th class="num">Denied</th></tr></thead><tbody>${sh}</tbody></table></div>
+    return `<div class="rb-sec">Shipments</div><div class="table-wrap"><table class="ins"><thead><tr><th>Shipment</th><th>FC</th><th>Amazon status</th><th class="num">Shipped</th><th class="num">Received</th><th class="num">Missing</th><th>Delivered</th><th>File by</th><th>Case</th><th class="num">Paid</th><th class="num">Denied</th></tr></thead><tbody>${sh}</tbody></table></div>
       ${p.skus.length ? `<div class="rb-sec">Products short or over (whole plan, netted across its shipments)</div><div class="table-wrap"><table class="ins"><thead><tr><th>SKU</th><th>ASIN</th><th>Product</th><th class="num">Shipped</th><th class="num">Received</th><th class="num">Missing</th><th class="num">Extra</th><th class="num">Cost</th><th class="num">Paid units</th></tr></thead><tbody>${sk}</tbody></table></div>${p.skus.length > 60 ? `<div class="sub">${p.skus.length - 60} more</div>` : ''}` : ''}`;
   }
 
