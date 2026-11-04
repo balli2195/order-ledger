@@ -64,7 +64,8 @@
   .sec-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 26px 0 0; }
   .sec-h h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0 6px 0 0; }
   .sec-h select { width: auto; padding: 4px 8px; }
-  .dg-headline { margin: 0; padding: 14px 16px; font-size: 14.5px; line-height: 1.5; border-bottom: 1px solid var(--line); }
+  .dg-headline { margin: 0; padding: 14px 16px 0; font-size: 14.5px; line-height: 1.55; }
+  .dg-headline:last-child { padding-bottom: 14px; }
   .inbox-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
   @media (max-width: 1000px) { .inbox-grid { grid-template-columns: minmax(0, 1fr); } }
   .dg-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-top: 14px; overflow: hidden; }
@@ -156,15 +157,9 @@
     if (!d.data) { $('#dgMeta').textContent = ''; $('#dgBody').innerHTML = '<div class="dg-empty">No summary yet. The daily Amazon email check runs every morning.</div>'; return; }
     const g = d.data;
     $('#dgMeta').textContent = [g.period, d.updated_at ? 'updated ' + when(d.updated_at) : ''].filter(Boolean).join(' · ');
-    const secs = (g.sections || []).filter((x) => (x.items || []).length);
-    const head = g.headline ? `<p class="dg-headline">${esc(g.headline)}</p>` : '';
-    $('#dgBody').innerHTML = `<div class="dg-panel">${head}${secs.length ? secs.map((x) => {
-      const urgent = x.items.filter((i) => i.urgent).length;
-      return `<details class="dg-sec" ${x.collapsed ? '' : 'open'}><summary><span class="chev">▶</span>${esc(x.name)}<span class="n">${urgent ? `<b style="color:var(--bad)">${urgent} need action</b> · ` : ''}${x.items.length}</span></summary>
-        ${x.items.map((i) => `<div class="dg-it"><div class="ti">${i.urgent ? '<span class="u" title="Needs action"></span>' : ''}${esc(i.title)}</div>
-          ${i.summary ? `<div class="su">${esc(i.summary)}</div>` : ''}${i.action ? `<div class="ac">→ ${esc(i.action)}</div>` : ''}
-          <div class="mt">${esc(i.date || '')}${i.link ? `${i.date ? ' · ' : ''}<a href="${esc(i.link)}" target="_blank" rel="noopener">Open email ↗</a>` : ''}</div></div>`).join('')}</details>`;
-    }).join('') : '<div class="tk-empty">No Amazon emails that day.</div>'}</div>`;
+    // Nick, Nov 4 2026: just the summary, no per-email sections
+    const text = String(g.summary || g.headline || '').trim();
+    $('#dgBody').innerHTML = `<div class="dg-panel">${text ? text.split(/\n\s*\n/).map((x) => `<p class="dg-headline">${esc(x.trim())}</p>`).join('') : '<div class="tk-empty">No Amazon emails that day.</div>'}</div>`;
   }
   $('#dgDay').addEventListener('change', (e) => loadDigest(e.target.value).catch(fail));
 
