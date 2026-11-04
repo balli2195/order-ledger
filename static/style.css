@@ -530,6 +530,8 @@ a.dot-link { display: inline-block; line-height: 0; }
 
 /* Orders search: matching item lines under each hit (Nick, Nov 4 2026) */
 tbody tr.hit-row td { border-top: 0; padding-top: 0; padding-bottom: 8px; font-size: 12.5px; cursor: pointer; }
-tbody tr.hit-row .hit-line { line-height: 1.45; }
+tbody tr.hit-row .hit-line { line-height: 1.45; color: var(--muted); }
+tbody tr.hit-row .hit-line.on { color: inherit; font-weight: 500; }
+tbody tr.hit-row .hit-n { font-size: 11.5px; margin-bottom: 2px; }
 tbody tr.hit-row mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; }
 tbody tr:has(+ tr.hit-row) td { border-bottom-color: transparent; }

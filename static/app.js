@@ -148,14 +148,17 @@
     return S.orders.filter((o) => matches(o, q));
   }
 
-  // Under each matching order, the item lines that matched the search (ASIN, title, shade, qty x cost).
+  // Under each matching order, all of the order's item lines (Nick, Nov 4 2026: the whole order, not just the matching
+  // products); the lines that matched the search are highlighted.
   function hitHtml(o, q) {
     if (!q || q.length < 3) return '';
-    const hits = (o.lines || []).filter((l) => lineHit(l, q));
-    if (!hits.length) return '';
+    const lines = o.lines || [];
+    if (!lines.some((l) => lineHit(l, q))) return '';
     const mark = (v) => { const t = String(v || ''), i = t.toLowerCase().indexOf(q); return i < 0 ? esc(t) : esc(t.slice(0, i)) + '<mark>' + esc(t.slice(i, i + q.length)) + '</mark>' + esc(t.slice(i + q.length)); };
-    return `<tr class="hit-row" data-open="${esc(o.id)}"><td></td><td colspan="9">${hits.slice(0, 6).map((l) => `<div class="hit-line"><span class="mono">${mark(l[0])}</span> ${mark(l[1])}${l[2] ? ` <span class="muted">· ${mark(l[2])}</span>` : ''} <span class="muted">· ${Number(l[3] || 0)} × ${l[4] == null ? '—' : money(l[4])}</span></div>`).join('')}${hits.length > 6 ? `<div class="muted">+${hits.length - 6} more</div>` : ''}</td></tr>`;
+    const line = (l) => `<div class="hit-line${lineHit(l, q) ? ' on' : ''}"><span class="mono">${mark(l[0])}</span> ${mark(l[1])}${l[2] ? ` <span class="muted">· ${mark(l[2])}</span>` : ''} <span class="muted">· ${Number(l[3] || 0)} × ${l[4] == null ? '—' : money(l[4])}</span></div>`;
+    return `<tr class="hit-row" data-open="${esc(o.id)}"><td></td><td colspan="9"><div class="hit-n muted">${lines.length} item line${lines.length === 1 ? '' : 's'} · ${Number(o.units || 0)} unit${o.units === 1 ? '' : 's'} · items ${money(o.items_total)}</div>${lines.map(line).join('')}</td></tr>`;
   }
+
 
   function render() {
     if (oe && !oe.done) { S.pendingRender = true; return; }   // don't redraw the table under an open cell editor
