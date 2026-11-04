@@ -162,6 +162,13 @@ async def api_reimbursements(request: Request, all: int = 0):
     return await inbound.page(include_all=bool(all))
 
 
+@app.post("/api/engine/inbound/seller-central")
+async def engine_inbound_sc(request: Request, body: dict = Body(...)):
+    """Seller Central's discrepancy table per shipment: {shipments: [{sid, msg, total, rows: [{sku, fnsku, expected, located, disc, status}]}]}."""
+    auth.require_engine_key(request)
+    return await inbound.save_sc(body.get("shipments") or [])
+
+
 @app.post("/api/engine/inbound/cases")
 async def engine_inbound_cases(request: Request, body: dict = Body(...)):
     """Case status from Amazon's emails: {SID: {case, st, at, opened, reimb, deny, rereview}} (decisions.json shape)."""

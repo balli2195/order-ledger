@@ -649,6 +649,15 @@ MIGRATIONS: list[str] = [
     """,    # 43: lost inbound is claimable up to 9 months after delivery (Nick, Nov 4 2026)
     """
     INSERT INTO settings (key, value) VALUES ('reimb_window_months', '9') ON CONFLICT (key) DO NOTHING;
+    """,    # 44: Seller Central's own discrepancy numbers per shipment (Nick, Nov 4 2026: the Hub must match Seller Central)
+    """
+    CREATE TABLE IF NOT EXISTS inbound_sc (
+      shipment_id text PRIMARY KEY,
+      msg text,
+      rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+      total int,
+      fetched_at timestamptz NOT NULL DEFAULT now()
+    );
     """,
 ]
 

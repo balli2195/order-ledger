@@ -318,6 +318,64 @@ async def save_cases(data: dict) -> dict:
     return {"cases": n}
 
 
+async def save_sc(items: list) -> dict:
+    """Engine: Seller Central's discrepancy table per shipment, read from the shipment's Contents tab
+    (Send to Amazon > shipment > Contents > "View discrepancies"): [{sid, msg, total, rows: [{sku, fnsku, expected, located, disc, status}]}].
+    Amazon's reconciliation there (units located later, mislabels moved between SKUs) is what a lost-inbound case is judged
+    on, and it differs from the API's QuantityReceived, so the page uses it whenever it has it (Nick, Nov 4 2026)."""
+    n = 0
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            for x in items or []:
+                sid = str(x.get("sid") or x.get("shipment_id") or "")
+                rows = x.get("rows")
+                if not re.fullmatch(r"FBA[0-9A-Z]{6,12}", sid) or not isinstance(rows, list):
+                    continue
+                clean = []
+                for r in rows:
+                    if not isinstance(r, dict) or not r.get("sku"):
+                        continue
+                    def num(k):
+                        v = r.get(k)
+                        return int(v) if isinstance(v, (int, float)) else None
+                    clean.append({"sku": str(r["sku"])[:80], "fnsku": str(r.get("fnsku") or "")[:20], "expected": num("expected"),
+                                  "located": num("located"), "disc": num("disc"), "status": str(r.get("status") or "")[:80]})
+                total = x.get("total") if isinstance(x.get("total"), int) else None
+                await conn.execute(
+                    """INSERT INTO inbound_sc (shipment_id, msg, rows, total, fetched_at) VALUES (%s,%s,%s::jsonb,%s, now())
+                       ON CONFLICT (shipment_id) DO UPDATE SET msg=EXCLUDED.msg, rows=EXCLUDED.rows, total=EXCLUDED.total, fetched_at=now()""",
+                    (sid, str(x.get("msg") or "")[:500], json.dumps(clean), total))
+                n += 1
+            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "inbound", "op": "sc"}),))
+    return {"shipments": n}
+
+
+def _sc_rows(api_rows: list, sc: dict | None) -> tuple[list, bool]:
+    """A closed shipment's per-SKU shipped/received as Seller Central reconciles it. SC lists only the SKUs with a
+    discrepancy (or every SKU with discrepancy 0), so SKUs it doesn't list count as received in full. Falls back to the
+    API rows when SC wasn't read completely or still shows receiving."""
+    if not sc:
+        return api_rows, False
+    rows = sc.get("rows") or []
+    if not rows or (sc.get("total") is not None and sc["total"] > len(rows)) or any(r.get("disc") is None for r in rows):
+        return api_rows, False
+    by = {r["sku"]: r for r in rows}
+    out = []
+    for a in api_rows:
+        r = by.pop(a["sku"], None)
+        if r is None:
+            out.append({**a, "received": a["shipped"]})
+        else:
+            shipped = r["expected"] if r.get("expected") is not None else a["shipped"]
+            rec = r["located"] if r.get("located") is not None else shipped + r["disc"]
+            out.append({**a, "shipped": shipped, "received": rec})
+    for r in by.values():   # a SKU Seller Central lists that the API doesn't
+        shipped = r.get("expected") or 0
+        out.append({"shipment_id": None, "sku": r["sku"], "fnsku": r.get("fnsku"), "shipped": shipped,
+                    "received": r["located"] if r.get("located") is not None else shipped + r["disc"]})
+    return out, True
+
+
 async def page(include_all: bool = False) -> dict:
     months = int(await get_setting("reimb_window_months", 9) or 9)
     chat = await get_setting("reimb_chat_url", None)
@@ -329,6 +387,8 @@ async def page(include_all: bool = False) -> dict:
         ships = {r["shipment_id"]: dict(r) for r in await cur.fetchall()}
         cur = await conn.execute("SELECT * FROM inbound_items WHERE shipment_id = ANY(%s)", (list(ships),))
         items = await cur.fetchall()
+        cur = await conn.execute("SELECT * FROM inbound_sc WHERE shipment_id = ANY(%s)", (list(ships),))
+        scs = {r["shipment_id"]: dict(r) for r in await cur.fetchall()}
         cur = await conn.execute("SELECT * FROM inbound_cases")
         cases = {r["shipment_id"]: dict(r) for r in await cur.fetchall()}
         cur = await conn.execute("SELECT * FROM inbound_reimb WHERE reason ILIKE 'Lost_Inbound%%'")
@@ -371,6 +431,10 @@ async def page(include_all: bool = False) -> dict:
         for s in sorted(ss, key=lambda x: x["shipment_id"]):
             sid = s["shipment_id"]
             rows = by_ship.get(sid, [])
+            sc = scs.get(sid)
+            use_sc = False
+            if s["status"] == "CLOSED":
+                rows, use_sc = _sc_rows(rows, sc)
             shipped, received = sum(r["shipped"] for r in rows), sum(r["received"] for r in rows)
             short = sum(max(0, r["shipped"] - r["received"]) for r in rows)
             closed = None
@@ -401,7 +465,17 @@ async def page(include_all: bool = False) -> dict:
                         "paid_units": sum((r["qty_cash"] or 0) + (r["qty_inv"] or 0) for r in paid_rows),
                         "denied_units": denied, "rereview": (cdata.get("rereview") or {}).get("case"),
                         "deny": [{"fnsku": k, "units": v[0], "note": v[1] if len(v) > 1 else ""} for k, v in (cdata.get("deny") or {}).items()]}
+            sc_msg = (sc or {}).get("msg") or ""
+            sc_expired = "no longer eligible" in sc_msg.lower()
+            if sc_expired and deadline and deadline >= today:
+                deadline = today - timedelta(days=1)   # Seller Central says the window has closed
+            m = re.search(r"case ID (\d{8,})", sc_msg)
+            if m and not case:   # a case Seller Central knows about that the email check hasn't picked up yet
+                case = {"id": m.group(1), "status": "pending", "opened": None, "decided": None, "paid": 0, "paid_units": 0,
+                        "denied_units": 0, "rereview": None, "deny": [], "from_sc": True}
             shp.append({"id": sid, "fc": s["fc"], "status": s["status"], "shipped": shipped, "received": received, "short": short,
+                        "source": "seller_central" if use_sc else "api", "sc_msg": sc_msg[:300] or None,
+                        "sc_at": (sc or {}).get("fetched_at"),
                         "delivered": delivered, "delivered_est": est, "closed": closed, "deadline": deadline,
                         "days_left": (deadline - today).days if deadline else None, "case": case})
             for r in rows:
