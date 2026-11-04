@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <style>
   .tk-add { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; margin: 22px 0 4px; align-items: start; }
+  .tk-add[hidden], #newTaskBtn[hidden] { display: none !important; }
   .tk-add textarea { grid-column: 1 / -1; min-height: 38px; resize: vertical; }
   @media (max-width: 700px) { .tk-add { grid-template-columns: 1fr; } .tk-add textarea { grid-column: auto; } }
   .tk-list { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -81,11 +82,11 @@
   <div id="dgBody"></div>
   </div><div class="col-tasks">
 
-  <div class="sec-h"><h2>Tasks</h2></div>
-  <form class="tk-add editor-only" id="addForm" style="margin-top:12px">
+  <div class="sec-h"><h2>Tasks</h2><span style="flex:1"></span><button class="btn small primary editor-only" id="newTaskBtn">+ Add task</button></div>
+  <form class="tk-add editor-only" id="addForm" style="margin-top:12px" hidden>
     <input name="title" placeholder="New task…" maxlength="300" required autocomplete="off">
     <input name="due" type="date" title="Due date (optional)">
-    <button class="btn primary">Add task</button>
+    <span style="display:flex;gap:6px"><button class="btn primary">Add</button><button type="button" class="btn" id="cancelAdd">Cancel</button></span>
     <textarea name="details" placeholder="Details (optional)" rows="1" maxlength="5000"></textarea>
   </form>
 
@@ -244,8 +245,12 @@
   });
   $('#addForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { await api('POST', '/api/tasks', Object.fromEntries(new FormData(e.target).entries())); e.target.reset(); toast('Added'); S.f === 'done' && setF('open'); await load(); } catch (err) { fail(err); }
+    try { await api('POST', '/api/tasks', Object.fromEntries(new FormData(e.target).entries())); e.target.reset(); showAdd(false); toast('Added'); S.f === 'done' && setF('open'); await load(); } catch (err) { fail(err); }
   });
+  function showAdd(on) { $('#addForm').hidden = !on; $('#newTaskBtn').hidden = on; if (on) $('#addForm input[name=title]').focus(); }
+  $('#newTaskBtn').addEventListener('click', () => showAdd(true));
+  $('#cancelAdd').addEventListener('click', () => { $('#addForm').reset(); showAdd(false); });
+  $('#addForm').addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('#addForm').reset(); showAdd(false); } });
   $('#recBtn').addEventListener('click', () => recurringDialog().catch(fail));
   function setF(f) { S.f = f; store.set('taskFilter', f); $$('.chip[data-f]').forEach((c) => c.classList.toggle('on', c.dataset.f === f)); render(); }
   $$('.chip[data-f]').forEach((c) => c.addEventListener('click', () => setF(c.dataset.f)));
