@@ -28,6 +28,12 @@
   .rt-row .opts { grid-column: 1 / -1; display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
   .rt-row .opts label { display: inline-flex; flex-direction: row; gap: 4px; align-items: center; color: var(--ink); font-weight: 400; font-size: 12px; }
   .rt-row .opts input { width: auto; }
+  .rt-box { width: min(680px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+  .rt-box #rtList { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -22px; padding: 0 22px; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
+  .rt-box .confirm-actions { flex: none; }
+  .rt-row { padding: 6px 0; }
+  .rt-row .opts input.rt-link { width: 100%; padding: 2px 8px; font-size: 12px; border-color: transparent; background: transparent; color: var(--muted); }
+  .rt-row .opts input.rt-link:hover, .rt-row .opts input.rt-link:focus { border-color: var(--line); background: var(--panel); color: var(--ink); }
   .rt-row.off input[type=text] { color: var(--muted); text-decoration: line-through; }
   .tk .tag.viol { background: color-mix(in srgb, var(--bad) 13%, transparent); color: var(--bad); font-weight: 600; }
   .tk .d a { color: var(--accent); }
@@ -221,7 +227,7 @@
   // ------------------------------------------------ recurring tasks: manage the list
   async function recurringDialog() {
     const wrap = document.createElement('div'); wrap.className = 'confirm-back';
-    wrap.innerHTML = `<div class="confirm-box" role="dialog" aria-modal="true" style="max-width:640px;width:100%">
+    wrap.innerHTML = `<div class="confirm-box rt-box" role="dialog" aria-modal="true">
       <h3>Recurring tasks</h3>
       <p class="muted" style="font-size:13px;margin:0 0 6px">These show up in your task list on the days they're due. If one isn't checked off, it carries over (no pile-up). Changes save as you go.</p>
       <div id="rtList"></div>
@@ -241,7 +247,7 @@
         <select data-rf="freq">${Object.entries(FREQ_LABEL).map(([k, v]) => `<option value="${k}" ${t.freq === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <button class="btn small ghost" data-rf="active" title="${t.active ? 'Pause' : 'Resume'}">${t.active ? 'Pause' : 'Resume'}</button>
         <button class="icon-btn" data-rf="del" title="Delete">🗑</button>
-        <div class="opts"><input type="url" data-rf="link" value="${esc(t.link || '')}" placeholder="Link (optional), e.g. a Claude chat" style="width:100%;padding:4px 8px"></div>
+        <div class="opts"><input type="url" class="rt-link" data-rf="link" value="${esc(t.link || '')}" placeholder="+ link (optional)"></div>
         ${t.freq === 'weekly' ? `<div class="opts">On ${DOW.map((d, i) => `<label><input type="checkbox" data-rf="day" value="${i}" ${(t.days || []).includes(i) ? 'checked' : ''}> ${d}</label>`).join('')}</div>` : ''}
         ${t.freq === 'monthly' ? `<div class="opts">On day <input type="number" data-rf="monthday" min="1" max="31" value="${t.monthday || 1}" style="width:64px;padding:4px 6px"> of each month</div>` : ''}
       </div>`).join('') : '<p class="muted">No recurring tasks yet.</p>';
