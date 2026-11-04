@@ -56,7 +56,7 @@
   <div class="cm-head"><h2>Commissions</h2><span class="muted" id="whoLine"></span></div>
   <p class="cm-rule" id="ruleLine"></p>
   <div class="stats" id="stats"></div>
-  <div class="cm-card"><h3>Last 12 weeks</h3><div class="cm-chart" id="chart"></div></div>
+  <div class="cm-card"><h3>By week</h3><div class="cm-chart" id="chart"></div></div>
 
   <div class="cm-head" style="margin-top:22px"><h2 style="font-size:22px">Weeks</h2><span class="muted" style="font-size:13px">click a week to see its leads</span></div>
   <div class="table-wrap"><table class="mo" id="moTable"></table></div>
@@ -86,22 +86,22 @@
   function render() {
     const D = S.data, by = Object.fromEntries(D.weeks.map((w) => [w.week, w]));
     $('#whoLine').textContent = D.owner ? `${D.who} · ${pctTxt(D.rate)} of spend` : `${pctTxt(D.rate)} of spend`;
-    $('#ruleLine').textContent = `${D.owner ? D.who + ' earns' : 'You earn'} ${pctTxt(D.rate)} of what's actually bought (cost × units ordered) on leads ${D.owner ? 'he' : 'you'} sourced and added ${D.owner ? 'himself' : 'yourself'}. Leads someone else added don't count, even if ${D.owner ? 'he' : 'you'} sourced that product before. Weeks run Monday to Sunday by the lead's date; canceled orders come off automatically.`;
+    $('#ruleLine').textContent = `${D.owner ? D.who + ' earns' : 'You earn'} ${pctTxt(D.rate)} of what's actually bought (cost × units ordered) on leads ${D.owner ? 'he' : 'you'} sourced and added ${D.owner ? 'himself' : 'yourself'}. Leads someone else added don't count, even if ${D.owner ? 'he' : 'you'} sourced that product before. Weeks run Monday to Sunday by the lead's date; canceled orders come off automatically. Reported from ${short(D.start, { month: 'long', day: 'numeric', year: 'numeric' })} on.`;
     const cur = by[D.this_week], last = by[addDays(D.this_week, -7)];
     const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
     $('#stats').innerHTML =
       stat('This week', money(cur?.commission || 0), `${wkLabel(D.this_week)} · ${money(cur?.spend || 0, 0)} bought`, true) +
       stat('Last week', money(last?.commission || 0), `${wkLabel(addDays(D.this_week, -7))} · ${money(last?.spend || 0, 0)} bought`) +
-      stat('All time', money(D.total), `${money(D.total_spend, 0)} bought`);
+      stat('Since ' + short(D.start), money(D.total), `${money(D.total_spend, 0)} bought`);
     renderChart();
     renderWeeks();
   }
 
   function renderChart() {
     const D = S.data, by = Object.fromEntries(D.weeks.map((w) => [w.week, w]));
-    const weeks = []; for (let i = 11; i >= 0; i--) weeks.push(addDays(D.this_week, -7 * i));
+    const weeks = []; for (let i = 11; i >= 0; i--) { const w = addDays(D.this_week, -7 * i); if (w >= D.start) weeks.push(w); }
     const vals = weeks.map((w) => by[w]?.commission || 0), max = Math.max(...vals, 1);
-    const W = Math.max($('#chart').clientWidth || 760, 320), H = 170, pl = 8, pb = 22, pt = 16, bw = (W - pl) / weeks.length;
+    const W = Math.max($('#chart').clientWidth || 760, 320), H = 170, pl = 8, pb = 22, pt = 16, bw = Math.min((W - pl) / Math.max(weeks.length, 1), 90);
     const y = (v) => H - pb - (v / max) * (H - pb - pt);
     const bars = weeks.map((w, i) => {
       const v = vals[i], x = pl + i * bw + bw * 0.18, bwid = bw * 0.64, top = y(v);

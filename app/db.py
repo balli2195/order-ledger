@@ -562,6 +562,9 @@ MIGRATIONS: list[str] = [
     UPDATE users SET tabs = array_append(tabs, 'commissions')
      WHERE role <> 'owner' AND NOT ('commissions' = ANY(tabs))
        AND lower(name) = lower((SELECT value #>> '{}' FROM settings WHERE key = 'bonus_sourcer'));
+    """,    # 36: Commissions report starts Oct 19, 2026 (Nick, Nov 4 2026)
+    """
+    INSERT INTO settings (key, value) VALUES ('commission_start', '"2026-10-19"') ON CONFLICT (key) DO NOTHING;
     """,
 ]
 
