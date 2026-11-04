@@ -133,14 +133,28 @@
   }
 
   // ------------------------------------------------------------ list rendering
+  // Search (Nick, Nov 4 2026: find orders by ASIN): order fields plus every item line's ASIN, title and shade.
+  // A pasted Amazon link searches its ASIN.
+  const normQ = (raw) => { const s = String(raw || '').trim(); const m = s.match(/(?:\/dp\/|\/gp\/product\/|\/product\/)([A-Z0-9]{10})/i); return (m ? m[1] : s).toLowerCase(); };
+  const lineHit = (l, q) => !!q && [l[0], l[1], l[2]].some((v) => (v || '').toLowerCase().includes(q));
   function matches(o, q) {
     if (!q) return true;
-    return [o.store, o.email, o.placed_by, o.order_ref, o.notes, o.asins, o.order_date].some((v) => (v || '').toLowerCase().includes(q));
+    return [o.store, o.email, o.placed_by, o.order_ref, o.notes, o.asins, o.order_date].some((v) => (v || '').toLowerCase().includes(q))
+      || (o.lines || []).some((l) => lineHit(l, q));
   }
 
   function filtered() {
-    const q = S.q.trim().toLowerCase();
+    const q = normQ(S.q);
     return S.orders.filter((o) => matches(o, q));
+  }
+
+  // Under each matching order, the item lines that matched the search (ASIN, title, shade, qty x cost).
+  function hitHtml(o, q) {
+    if (!q || q.length < 3) return '';
+    const hits = (o.lines || []).filter((l) => lineHit(l, q));
+    if (!hits.length) return '';
+    const mark = (v) => { const t = String(v || ''), i = t.toLowerCase().indexOf(q); return i < 0 ? esc(t) : esc(t.slice(0, i)) + '<mark>' + esc(t.slice(i, i + q.length)) + '</mark>' + esc(t.slice(i + q.length)); };
+    return `<tr class="hit-row" data-open="${esc(o.id)}"><td></td><td colspan="9">${hits.slice(0, 6).map((l) => `<div class="hit-line"><span class="mono">${mark(l[0])}</span> ${mark(l[1])}${l[2] ? ` <span class="muted">· ${mark(l[2])}</span>` : ''} <span class="muted">· ${Number(l[3] || 0)} × ${l[4] == null ? '—' : money(l[4])}</span></div>`).join('')}${hits.length > 6 ? `<div class="muted">+${hits.length - 6} more</div>` : ''}</td></tr>`;
   }
 
   function render() {
@@ -153,7 +167,8 @@
     const total = list.reduce((s, o) => s + (o.order_total || 0), 0);
     if ($('#summary')) $('#summary').textContent = `${S.orders.length.toLocaleString()} orders tracked · ${money(total)} shown` +
       (list.length !== S.orders.length ? ` (${list.length.toLocaleString()} matching)` : '');
-    const rows = list.slice(0, S.shown).map(rowHtml).join('');
+    const hq = normQ(S.q);
+    const rows = list.slice(0, S.shown).map((o) => rowHtml(o) + hitHtml(o, hq)).join('');
     $('#rows').innerHTML = rows;
     $('#empty').classList.toggle('hidden', list.length > 0);
     $('#more').classList.toggle('hidden', list.length <= S.shown);

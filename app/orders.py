@@ -257,7 +257,10 @@ SELECT o.id, o.order_date, o.store, o.email, o.order_total, o.order_ref, o.notes
          CASE WHEN bool_or(i.shade IS NULL OR btrim(i.shade) = '') THEN 'Shade' END,
          CASE WHEN bool_or(i.qty_ordered < 1) THEN 'Qty ordered' END
        ], NULL) AS gaps,
-       string_agg(DISTINCT upper(i.asin), ' ') AS asins
+       string_agg(DISTINCT upper(i.asin), ' ') AS asins,
+       -- the order's item lines, for the Orders page search (ASIN / title / shade) and the matching-items line under each hit
+       COALESCE(json_agg(json_build_array(upper(btrim(i.asin)), i.product_title, i.shade, i.qty_ordered, i.cost_per_unit)
+                ORDER BY i.created_at, i.id) FILTER (WHERE i.id IS NOT NULL), '[]'::json) AS lines
 FROM orders o
 LEFT JOIN order_items i ON i.order_id = o.id
 {where}
