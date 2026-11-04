@@ -589,6 +589,14 @@ MIGRATIONS: list[str] = [
        'https://claude.ai/chat/afbaf7d4-c5d4-46e8-9807-3b77589a51a7', 6),
       ('Address authenticity customer complaints', 'Product authenticity complaints from customers: review and respond.',
        'https://claude.ai/chat/afbaf7d4-c5d4-46e8-9807-3b77589a51a7', 7);
+    """,    # 40: one task per specific violation instead (Nick, Nov 4 2026): IP complaints and product-authenticity customer
+            #     complaints, from Account Health and from new Amazon notice emails. The two general daily tasks are paused.
+    """
+    UPDATE task_templates SET active = false WHERE title IN ('Address IP complaints', 'Address authenticity customer complaints');
+    DELETE FROM tasks t USING task_templates x WHERE t.template_id = x.id AND t.status = 'open'
+       AND x.title IN ('Address IP complaints', 'Address authenticity customer complaints');
+    INSERT INTO settings (key, value) VALUES ('violation_chat_url', '"https://claude.ai/chat/afbaf7d4-c5d4-46e8-9807-3b77589a51a7"')
+    ON CONFLICT (key) DO NOTHING;
     """,
 ]
 

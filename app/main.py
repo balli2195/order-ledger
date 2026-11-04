@@ -839,6 +839,14 @@ async def api_amazon_digest(request: Request, day: str | None = None):
     return await T.get_digest(d)
 
 
+@app.post("/api/engine/violations")
+async def engine_violations(request: Request, body: dict = Body(...)):
+    """One Inbox task per IP / authenticity complaint: {violations:[{kind: ip|authenticity, asin, title, reason, date,
+    case_id, appeal, due, sku, summary, email_link}], full: true when it's the complete open list from Account Health}."""
+    auth.require_engine_key(request)
+    return await T.upsert_violations(body.get("violations") or [], full=bool(body.get("full")))
+
+
 @app.put("/api/engine/amazon-digest/{day}")
 async def engine_amazon_digest(day: str, request: Request, body: dict = Body(...)):
     """For the daily Amazon email run: that day's summary, plus action-item tasks."""

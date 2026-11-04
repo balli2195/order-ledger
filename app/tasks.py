@@ -3,6 +3,7 @@ is created once and updated in place, e.g. a canceled order whose units were alr
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 
 from fastapi import HTTPException
@@ -152,11 +153,71 @@ async def prepos_cancel_tasks(conn) -> int:
 
 # ---------------------------------------------------------------- daily Amazon email summary
 
+VIOLATION_KINDS = {"ip": "IP complaint", "authenticity": "Authenticity complaint"}
+
+
+def _violation_text(v: dict) -> tuple[str, str, str]:
+    kind = "authenticity" if str(v.get("kind", "")).lower().startswith("auth") else "ip"
+    asin = str(v.get("asin") or "").strip().upper()[:10]
+    product = " ".join(str(v.get("title") or "").split())[:90]
+    title = f"{VIOLATION_KINDS[kind]}: {asin}" + (f" · {product}" if product else "")
+    bits = [str(v.get(k)).strip() for k in ("reason",) if v.get(k)]
+    if v.get("date"):
+        bits.append(f"filed {v['date']}")
+    if v.get("case_id"):
+        bits.append(f"case {v['case_id']}")
+    if v.get("appeal"):
+        bits.append(f"appeal: {v['appeal']}")
+    if v.get("due"):
+        bits.append(f"respond by {v['due']}")
+    lines = [" · ".join(bits)] if bits else []
+    if v.get("sku"):
+        lines.append(f"SKU {v['sku']}")
+    if v.get("summary"):
+        lines.append(str(v["summary"])[:600])
+    if v.get("email_link"):
+        lines.append(f"Email: {v['email_link']}")
+    return f"viol:{kind}:{asin}", title[:300], "\n".join(lines)[:5000]
+
+
+async def upsert_violations(items: list[dict], full: bool = False, update: bool = True) -> dict:
+    """One task per specific violation (Nick, Nov 4 2026): IP complaints and product-authenticity customer complaints,
+    keyed by kind + ASIN, linked to the chat where he works on them, listed under the daily tasks.
+    full=True (a complete Account Health list): open violation tasks that are no longer on it are closed."""
+    chat = None
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT value FROM settings WHERE key='violation_chat_url'")
+        r = await cur.fetchone()
+        chat = r["value"] if r else None
+        keys, n = set(), 0
+        async with conn.transaction():
+            for v in reversed(items or []):   # first item ends up newest, so the list keeps the given order
+                if not re.fullmatch(r"[A-Z0-9]{10}", str(v.get("asin") or "").strip().upper()):
+                    continue
+                key, title, details = _violation_text(v)
+                if key in keys:
+                    continue
+                keys.add(key)
+                await upsert_auto(conn, key, "violation", title, details, chat, update=update)
+                await conn.execute("UPDATE tasks SET position = 6, created_at = CASE WHEN created_at = now() THEN clock_timestamp() ELSE created_at END "
+                                   "WHERE key=%s", (key,))
+                n += 1
+            closed = 0
+            if full:
+                cur = await conn.execute(
+                    "UPDATE tasks SET status='done', done_at=now(), updated_at=now() "
+                    "WHERE kind='violation' AND status='open' AND NOT (key = ANY(%s)) RETURNING id", (list(keys),))
+                closed = len(await cur.fetchall())
+            await _notify(conn)
+    return {"tasks": n, "closed": closed}
+
+
 async def put_digest(day: date, body: dict) -> dict:
     """Engine: {headline, sections:[{name, items:[{title, summary, action, urgent, date, link}]}], counts:{...},
     tasks:[{key, title, details, link}]}. Replaces that day's summary; tasks are added once each (key = email id)."""
     body.pop("tasks", None)
     tasks = []   # Nick, Nov 3 2026: don't add tasks from email; the summary alone shows what needs action
+    violations = body.pop("violations", None) or []   # ...except one task per new IP / authenticity complaint (Nov 4 2026)
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await conn.execute("INSERT INTO amazon_digests (day, data) VALUES (%s,%s) ON CONFLICT (day) DO UPDATE SET data=EXCLUDED.data, updated_at=now()",
@@ -169,7 +230,8 @@ async def put_digest(day: date, body: dict) -> dict:
                                   str(t.get("details") or "")[:5000], t.get("link"), update=False)
                 n += 1
             await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "task", "op": "digest"}),))
-    return {"day": day.isoformat(), "tasks": n}
+    v = await upsert_violations(violations, full=False, update=False) if violations else {"tasks": 0}
+    return {"day": day.isoformat(), "tasks": n, "violations": v["tasks"]}
 
 
 async def get_digest(day: date | None) -> dict:
