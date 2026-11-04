@@ -735,7 +735,7 @@
     const sc = `<a href="https://sellercentral.amazon.com/myinventory/inventory?searchTerm=${encodeURIComponent(c.sku || l.asin)}" target="_blank" rel="noopener">Seller Central ↗</a>`;
     if (c.status === 'failed') return `<div class="hz-banner warn"><b>Couldn't add this to your Amazon catalog.</b> ${esc(c.error || '')} ${list}</div>`;
     if (errs.length) return `<div class="hz-banner"><b>! Amazon flagged ${c.added_by_hub ? 'the listing the Hub added' : 'your listing'}</b> (SKU <span class="mono">${esc(c.sku || '')}</span>). Check before buying. ${sc}${list}</div>`;
-    if (c.added_by_hub) return `<div class="hz-banner ok"><b>✓ Added to your Amazon catalog</b> ${esc(LG.fmtDate((c.created_at || '').slice(0, 10)))} as SKU <span class="mono">${esc(c.sku || '')}</span> (no price, no stock). No restrictions showed up${c.checked_at ? ` as of ${esc(new Date(c.checked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}` : ''}. ${sc}</div>`;
+    if (c.added_by_hub) return `<div class="hz-banner ok"><b>✓ Added to your Amazon catalog</b> ${esc(LG.fmtDate((c.created_at || '').slice(0, 10)))} as SKU <span class="mono">${esc(c.sku || '')}</span> (${c.price ? `priced ${LG.money(c.price)}, Buy Box + 10%` : 'no price: no Buy Box known'}, no stock). No restrictions showed up${c.checked_at ? ` as of ${esc(new Date(c.checked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}` : ''}. ${sc}</div>`;
     return '';
   }
 

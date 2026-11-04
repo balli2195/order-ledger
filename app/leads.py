@@ -279,7 +279,7 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
                                  (r["id"],))
         lead["cancellations"] = [jsonable(dict(x)) for x in await cur.fetchall()]
         if lead.get("asin"):
-            cur = await conn.execute("SELECT status, sku, added_by_hub, issues, error, created_at, checked_at FROM catalog_adds WHERE asin=upper(btrim(%s))",
+            cur = await conn.execute("SELECT status, sku, added_by_hub, issues, error, created_at, checked_at, price FROM catalog_adds WHERE asin=upper(btrim(%s))",
                                      (lead["asin"],))
             c = await cur.fetchone()
             lead["catalog"] = jsonable(dict(c)) if c else None

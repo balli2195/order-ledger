@@ -516,6 +516,9 @@ MIGRATIONS: list[str] = [
         created_at     timestamptz NOT NULL DEFAULT now(),
         checked_at     timestamptz
     );
+    """,    # 32: listings the Hub adds get a price: Buy Box + 10% (Nick, Nov 3 2026)
+    """
+    ALTER TABLE catalog_adds ADD COLUMN price numeric(10,2), ADD COLUMN price_tried_at timestamptz;
     """,
 ]
 

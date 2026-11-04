@@ -12,6 +12,8 @@ SP-API Listings Items 2021-08-01 (needs the app's Product Listing role):
                    ASIN's own catalog record (GET /catalog/2022-04-01/items/{asin}), never made up.
 - issues           GET /listings/2021-08-01/items/{seller}/{sku}?includedData=summaries,issues
 SKUs look like Amazon's own ("AB-1C2D-3E4F"), like the ones Nick makes in Seller Central.
+Price (Nick, Nov 3 2026): Buy Box + 10% (Keepa's current Buy Box, or the last one it saw), the same rule as PrepOS's
+Sell price. No Buy Box known -> no price.
 """
 from __future__ import annotations
 
@@ -60,6 +62,20 @@ async def _call(c: httpx.AsyncClient, method: str, path: str, **kw) -> tuple[int
     return 429, {}
 
 
+PRICE_UP = 1.10
+
+
+async def _price(asin: str) -> float | None:
+    from .prepos import keepa_prices
+    bb = ((await keepa_prices([asin])).get(asin) or {}).get("bb")
+    return round(bb * PRICE_UP, 2) if bb else None
+
+
+def _offer(price: float) -> list:
+    return [{"currency": "USD", "marketplace_id": sellable.MP, "audience": "ALL",
+             "our_price": [{"schedule": [{"value_with_tax": price}]}]}]
+
+
 def _issues(items: list) -> list[dict]:
     return [{"code": x.get("code"), "message": x.get("message"), "severity": x.get("severity")} for x in items or []]
 
@@ -90,6 +106,9 @@ async def process(asin: str, preview: bool = False) -> dict:
         for k in COMPLIANCE:
             if (cat.get("attributes") or {}).get(k):
                 attrs[k] = cat["attributes"][k]
+        price = await _price(asin)
+        if price:
+            attrs["purchasable_offer"] = _offer(price)
         sku = _sku()
         s, j = await _call(c, "PUT", f"/listings/2021-08-01/items/{sellable.SELLER_ID}/{sku}",
                            params={"marketplaceIds": sellable.MP, "includedData": "issues", **({"mode": "VALIDATION_PREVIEW"} if preview else {})},
@@ -100,7 +119,35 @@ async def process(asin: str, preview: bool = False) -> dict:
                                error=f"Amazon didn't accept the listing ({j.get('status') or s})")
         log.info("added %s to the catalog as %s", asin, sku)
         status["added"] += 1
-        return await _save(asin, status_="added", sku=sku, added=True, issues=iss)
+        row = await _save(asin, status_="added", sku=sku, added=True, issues=iss)
+        if not preview:
+            await _set_price_row(asin, price)
+        return row
+
+
+async def _set_price_row(asin: str, price) -> None:
+    async with db.pool.connection() as conn:
+        await conn.execute("UPDATE catalog_adds SET price=%s, price_tried_at=now() WHERE asin=%s", (price, asin))
+        await conn.commit()
+
+
+async def set_price(asin: str, sku: str) -> float | None:
+    """Give a listing the Hub added (without a price) Buy Box + 10%."""
+    price = await _price(asin)
+    if price:
+        async with httpx.AsyncClient(timeout=40) as c:
+            s, cat = await _call(c, "GET", f"/catalog/2022-04-01/items/{asin}", params={"marketplaceIds": sellable.MP, "includedData": "productTypes"})
+            pt = next((p.get("productType") for p in cat.get("productTypes") or [] if p.get("productType")), "PRODUCT")
+            s, j = await _call(c, "PATCH", f"/listings/2021-08-01/items/{sellable.SELLER_ID}/{sku}",
+                               params={"marketplaceIds": sellable.MP, "includedData": "issues"},
+                               json={"productType": pt, "patches": [{"op": "replace", "path": "/attributes/purchasable_offer", "value": _offer(price)}]})
+        if s != 200 or j.get("status") not in ("ACCEPTED", "VALID"):
+            log.warning("price %s %s: %s %s", asin, sku, s, str(j)[:300])
+            price = None
+        else:
+            log.info("priced %s (%s) at %s", asin, sku, price)
+    await _set_price_row(asin, price)
+    return price
 
 
 async def recheck(asin: str, sku: str) -> None:
@@ -159,6 +206,8 @@ async def run_once() -> int:
                  ((rechecks = 0 AND created_at < now() - %s) OR (rechecks = 1 AND created_at < now() - %s)) LIMIT 25""",
             RECHECK)
         later = [(r["asin"], r["sku"]) for r in await cur.fetchall()]
+        cur = await conn.execute("SELECT asin, sku FROM catalog_adds WHERE added_by_hub AND sku IS NOT NULL AND price IS NULL AND price_tried_at IS NULL LIMIT 25")
+        unpriced = [(r["asin"], r["sku"]) for r in await cur.fetchall()]
     for a in new:
         try:
             await process(a)
@@ -167,12 +216,18 @@ async def run_once() -> int:
         except Exception as e:
             log.warning("catalog %s failed: %s", a, e)
             await _save(a, status_="failed", error=str(e)[:300])
+    for a, sku in unpriced:
+        try:
+            await set_price(a, sku)
+        except Exception as e:
+            log.warning("catalog price %s failed: %s", a, e)
+            await _set_price_row(a, None)
     for a, sku in later:
         try:
             await recheck(a, sku)
         except Exception as e:
             log.warning("catalog recheck %s failed: %s", a, e)
-    return len(new) + len(later)
+    return len(new) + len(later) + len(unpriced)
 
 
 async def loop() -> None:
