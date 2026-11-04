@@ -130,6 +130,32 @@ async def restrictions(asin: str) -> dict | None:
     return None
 
 
+async def amazon_brand(asin: str) -> str | None:
+    """The brand on Amazon's catalog record for the ASIN ('' when it has none), or None if Amazon couldn't be asked."""
+    if not ENABLED:
+        return None
+    async with _lock:
+        async with httpx.AsyncClient(timeout=30) as c:
+            for i in range(6):
+                wait = _last[0] + 0.55 - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                _last[0] = time.monotonic()
+                r = await c.get(f"{SP}/catalog/2022-04-01/items/{asin}", headers={"x-amz-access-token": await _token(c)},
+                                params={"marketplaceIds": MP, "includedData": "summaries"})
+                if r.status_code == 429:
+                    await asyncio.sleep(2 * (i + 1))
+                    continue
+                if r.status_code == 404:
+                    return ""
+                if r.status_code != 200:
+                    log.warning("catalog brand %s: %s %s", asin, r.status_code, r.text[:200])
+                    return None
+                s = next((x for x in r.json().get("summaries") or [] if x.get("marketplaceId") == MP), {})
+                return (s.get("brand") or s.get("brandName") or "").strip()
+    return None
+
+
 async def check(asins: list[str]) -> dict:
     """Ask Amazon about each ASIN and cache it. Returns ASIN -> {eligible, reasons}."""
     out = {}
@@ -146,9 +172,14 @@ async def check(asins: list[str]) -> dict:
         except Exception as ex:
             log.warning("restrictions %s failed: %s", a, ex)
             lr = None
-        if e is None and lr is None:
+        try:
+            br = await amazon_brand(a)
+        except Exception as ex:
+            log.warning("catalog brand %s failed: %s", a, ex)
+            br = None
+        if e is None and lr is None and br is None:
             continue
-        out[a] = {**(e or {}), "listing": lr}
+        out[a] = {**(e or {}), "listing": lr, "amz_brand": br}
     if out:
         async with db.pool.connection() as conn:
             async with conn.transaction():
@@ -158,6 +189,11 @@ async def check(asins: list[str]) -> dict:
                             "INSERT INTO asin_flags (asin, fba_eligible, fba_reasons, fba_checked_at) VALUES (%s,%s,%s,now()) "
                             "ON CONFLICT (asin) DO UPDATE SET fba_eligible=EXCLUDED.fba_eligible, fba_reasons=EXCLUDED.fba_reasons, fba_checked_at=now()",
                             (a, e["eligible"], e["reasons"]))
+                    if e.get("amz_brand") is not None:
+                        await conn.execute(
+                            "INSERT INTO asin_flags (asin, amz_brand, amz_brand_checked_at) VALUES (%s,%s,now()) "
+                            "ON CONFLICT (asin) DO UPDATE SET amz_brand=EXCLUDED.amz_brand, amz_brand_checked_at=now()",
+                            (a, e["amz_brand"]))
                     if e.get("listing") is not None:
                         await conn.execute(
                             "INSERT INTO asin_flags (asin, list_ok, list_reasons, list_checked_at) VALUES (%s,%s,%s,now()) "
@@ -172,12 +208,13 @@ async def check(asins: list[str]) -> dict:
 
 async def is_fresh(asin: str) -> bool:
     async with db.pool.connection() as conn:
-        cur = await conn.execute("SELECT fba_checked_at, list_checked_at FROM asin_flags WHERE asin=%s", ((asin or "").strip().upper(),))
+        cur = await conn.execute("SELECT fba_checked_at, list_checked_at, amz_brand_checked_at FROM asin_flags WHERE asin=%s", ((asin or "").strip().upper(),))
         r = await cur.fetchone()
     old = datetime.now(TZ) - timedelta(days=RECHECK_DAYS)
     fresh_fba = bool(r and r["fba_checked_at"] and r["fba_checked_at"] > old)
     fresh_list = bool(r and r["list_checked_at"] and r["list_checked_at"] > old) or listing_access["ok"] is False
-    return fresh_fba and fresh_list
+    fresh_brand = bool(r and r["amz_brand_checked_at"] and r["amz_brand_checked_at"] > old)
+    return fresh_fba and fresh_list and fresh_brand
 
 
 async def ensure(asin: str) -> None:
@@ -194,6 +231,7 @@ async def backfill_once() -> int:
             "LEFT JOIN asin_flags f ON f.asin = x.a "
             "WHERE f.fba_checked_at IS NULL OR f.fba_checked_at < now() - make_interval(days => %s) "
             "   OR (%s AND (f.list_checked_at IS NULL OR f.list_checked_at < now() - make_interval(days => %s))) "
+            "   OR f.amz_brand_checked_at IS NULL "
             "ORDER BY (f.fba_checked_at IS NULL) DESC, (f.list_checked_at IS NULL) DESC, x.d DESC LIMIT %s",
             (now.date() - timedelta(days=LOOKBACK_DAYS), RECHECK_DAYS, listing_access["ok"] is not False, RECHECK_DAYS, BATCH))
         asins = [r["a"] for r in await cur.fetchall()]

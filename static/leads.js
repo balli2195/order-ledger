@@ -197,10 +197,10 @@
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
   // ------------------------------------------------------------ hazmat warning (flags from Keepa, cached per ASIN)
   function hazBadge(r) {
-    const dup = (r.same_day_n || 0) > 1, nolist = r.list_ok === false, bad = r.fba_eligible === false || nolist || r.cat_bad === true, tp = !!r.transparency, tb = (r.tp_brand_asins || []).length;
+    const dup = (r.same_day_n || 0) > 1, nolist = r.list_ok === false, bad = r.fba_eligible === false || nolist || r.cat_bad === true || r.generic === true, tp = !!r.transparency, tb = (r.tp_brand_asins || []).length;
     if (bad || dup || tp || tb) {
       const tip = [tp ? 'Enrolled in Transparency: units need Transparency codes' : '', tb && !tp ? `Same brand as ${tb} Transparency ASIN${tb === 1 ? '' : 's'}` : '',
-        nolist ? "Amazon won't let your account list this" : '', r.cat_bad ? 'Amazon flagged your listing of this ASIN' : '', r.fba_eligible === false ? "Amazon says you can't send this to FBA right now" : '', dup ? `Entered ${r.same_day_n} times on this day` : ''].filter(Boolean).join(' · ');
+        r.generic ? "GENERIC brand on Amazon: you can't send generic ASINs in" : '', nolist ? "Amazon won't let your account list this" : '', r.cat_bad ? 'Amazon flagged your listing of this ASIN' : '', r.fba_eligible === false ? "Amazon says you can't send this to FBA right now" : '', dup ? `Entered ${r.same_day_n} times on this day` : ''].filter(Boolean).join(' · ');
       const label = tp && !bad ? 'T' : bad ? '!' : dup ? r.same_day_n + '×' : 'B';
       return `<button class="hz-badge ${bad || tp ? '' : 'warn'}" data-hz="${esc(r.asin)}" data-hz-day="${esc(r.lead_date || '')}" data-stop title="${esc(tip)}. Click for details." aria-label="Warnings">${label}</button>`;
     }
@@ -231,18 +231,22 @@
     const bad = f?.fba_eligible === false, dup = same.length > 1;   // bad = FBA can't receive it
     const tb = !tp && tbm.length > 0;
     const cat = h?.catalog || null, catErr = (cat?.issues || []).filter((x) => x.severity === 'ERROR');
-    const nWarn = [bad, dup, !!tp, tb, nolist, catErr.length > 0].filter(Boolean).length;
+    const GEN = /^(generic|unbranded|nobrand|genericbrand|genericunbranded|brandgeneric)$/;
+    const isGen = (b) => GEN.test(String(b || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const generic = isGen(f?.amz_brand) || isGen(f?.brand);
+    const nWarn = [bad, dup, !!tp, tb, nolist, catErr.length > 0, generic].filter(Boolean).length;
     const shortD = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     const reasons = f?.reason_text || [];
     const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name'];
     const kinfo = (f?.hazmat_info || []).filter((x) => KEEP.includes(x.aspect)).map((x) => `${esc(String(x.aspect).replace(/_/g, ' '))}: ${esc(x.value)}`).join(' · ');
     wrap.innerHTML = `<div class="confirm-box hz-box" role="alertdialog" aria-modal="true" aria-labelledby="hzT">
-      <h3 id="hzT"><span class="hz-icon ${bad || tp || nolist ? '' : 'warn'}">!</span> ${nWarn > 1 ? nWarn + ' warnings' : nolist ? "You can't list this" : tp ? 'Enrolled in Transparency' : tb ? 'Brand uses Transparency' : bad ? (f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now") : 'Entered more than once today'}</h3>
+      <h3 id="hzT"><span class="hz-icon ${bad || tp || nolist || generic ? '' : 'warn'}">!</span> ${nWarn > 1 ? nWarn + ' warnings' : generic ? 'Generic brand: never send in' : nolist ? "You can't list this" : tp ? 'Enrolled in Transparency' : tb ? 'Brand uses Transparency' : bad ? (f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now") : 'Entered more than once today'}</h3>
       ${intro ? `<p>${intro}</p>` : ''}
       <p><a class="mono" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener">${esc(asin)}</a>${f?.title ? ` · ${esc(f.title)}` : ''}</p>
       ${nolist ? `<div class="hz-sec"><p><b>Amazon won't let your account list this ASIN</b> (new condition). Amazon's reason${lreasons.length === 1 ? '' : 's'}:</p>
         <ul class="hz-reasons">${lreasons.map((x) => `<li>${esc(x.message || 'No details given.')} <span class="muted mono">${esc(x.code || '')}</span>${x.link ? ` · <a href="${esc(x.link)}" target="_blank" rel="noopener">Request approval</a>` : ''}</li>`).join('') || '<li>No reason given.</li>'}</ul>
         <p class="muted" style="font-size:13px">${lreasons.some((x) => x.code === 'APPROVAL_REQUIRED') ? "Approval required: you can apply to sell it in Seller Central, but don't buy until you're approved." : "Not eligible: there's no way to apply. Don't buy it to sell on Amazon."}</p></div>` : ''}
+      ${generic ? `<div class="hz-sec"><p><b>GENERIC: Amazon lists this ASIN's brand as "${esc(isGen(f?.amz_brand) ? f.amz_brand : f.brand)}".</b> You can never send generic ASINs in. Don't buy it for this listing.</p></div>` : ''}
       ${catErr.length ? `<div class="hz-sec"><p><b>Amazon flagged ${cat.added_by_hub ? 'the listing the Hub added to your catalog' : 'your listing'}</b> (SKU <span class="mono">${esc(cat.sku || '')}</span>):</p>
         <ul class="hz-reasons">${catErr.map((x) => `<li>${esc(x.message || '')} <span class="muted mono">${esc(x.code || '')}</span></li>`).join('')}</ul></div>` : ''}
       ${tp ? `<div class="hz-sec"><p><b>Amazon told you this ASIN is enrolled in Transparency.</b> Every unit needs the brand's Transparency (or serial number) code from the manufacturer. Units without one are marked unfulfillable at the warehouse, so <b>don't buy it to send to FBA</b>.</p>
@@ -253,7 +257,7 @@
         <table class="hz-dups"><thead><tr><th>Added</th><th>Store</th><th class="num">Cost</th><th class="num">Buy qty</th><th class="num">Ordered</th><th>By</th></tr></thead><tbody>
         ${same.map((x) => `<tr><td>${esc(new Date(x.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }))}</td><td>${esc((x.stores || []).join(', ') || '—')}</td><td class="num">${x.cost == null ? '—' : money(x.cost)}</td><td class="num">${num(x.buy_qty)}</td><td class="num">${num(x.qty_ordered)}</td><td>${esc(x.sourced_by || '')}</td></tr>`).join('')}
         </tbody></table></div>` : ''}
-      ${!bad ? (f?.fba_eligible === true && !tp && !nolist ? `<p class="hz-ok">✓ ${f?.list_ok === true ? 'You can list this, and' : ''} Amazon says ${f?.list_ok === true ? 'it can go' : 'you can send this'} to FBA.${f?.list_ok === true ? '' : " (Whether your account can list it isn't checked yet.)"}</p>` : '') : `<div class="hz-sec">
+      ${!bad ? (f?.fba_eligible === true && !tp && !nolist && !generic ? `<p class="hz-ok">✓ ${f?.list_ok === true ? 'You can list this, and' : ''} Amazon says ${f?.list_ok === true ? 'it can go' : 'you can send this'} to FBA.${f?.list_ok === true ? '' : " (Whether your account can list it isn't checked yet.)"}</p>` : '') : `<div class="hz-sec">
       <p>Amazon's eligibility check for your seller account says this ASIN <b>isn't eligible for FBA</b>. Amazon's reason${reasons.length === 1 ? '' : 's'}:</p>
       <ul class="hz-reasons">${reasons.length ? reasons.map((x) => `<li>${x.text ? esc(x.text) : 'Amazon gave a code without details.'} <span class="muted mono">${esc(x.code)}</span></li>`).join('') : '<li>No reason given.</li>'}</ul>
       ${f?.hazmat_reason ? `<p>To fix it, upload a <b>safety data sheet (SDS) or exemption sheet</b> in Seller Central (Dangerous Goods document upload). Reviews take days to weeks and can be refused, and the stock can't be sent in until it's cleared.</p>` : ''}
@@ -266,7 +270,7 @@
   function hazAfterAdd(lead) {
     if (!lead || !lead.asin) return;
     const bad = lead.fba_eligible === false, dup = (lead.same_day_n || 0) > 1;
-    if (bad || dup || lead.transparency || lead.list_ok === false || (lead.tp_brand || []).length) hazPopup(lead.asin, `Check the lead you just added (<b>${esc(lead.asin)}</b>) before buying.`, lead.lead_date);
+    if (bad || dup || lead.generic || lead.transparency || lead.list_ok === false || (lead.tp_brand || []).length) hazPopup(lead.asin, `Check the lead you just added (<b>${esc(lead.asin)}</b>) before buying.`, lead.lead_date);
   }
 
   // ------------------------------------------------------------ select rows -> create an order
@@ -766,13 +770,14 @@
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
       <div class="drawer-body">
+        ${l.generic ? `<div class="hz-banner"><b>! GENERIC brand on Amazon${l.amz_brand ? ` ("${esc(l.amz_brand)}")` : ''}.</b> You can never send generic ASINs in. Don't buy this for that listing.</div>` : ''}
         ${catalogBanner(l)}
         ${(l.cancellations || []).length ? `<div class="hz-banner warn"><b>Canceled order${l.cancellations.length === 1 ? '' : 's'}.</b> ${l.cancellations.map((c) => `${esc(c.store || 'Order')} #${esc(c.order_ref || '?')} (${esc(LG.fmtDate(c.order_date))}) was canceled${c.qty ? `: ${num(c.qty)} unit${c.qty === 1 ? '' : 's'} taken off Ordered and added back to Left to buy` : ''}.`).join(' ')} <span class="muted">${esc(l.cancellations[0].reason || '')}</span></div>` : ''}
         ${l.transparency ? `<div class="hz-banner"><b>! Enrolled in Transparency.</b> Units need Transparency codes from the manufacturer; without them Amazon marks them unfulfillable${l.transparency.units_rejected ? ` (${num(l.transparency.units_rejected)} of your units already rejected)` : ''}. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Details</button></div>` : ''}
         ${!l.transparency && (l.tp_brand || []).length ? `<div class="hz-banner warn"><b>This brand uses Transparency.</b> Amazon told you ${l.tp_brand.length} other ASIN${l.tp_brand.length === 1 ? ' of this brand is' : 's of this brand are'} enrolled (${esc([...new Set(l.tp_brand.map((m) => m.brand))].join(', '))}). Check this one has Transparency codes before buying. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Which ones</button></div>` : ''}
         ${l.list_ok === false ? `<div class="hz-banner"><b>! Amazon won't let your account list this.</b> ${esc((l.list_reasons || []).map((x) => x.message).filter(Boolean).join(' ') || '')} <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Why?</button></div>` : ''}
         ${l.fba_eligible === false ? `<div class="hz-banner"><b>! You can't send this to FBA right now.</b> Amazon's eligibility check says it isn't eligible${(l.fba_reasons || []).length ? ` (${(l.fba_reasons || []).map(esc).join(', ')})` : ''}. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Why?</button></div>`
-          : l.fba_eligible === true && !l.transparency && l.list_ok !== false ? `<div class="hz-banner ok"><b>✓ ${l.list_ok === true ? 'You can list this and FBA can receive it.' : "FBA can receive it."}</b>${l.list_ok === true ? '' : " Whether your account can list it isn't checked yet."}</div>` : ''}
+          : l.fba_eligible === true && !l.transparency && l.list_ok !== false && !l.generic ? `<div class="hz-banner ok"><b>✓ ${l.list_ok === true ? 'You can list this and FBA can receive it.' : "FBA can receive it."}</b>${l.list_ok === true ? '' : " Whether your account can list it isn't checked yet."}</div>` : ''}
         ${l.set_id ? `<div class="set-box"><div class="section-title">Set <span style="text-transform:none;letter-spacing:0;font-weight:400">${(l.set_members || []).length} leads · stays together when you sort or filter</span></div>
           <div class="set-row">${editable() ? `<input id="setNameEdit" value="${esc(l.set_name || '')}" placeholder="Set name" maxlength="120"><button class="btn small" data-setact="rename" data-set="${esc(l.set_id)}">Rename</button>` : `<b>${esc(l.set_name || 'Set')}</b>`}</div>
           <table class="mini"><tbody>${(l.set_members || []).map((x) => `<tr data-open="${esc(x.id)}" style="cursor:pointer" class="${x.id === l.id ? 'cur' : ''}"><td class="mono">${esc(x.asin || '—')}</td><td>${esc((x.product_name || '').slice(0, 55))}</td><td class="num">${money(x.cost)}</td><td class="num">${num(x.buy_qty)}</td></tr>`).join('')}</tbody></table>

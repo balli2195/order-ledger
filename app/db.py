@@ -519,6 +519,20 @@ MIGRATIONS: list[str] = [
     """,    # 32: listings the Hub adds get a price: Buy Box + 10% (Nick, Nov 3 2026)
     """
     ALTER TABLE catalog_adds ADD COLUMN price numeric(10,2), ADD COLUMN price_tried_at timestamptz;
+    """,    # 33: "Generic" brand warning (Nick, Nov 3 2026: he can never send in generic ASINs). Amazon's own brand for the
+            #     ASIN (SP-API catalog) is cached next to Keepa's; generic brands are left out of Transparency brand matching.
+    r"""
+    ALTER TABLE asin_flags ADD COLUMN amz_brand text, ADD COLUMN amz_brand_checked_at timestamptz;
+    CREATE FUNCTION is_generic_brand(t text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+        SELECT COALESCE(regexp_replace(lower(COALESCE(t, '')), '[^a-z0-9]', '', 'g')
+               IN ('generic', 'unbranded', 'nobrand', 'genericbrand', 'genericunbranded', 'brandgeneric'), false)
+    $$;
+    CREATE OR REPLACE VIEW transparency_brands AS
+        SELECT DISTINCT t.asin, k.key, k.name FROM (SELECT DISTINCT asin FROM transparency_notices) t
+        CROSS JOIN LATERAL (
+            SELECT brand_key(b) AS key, b AS name FROM leads l, unnest(l.brands) b WHERE upper(btrim(l.asin)) = t.asin
+            UNION SELECT brand_key(f.brand), f.brand FROM asin_flags f WHERE f.asin = t.asin
+        ) k WHERE length(k.key) >= 3 AND NOT is_generic_brand(k.name);
     """,
 ]
 

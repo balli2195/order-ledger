@@ -203,6 +203,7 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
             f"WITH tb AS MATERIALIZED (SELECT asin, key FROM transparency_brands) "
             f"SELECT {LIST_COLS}, {bsql}, ls.name AS set_name, count(*) OVER ({GROUP}) AS set_shown, "
             f"max(l.lead_date) OVER ({GROUP}) AS group_date, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, hf.list_ok, hf.list_checked_at, "
+            f"(is_generic_brand(hf.amz_brand) OR is_generic_brand(hf.brand)) AS generic, "
             f"(SELECT EXISTS (SELECT 1 FROM jsonb_array_elements(ca.issues) x WHERE x->>'severity' = 'ERROR') FROM catalog_adds ca WHERE ca.asin = upper(btrim(l.asin))) AS cat_bad, "
             f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
             f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
@@ -264,7 +265,8 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
             )
             lead["same_asin"] = [jsonable(dict(x)) for x in await cur.fetchall()]
             cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at, fba_eligible, fba_reasons, fba_checked_at, "
-                                     "list_ok, list_reasons, list_checked_at "
+                                     "list_ok, list_reasons, list_checked_at, brand AS keepa_brand, amz_brand, "
+                                     "(is_generic_brand(amz_brand) OR is_generic_brand(brand)) AS generic "
                                      "FROM asin_flags WHERE asin=upper(btrim(%s))", (lead["asin"],))
             hz = await cur.fetchone()
             lead["hazmat"] = jsonable(dict(hz)) if hz else None
@@ -273,6 +275,8 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
             lead["fba_reasons"] = list(hz["fba_reasons"] or []) if hz else []
             lead["list_ok"] = hz["list_ok"] if hz else None
             lead["list_reasons"] = (hz["list_reasons"] or []) if hz else []
+            lead["generic"] = bool(hz and hz["generic"])
+            lead["amz_brand"] = (hz["amz_brand"] or hz["keepa_brand"]) if hz else None
             cur = await conn.execute("SELECT count(*) n FROM leads WHERE upper(asin)=upper(%s) AND lead_date=%s", (lead["asin"], r["lead_date"]))
             lead["same_day_n"] = (await cur.fetchone())["n"]
         cur = await conn.execute("SELECT qty, store, order_ref, order_date, reason, at FROM lead_cancellations WHERE lead_id=%s ORDER BY order_date, at",

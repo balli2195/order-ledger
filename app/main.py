@@ -427,7 +427,7 @@ async def api_hazmat(asin: str, request: Request):
     await auth.require(request, tab=("leads", "orders"))
     f = await hazmat.get(asin)
     if f:
-        for k in ("fba_checked_at", "list_checked_at"):
+        for k in ("fba_checked_at", "list_checked_at", "amz_brand_checked_at"):
             if f.get(k) and hasattr(f[k], "isoformat"):
                 f[k] = f[k].isoformat()
         f["reason_text"] = [{"code": c, "text": sellable.REASONS.get(c, "")} for c in (f.get("fba_reasons") or [])]
