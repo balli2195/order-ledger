@@ -542,12 +542,34 @@ async def _bump_lead(conn, actor: Actor, lead_id, delta: int) -> None:
         {"t": "lead", "op": "upsert", "ids": [str(lead_id)], "by": actor.label, "src": actor.source}),))
 
 
+async def _match_lead(conn, order_id, asin) -> str | None:
+    """The lead an item without a lead belongs to (Nov 4 2026: items added on the Orders page or by chat didn't count
+    toward the lead's Ordered): same ASIN, a Buy qty, lead date in the 21 days up to the order date; prefers the
+    order's store, then leads with units still left to buy, then the newest."""
+    if not asin:
+        return None
+    cur = await conn.execute(
+        """SELECT l.id FROM leads l, orders o
+            WHERE o.id = %s AND upper(btrim(l.asin)) = upper(btrim(%s)) AND COALESCE(l.buy_qty, 0) > 0
+              AND l.lead_date BETWEEN o.order_date - 21 AND o.order_date
+            ORDER BY (EXISTS (SELECT 1 FROM unnest(l.stores) s
+                              WHERE regexp_replace(lower(s), '[^a-z0-9]', '', 'g') = regexp_replace(lower(o.store), '[^a-z0-9]', '', 'g'))) DESC,
+                     (COALESCE(l.qty_ordered, 0) < l.buy_qty) DESC, l.lead_date DESC, l.created_at DESC LIMIT 1""",
+        (order_id, asin))
+    r = await cur.fetchone()
+    return str(r["id"]) if r else None
+
+
 async def _insert_item(conn, actor: Actor, order_id, it: dict, lead_id=None) -> dict:
     it = dict(it)
     if lead_id and UUID_RE.match(str(lead_id)):
         cur = await conn.execute("SELECT 1 FROM leads WHERE id=%s", (str(lead_id),))
         if await cur.fetchone():
             it["lead_id"] = str(lead_id)
+    if not it.get("lead_id"):
+        lid = await _match_lead(conn, order_id, it.get("asin"))
+        if lid:
+            it["lead_id"] = lid
     cols = ["order_id"] + list(it)
     cur = await conn.execute(
         f"INSERT INTO order_items ({', '.join(cols)}, created_at) VALUES ({', '.join(['%s'] * len(cols))}, clock_timestamp()) RETURNING *",  # lines keep the order they were added in
@@ -605,6 +627,11 @@ async def update_items(actor: Actor, changes: list[dict]) -> list[str]:
                              {k: before[k] for k in fields}, {k: after[k] for k in fields})
                 if "qty_ordered" in fields:
                     await _bump_lead(conn, actor, before.get("lead_id"), (after["qty_ordered"] or 0) - (before["qty_ordered"] or 0))
+                if not after.get("lead_id") and "asin" in fields:   # an ASIN filled in later: link the item to its lead
+                    lid = await _match_lead(conn, before["order_id"], after.get("asin"))
+                    if lid:
+                        await conn.execute("UPDATE order_items SET lead_id=%s WHERE id=%s", (lid, item_id))
+                        await _bump_lead(conn, actor, lid, after["qty_ordered"] or 0)
                 touched.add(before["order_id"])
             for oid in touched:
                 await _touch(conn, actor, oid)
