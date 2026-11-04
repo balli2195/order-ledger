@@ -80,9 +80,15 @@ async def bonus_params() -> tuple[float, str]:
     return float(await get_setting("bonus_rate", 0.012)), str(await get_setting("bonus_sourcer", "Ariane"))
 
 
+# A lead earns the sourcer's commission only if he sourced it AND added it himself (Nick, Nov 4 2026): leads from Airtable
+# carry who added them in sourced_by; leads added on the Hub also need created_by to be his login.
+COMMISSION_COND = ("(l.sourced_by = %s AND (l.created_by IS NULL OR l.created_by IN "
+                   "(SELECT u.id FROM users u WHERE lower(u.name) = lower(%s))))")
+
+
 def _bonus_sql(rate: float, who: str) -> tuple[str, list]:
     return ("ROUND(COALESCE(l.expected_spend,0) * %s::numeric, 2) AS potential_bonus, "
-            "CASE WHEN l.sourced_by = %s THEN ROUND(COALESCE(l.actual_spend,0) * %s::numeric, 2) ELSE 0 END AS bonus"), [rate, who, rate]
+            f"CASE WHEN {COMMISSION_COND} THEN ROUND(COALESCE(l.actual_spend,0) * %s::numeric, 2) ELSE 0 END AS bonus"), [rate, who, who, rate]
 
 
 # ---------------------------------------------------------------- cleaning
@@ -218,10 +224,10 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
         cur = await conn.execute(
             f"SELECT count(*) n, COALESCE(sum(l.expected_spend),0) expected, COALESCE(sum(l.actual_spend),0) actual, "
             f"COALESCE(sum(l.qty_ordered),0) units, "
-            f"ROUND(COALESCE(sum(CASE WHEN l.sourced_by=%s THEN l.actual_spend ELSE 0 END),0) * %s::numeric, 2) bonus, "
+            f"ROUND(COALESCE(sum(CASE WHEN {COMMISSION_COND} THEN l.actual_spend ELSE 0 END),0) * %s::numeric, 2) bonus, "
             f"count(*) FILTER (WHERE COALESCE(l.qty_ordered,0)>0) bought "
             f"FROM leads l {where}",
-            [who, rate] + a,
+            [who, who, rate] + a,
         )
         totals = jsonable(dict(await cur.fetchone()))
         days = sorted({r["lead_date"] for r in rows if r.get("lead_date")})

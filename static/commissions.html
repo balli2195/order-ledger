@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Commissions · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .cm-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 26px 0 0; }
+  .cm-head h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0; }
+  .cm-rule { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 760px; }
+  .stats .stat.main { border-color: var(--accent); }
+  .stats .stat .sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .cm-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius, 12px); padding: 14px 18px 8px; margin-top: 16px; }
+  .cm-card h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .cm-chart svg { display: block; width: 100%; height: 170px; overflow: visible; }
+  .cm-chart .axis { fill: var(--muted); font-size: 11px; }
+  .cm-chart .val { fill: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .cm-chart .grid { stroke: var(--line-2); }
+  .cm-chart rect.bar { fill: var(--accent); }
+  .cm-chart rect.bar.cur { fill: color-mix(in srgb, var(--accent) 55%, var(--panel)); }
+  table.mo tr.mo-row { cursor: pointer; }
+  table.mo .chev { display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+  table.mo tr.mo-row.open .chev { transform: rotate(90deg); }
+  table.mo tr.mo-row.open td { background: var(--panel-2); border-bottom-color: transparent; }
+  table.mo tr.mo-row .cur { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-radius: 99px; padding: 1px 7px; margin-left: 6px; font-weight: 600; }
+  table.mo tr.mo-detail > td { background: var(--panel-2); padding: 4px 14px 18px; cursor: default; }
+  table.mo tr.mo-detail:hover { background: none; }
+  table.mo td.dim, table.mo .dim { color: var(--muted); }
+  table.ld tr.no td { color: var(--muted); }
+  table.ld .why { font-size: 11px; color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); border-radius: 99px; padding: 1px 7px; white-space: nowrap; }
+  table.ld td.prod { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/commissions" data-tab="commissions" class="on">Commissions</a></nav>
+
+  <div class="cm-head"><h2>Commissions</h2><span class="muted" id="whoLine"></span></div>
+  <p class="cm-rule" id="ruleLine"></p>
+  <div class="stats" id="stats"></div>
+  <div class="cm-card"><h3>By month</h3><div class="cm-chart" id="chart"></div></div>
+
+  <div class="cm-head" style="margin-top:22px"><h2 style="font-size:22px">Months</h2><span class="muted" style="font-size:13px">click a month to see its leads</span></div>
+  <div class="table-wrap"><table class="mo" id="moTable"></table></div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, esc, money, api, fail } = LG;
+  const S = { data: null, open: new Set(), cache: {} };
+  const mLabel = (ym, long) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: long ? 'long' : 'short', year: 'numeric', timeZone: 'UTC' }); };
+  const prevMonth = (ym) => { const [y, m] = ym.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; };
+  const pctTxt = (r) => (r * 100).toFixed(r * 100 % 1 ? 1 : 0) + '%';
+  const shortDate = (d) => { const [y, m, dd] = d.split('-').map(Number); return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }); };
+
+  async function load() {
+    S.data = await api('GET', '/api/commissions');
+    if (!S.open.size) S.open.add(S.data.this_month);
+    await Promise.all([...S.open].map(fetchMonth));
+    render();
+  }
+  async function fetchMonth(ym) { if (!S.cache[ym]) S.cache[ym] = await api('GET', '/api/commissions/' + ym); }
+
+  function render() {
+    const D = S.data, by = Object.fromEntries(D.months.map((m) => [m.month, m]));
+    $('#whoLine').textContent = D.owner ? `${D.who} · ${pctTxt(D.rate)} of spend` : `${pctTxt(D.rate)} of spend`;
+    $('#ruleLine').textContent = `${D.owner ? D.who + ' earns' : 'You earn'} ${pctTxt(D.rate)} of what's actually bought (cost × units ordered) on leads ${D.owner ? 'he' : 'you'} sourced and added ${D.owner ? 'himself' : 'yourself'}. Leads someone else added don't count, even if ${D.owner ? 'he' : 'you'} sourced that product before. Months go by the lead's date; canceled orders come off automatically.`;
+    const cur = by[D.this_month], last = by[prevMonth(D.this_month)];
+    const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    $('#stats').innerHTML =
+      stat(mLabel(D.this_month, true), money(cur?.commission || 0), `${money(cur?.spend || 0, 0)} bought · ${cur?.bought || 0} leads`, true) +
+      stat(mLabel(prevMonth(D.this_month), true), money(last?.commission || 0), `${money(last?.spend || 0, 0)} bought · ${last?.bought || 0} leads`) +
+      stat('All time', money(D.total), `${money(D.total_spend, 0)} bought`);
+    renderChart();
+    renderMonths();
+  }
+
+  function renderChart() {
+    const D = S.data, by = Object.fromEntries(D.months.map((m) => [m.month, m]));
+    const months = []; let ym = D.this_month;
+    for (let i = 0; i < 12; i++) { months.unshift(ym); ym = prevMonth(ym); }
+    const vals = months.map((m) => by[m]?.commission || 0), max = Math.max(...vals, 1);
+    const W = Math.max($('#chart').clientWidth || 760, 320), H = 170, pl = 8, pb = 22, pt = 16, bw = (W - pl) / months.length;
+    const y = (v) => H - pb - (v / max) * (H - pb - pt);
+    const bars = months.map((m, i) => {
+      const v = vals[i], x = pl + i * bw + bw * 0.18, w = bw * 0.64, top = y(v);
+      return `<g><title>${mLabel(m, true)}: ${money(v)}</title>
+        <rect class="bar ${m === D.this_month ? 'cur' : ''}" x="${x}" y="${top}" width="${w}" height="${Math.max(H - pb - top, v ? 1 : 0)}" rx="3"></rect>
+        ${v && bw >= 52 ? `<text class="val" x="${x + w / 2}" y="${top - 4}" text-anchor="middle">${money(v, 0)}</text>` : ''}
+        <text class="axis" x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${mLabel(m).replace(' 20', " '")}</text></g>`;
+    }).join('');
+    $('#chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Commission by month">
+      <line class="grid" x1="${pl}" x2="${W}" y1="${H - pb}" y2="${H - pb}"></line>${bars}</svg>`;
+  }
+
+  function renderMonths() {
+    const D = S.data;
+    const head = `<thead><tr><th>Month</th><th class="num">Leads bought</th><th class="num">Units</th><th class="num">Spend</th><th class="num">Commission</th><th class="num">Not counted</th></tr></thead>`;
+    if (!D.months.length) { $('#moTable').innerHTML = head + '<tbody><tr><td colspan="6" class="empty">No leads yet.</td></tr></tbody>'; return; }
+    const body = D.months.map((m) => {
+      const open = S.open.has(m.month);
+      const row = `<tr class="mo-row ${open ? 'open' : ''}" data-m="${m.month}">
+        <td><span class="chev">▸</span> <b>${mLabel(m.month, true)}</b>${m.month === D.this_month ? '<span class="cur">this month</span>' : ''}</td>
+        <td class="num">${m.bought}</td><td class="num">${Number(m.units).toLocaleString()}</td><td class="num">${money(m.spend)}</td>
+        <td class="num"><b>${money(m.commission)}</b></td>
+        <td class="num dim" title="Leads with ${esc(D.who)} as the sourcer that someone else added">${m.other_n ? `${m.other_n} · ${money(m.other_spend, 0)}` : '·'}</td></tr>`;
+      if (!open) return row;
+      const d = S.cache[m.month];
+      return row + `<tr class="mo-detail"><td colspan="6">${d ? detail(d) : '<div class="muted" style="padding:10px">Loading…</div>'}</td></tr>`;
+    }).join('');
+    $('#moTable').innerHTML = head + `<tbody>${body}</tbody>`;
+  }
+
+  function detail(d) {
+    if (!d.leads.length) return '<div class="muted" style="padding:10px">Nothing bought on these leads yet.</div>';
+    return `<div class="table-wrap" style="margin-top:8px"><table class="ld"><thead><tr><th>Date</th><th>Product</th><th>Store</th>
+      <th class="num">Cost</th><th class="num">Bought</th><th class="num">Spend</th><th class="num">Commission</th></tr></thead><tbody>
+      ${d.leads.map((l) => `<tr class="${l.counts ? '' : 'no'}"><td>${shortDate(l.lead_date)}</td>
+        <td class="prod" title="${esc(l.product_name || '')}"><span class="mono">${esc(l.asin || '')}</span> ${esc(l.product_name || '')}</td>
+        <td>${esc((l.stores || []).join(', '))}</td><td class="num">${money(l.cost)}</td><td class="num">${l.qty_ordered}</td>
+        <td class="num">${money(l.actual_spend)}</td>
+        <td class="num">${l.counts ? money(l.commission) : `<span class="why">added by ${esc(l.added_by || 'someone else')}</span>`}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  $('#moTable').addEventListener('click', async (e) => {
+    const r = e.target.closest('tr.mo-row'); if (!r) return;
+    const m = r.dataset.m;
+    if (S.open.has(m)) S.open.delete(m); else { S.open.add(m); renderMonths(); try { await fetchMonth(m); } catch (err) { fail(err); } }
+    renderMonths();
+  });
+
+  LG.header().then(load).catch(fail);
+  let rz = null; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => S.data && renderChart(), 150); });
+  let t = null;
+  LG.live?.((msg) => { if (msg.t === 'lead') { clearTimeout(t); t = setTimeout(() => { S.cache = {}; load().catch(() => {}); }, 4000); } });
+})();
+</script>
+</body>
+</html>

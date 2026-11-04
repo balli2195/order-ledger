@@ -555,6 +555,13 @@ MIGRATIONS: list[str] = [
     END $$;
     CREATE TRIGGER leads_catalog_queue AFTER INSERT OR UPDATE OF buy_qty, asin ON leads
         FOR EACH ROW EXECUTE FUNCTION queue_catalog_add();
+    """,    # 35: Commissions page (Nick, Nov 4 2026): Ariane is paid 1% of actual spend on leads he sourced and added himself.
+            #     Leads someone else added don't count, even when he sourced that product earlier.
+    r"""
+    UPDATE settings SET value = '0.01' WHERE key = 'bonus_rate';
+    UPDATE users SET tabs = array_append(tabs, 'commissions')
+     WHERE role <> 'owner' AND NOT ('commissions' = ANY(tabs))
+       AND lower(name) = lower((SELECT value #>> '{}' FROM settings WHERE key = 'bonus_sourcer'));
     """,
 ]
 

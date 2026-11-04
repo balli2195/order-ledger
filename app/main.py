@@ -6,6 +6,7 @@ import contextlib
 import html
 import json
 import logging
+import re
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from . import catalog
 from . import timeclock as tc
 from . import tasks as T
 from . import orders as o
+from . import commissions as comm
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -143,6 +145,25 @@ async def tasks_page(request: Request):
 @app.get("/timeclock", include_in_schema=False)
 async def timeclock_page(request: Request):
     return await _page(request, "timeclock", "timeclock.html")
+
+
+@app.get("/commissions", include_in_schema=False)
+async def commissions_page(request: Request):
+    return await _page(request, "commissions", "commissions.html")
+
+
+@app.get("/api/commissions")
+async def api_commissions(request: Request):
+    user = await auth.require(request, tab="commissions")
+    return await comm.summary(user)
+
+
+@app.get("/api/commissions/{ym}")
+async def api_commissions_month(ym: str, request: Request):
+    user = await auth.require(request, tab="commissions")
+    if not re.fullmatch(r"\d{4}-\d{2}", ym):
+        raise HTTPException(400, "Month should look like 2026-11")
+    return await comm.month(user, ym)
 
 
 @app.get("/api/brand-sellers/sourced")
