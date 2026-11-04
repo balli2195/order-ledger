@@ -158,6 +158,16 @@ async def api_commissions(request: Request):
     return await comm.summary(user)
 
 
+@app.post("/api/commissions/paid")
+async def api_commissions_paid(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "owner", tab="commissions")
+    try:
+        d = date.fromisoformat(str(body.get("week")))
+    except ValueError:
+        raise HTTPException(400, "Week should be its Monday, like 2026-11-02")
+    return await comm.set_paid(user, (d - timedelta(days=d.weekday())).isoformat(), bool(body.get("paid")))
+
+
 @app.get("/api/commissions/{wk}")
 async def api_commissions_week(wk: str, request: Request):
     user = await auth.require(request, tab="commissions")

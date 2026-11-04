@@ -52,8 +52,15 @@ async def summary(user: User) -> dict:
         cur = await conn.execute(
             "SELECT to_char(date_trunc('week', (now() AT TIME ZONE 'America/Chicago')::date), 'YYYY-MM-DD') AS w")
         this_week = (await cur.fetchone())["w"]
+        cur = await conn.execute(
+            "SELECT to_char(p.week, 'YYYY-MM-DD') AS week, p.amount, p.paid_at, u.name AS paid_by "
+            "FROM commission_payments p LEFT JOIN users u ON u.id = p.paid_by WHERE lower(p.sourcer) = lower(%s)", (who,))
+        paid = {r["week"]: jsonable(dict(r)) for r in await cur.fetchall()}
+    for w in weeks:
+        w["paid"] = paid.get(w["week"])
     total = round(sum(w["commission"] for w in weeks), 2)
-    return {"who": who, "rate": rate, "owner": user.role == "owner", "this_week": this_week, "start": start,
+    unpaid = round(sum(w["commission"] for w in weeks if not w["paid"] and w["week"] < this_week), 2)
+    return {"who": who, "rate": rate, "owner": user.role == "owner", "this_week": this_week, "start": start, "unpaid": unpaid,
             "weeks": weeks, "total": total, "total_spend": round(sum(float(w["spend"]) for w in weeks), 2)}
 
 
@@ -76,3 +83,21 @@ async def week(user: User, start: str) -> dict:
             d["commission"] = round(float(r["actual_spend"] or 0) * rate, 2) if r["counts"] else 0
             rows.append(d)
     return {"week": start, "who": who, "rate": rate, "leads": rows}
+
+
+async def set_paid(user: User, week: str, paid: bool) -> dict:
+    """Owner ticks a week as paid (stores what the commission was at that moment) or unticks it."""
+    rate, who = await _who(user)
+    async with db.pool.connection() as conn:
+        if paid:
+            cur = await conn.execute(
+                f"SELECT COALESCE(sum(l.actual_spend), 0) AS spend FROM leads l WHERE {COMMISSION_COND} "
+                "AND l.lead_date >= %s::date AND l.lead_date < (%s::date + 7)", (who, who, week, week))
+            amount = round(float((await cur.fetchone())["spend"]) * rate, 2)
+            await conn.execute(
+                "INSERT INTO commission_payments (sourcer, week, amount, paid_by) VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (sourcer, week) DO UPDATE SET amount = EXCLUDED.amount, paid_at = now(), paid_by = EXCLUDED.paid_by",
+                (who, week, amount, user.id))
+        else:
+            await conn.execute("DELETE FROM commission_payments WHERE lower(sourcer) = lower(%s) AND week = %s", (who, week))
+    return await summary(user)

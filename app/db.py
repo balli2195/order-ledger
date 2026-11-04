@@ -565,6 +565,16 @@ MIGRATIONS: list[str] = [
     """,    # 36: Commissions report starts Oct 19, 2026 (Nick, Nov 4 2026)
     """
     INSERT INTO settings (key, value) VALUES ('commission_start', '"2026-10-19"') ON CONFLICT (key) DO NOTHING;
+    """,    # 37: Commissions: the owner ticks off each week once it's been paid (Nick, Nov 4 2026). amount = what it was then.
+    """
+    CREATE TABLE commission_payments (
+        sourcer  text NOT NULL,
+        week     date NOT NULL,
+        amount   numeric(12,2),
+        paid_at  timestamptz NOT NULL DEFAULT now(),
+        paid_by  integer REFERENCES users(id) ON DELETE SET NULL,
+        PRIMARY KEY (sourcer, week)
+    );
     """,
 ]
 

@@ -29,6 +29,13 @@
   table.mo tr.mo-detail:hover { background: none; }
   table.mo td.dim, table.mo .dim { color: var(--muted); }
   table.ld tr.no td { color: var(--muted); }
+  table.mo th.pd, table.mo td.pd { width: 44px; text-align: center; padding-right: 0; }
+  .pd-box { display: inline-flex; padding: 6px; margin: -6px; cursor: pointer; }
+  .pd-box input { width: 17px; height: 17px; accent-color: var(--ok); cursor: pointer; margin: 0; }
+  .pd-box input:disabled { cursor: default; }
+  table.mo tr.mo-row.paid td:not(.pd) { color: var(--muted); }
+  table.mo tr.mo-row.paid td b { color: var(--muted); font-weight: 500; }
+  .pd-diff { font-size: 11px; color: var(--bad); }
   table.ld .why { font-size: 11px; color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); border-radius: 99px; padding: 1px 7px; white-space: nowrap; }
   table.ld td.prod { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
@@ -90,6 +97,7 @@
     $('#stats').innerHTML =
       stat('This week', money(cur?.commission || 0), `${wkLabel(D.this_week)} · ${money(cur?.spend || 0, 0)} bought`, true) +
       stat('Last week', money(last?.commission || 0), `${wkLabel(addDays(D.this_week, -7))} · ${money(last?.spend || 0, 0)} bought`) +
+      stat('Unpaid', money(D.unpaid), 'finished weeks not ticked off') +
       stat('Since ' + short(D.start), money(D.total), `${money(D.total_spend, 0)} bought`);
     renderChart();
     renderWeeks();
@@ -114,18 +122,22 @@
 
   function renderWeeks() {
     const D = S.data, yr = D.this_week.slice(0, 4);
-    const head = `<thead><tr><th>Week</th><th class="num">Leads bought</th><th class="num">Units</th><th class="num">Spend</th><th class="num">Commission</th><th class="num">Not counted</th></tr></thead>`;
-    if (!D.weeks.length) { $('#moTable').innerHTML = head + '<tbody><tr><td colspan="6" class="empty">No leads yet.</td></tr></tbody>'; return; }
+    const head = `<thead><tr><th class="pd">Paid</th><th>Week</th><th class="num">Leads bought</th><th class="num">Units</th><th class="num">Spend</th><th class="num">Commission</th><th class="num">Not counted</th></tr></thead>`;
+    if (!D.weeks.length) { $('#moTable').innerHTML = head + '<tbody><tr><td colspan="7" class="empty">No leads yet.</td></tr></tbody>'; return; }
     const body = D.weeks.map((w) => {
       const open = S.open.has(w.week);
-      const row = `<tr class="mo-row ${open ? 'open' : ''}" data-w="${w.week}">
+      const p = w.paid, cur = w.week === D.this_week;
+      const tip = p ? `Paid ${new Date(p.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}${p.paid_by ? ' by ' + p.paid_by : ''} · ${money(p.amount)}` : (D.owner ? 'Tick once this week is paid' : 'Not paid yet');
+      const diff = p && Math.abs(Number(p.amount) - w.commission) >= 0.01;
+      const row = `<tr class="mo-row ${open ? 'open' : ''} ${p ? 'paid' : ''}" data-w="${w.week}">
+        <td class="pd"><label class="pd-box" title="${esc(tip)}"><input type="checkbox" data-paid="${w.week}" ${p ? 'checked' : ''} ${D.owner ? '' : 'disabled'}></label></td>
         <td><span class="chev">▸</span> <b>${wkLabel(w.week, addDays(w.week, 6).slice(0, 4) !== yr)}</b>${w.week === D.this_week ? '<span class="cur">this week</span>' : ''}</td>
         <td class="num">${w.bought}</td><td class="num">${Number(w.units).toLocaleString()}</td><td class="num">${money(w.spend)}</td>
-        <td class="num"><b>${money(w.commission)}</b></td>
+        <td class="num"><b>${money(w.commission)}</b>${diff ? `<div class="pd-diff" title="Changed after it was paid (e.g. a canceled order)">paid ${money(p.amount)}</div>` : ''}</td>
         <td class="num dim" title="Leads with ${esc(D.who)} as the sourcer that someone else added">${w.other_n ? `${w.other_n} · ${money(w.other_spend, 0)}` : '·'}</td></tr>`;
       if (!open) return row;
       const d = S.cache[w.week];
-      return row + `<tr class="mo-detail"><td colspan="6">${d ? detail(d) : '<div class="muted" style="padding:10px">Loading…</div>'}</td></tr>`;
+      return row + `<tr class="mo-detail"><td colspan="7">${d ? detail(d) : '<div class="muted" style="padding:10px">Loading…</div>'}</td></tr>`;
     }).join('');
     $('#moTable').innerHTML = head + `<tbody>${body}</tbody>`;
   }
@@ -143,10 +155,18 @@
   }
 
   $('#moTable').addEventListener('click', async (e) => {
+    if (e.target.closest('.pd-box')) return;
     const r = e.target.closest('tr.mo-row'); if (!r) return;
     const w = r.dataset.w;
     if (S.open.has(w)) S.open.delete(w); else { S.open.add(w); renderWeeks(); try { await fetchWeek(w); } catch (err) { fail(err); } }
     renderWeeks();
+  });
+
+  $('#moTable').addEventListener('change', async (e) => {
+    const cb = e.target.closest('input[data-paid]'); if (!cb) return;
+    cb.disabled = true;
+    try { S.data = await api('POST', '/api/commissions/paid', { week: cb.dataset.paid, paid: cb.checked }); render(); }
+    catch (err) { cb.checked = !cb.checked; cb.disabled = false; fail(err); }
   });
 
   LG.header().then(load).catch(fail);
