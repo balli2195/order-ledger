@@ -357,8 +357,9 @@ def _sc_rows(api_rows: list, sc: dict | None) -> tuple[list, bool]:
     if not sc:
         return api_rows, False
     rows = sc.get("rows") or []
-    if not rows or (sc.get("total") is not None and sc["total"] > len(rows)) or any(r.get("disc") is None for r in rows):
-        return api_rows, False
+    if (not rows and sc.get("total") is None) or (sc.get("total") is not None and sc["total"] > len(rows)) \
+            or any(r.get("disc") is None for r in rows):
+        return api_rows, False   # (no rows with total 0 = Seller Central shows no discrepancy at all)
     by = {r["sku"]: r for r in rows}
     out = []
     for a in api_rows:
@@ -466,7 +467,7 @@ async def page(include_all: bool = False) -> dict:
                         "denied_units": denied, "rereview": (cdata.get("rereview") or {}).get("case"),
                         "deny": [{"fnsku": k, "units": v[0], "note": v[1] if len(v) > 1 else ""} for k, v in (cdata.get("deny") or {}).items()]}
             sc_msg = (sc or {}).get("msg") or ""
-            sc_expired = "no longer eligible" in sc_msg.lower()
+            sc_expired = "no longer eligible" in sc_msg.lower() or "NINE_MONTH" in sc_msg
             if sc_expired and deadline and deadline >= today:
                 deadline = today - timedelta(days=1)   # Seller Central says the window has closed
             m = re.search(r"case ID (\d{8,})", sc_msg)
