@@ -97,7 +97,7 @@
       const open = S.open.has(p.plan);
       const fcs = p.shipments.map((s) => `<span class="fc" title="${esc(s.id)} · ${esc(s.status)}">${esc(s.fc || '?')}</span>`).join('');
       const cases = p.shipments.filter((s) => s.case);
-      const stx = p.state === 'case_open' ? `${cases.filter((s) => s.case.status !== 'decided').length} of ${p.shipments.length} open` : p.state === 'eligible' ? `${p.to_file} shipment${p.to_file === 1 ? '' : 's'} to file` : '';
+      const stx = p.state === 'case_open' ? `${cases.filter((s) => s.case.status !== 'decided').length} of ${p.shipments.length} open` : p.state === 'eligible' ? `${p.to_file} shipment${p.to_file === 1 ? '' : 's'} to file` : p.state === 'receiving' ? `${p.not_closed} of ${p.shipments.length} not closed yet` : '';
       const row = `<tr class="pl-row ${open ? 'open' : ''}" data-p="${esc(p.plan)}">
         <td><span class="chev">▸</span> <b>${esc(p.plan)}</b><div class="sub">${p.shipments.length} shipment${p.shipments.length === 1 ? '' : 's'} ${fcs}</div></td>
         <td><span class="st ${p.state}">${LABEL[p.state] || p.state}</span>${stx ? `<div class="sub">${stx}</div>` : ''}</td>
@@ -114,7 +114,7 @@
   function detail(p) {
     const sh = p.shipments.map((s) => {
       const c = s.case;
-      const cs = c ? `<b>${esc(c.id || '?')}</b> · ${c.status === 'decided' ? 'decided ' + sd(c.decided) : 'open since ' + sd(c.opened)}${c.rereview ? ` · re-review ${esc(c.rereview)}` : ''}` : (s.short ? (s.status !== 'CLOSED' ? 'still receiving' : s.deadline && s.days_left >= 0 ? '<span class="st eligible">Not filed</span>' : '<span class="st expired">Window passed</span>') : '—');
+      const cs = c ? `<b>${esc(c.id || '?')}</b> · ${c.status === 'decided' ? 'decided ' + sd(c.decided) : 'open since ' + sd(c.opened)}${c.rereview ? ` · re-review ${esc(c.rereview)}` : ''}` : (s.short ? (s.status !== 'CLOSED' ? 'still receiving' : !p.all_closed ? '<span class="sub">waiting for the rest of the plan to close</span>' : s.deadline && s.days_left >= 0 ? '<span class="st eligible">Not filed</span>' : '<span class="st expired">Window passed</span>') : '—');
       return `<tr><td><a class="mono" href="${sc(s.id)}" target="_blank" rel="noopener">${esc(s.id)}</a></td><td>${esc(s.fc || '')}</td><td>${esc(s.status)}</td>
         <td class="num">${s.shipped}</td><td class="num">${s.received}</td><td class="num">${s.short || '·'}</td>
         <td>${sd(s.delivered)}${s.delivered_est ? ' <span class="sub" title="Nothing was checked in, so there is no check-in date; estimated as a month after the plan">(est.)</span>' : ''}</td><td>${s.deadline ? `<span class="dl ${s.days_left <= 14 ? 'soon' : ''}">${sd(s.deadline)}</span>${s.days_left >= 0 ? ` <span class="sub">(${s.days_left}d)</span>` : ''}` : '·'}</td>

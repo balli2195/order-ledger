@@ -445,10 +445,10 @@ async def page(include_all: bool = False) -> dict:
             continue
         if pending:
             state = "case_open"
+        elif not all_closed and (unfiled or missing):   # Nick, Nov 4 2026: ready to file only once every shipment in the plan is closed
+            state = "receiving"
         elif open_deadlines:
             state = "eligible"
-        elif unfiled and not all_closed and any(s["status"] != "CLOSED" for s in unfiled):
-            state = "receiving"
         elif decided and not unfiled:
             state = "decided"
         elif unfiled and not open_deadlines:
@@ -464,7 +464,8 @@ async def page(include_all: bool = False) -> dict:
             "deadline": min(open_deadlines) if open_deadlines else None,
             "days_left": (min(open_deadlines) - today).days if open_deadlines else None,
             "state": state, "skus": sku_rows, "unfiled": len(unfiled),
-            "to_file": sum(1 for x in unfiled if x["status"] == "CLOSED" and x["deadline"] and x["deadline"] >= today)})
+            "to_file": sum(1 for x in unfiled if x["deadline"] and x["deadline"] >= today) if all_closed else 0,
+            "all_closed": all_closed, "not_closed": sum(1 for x in shp if x["status"] != "CLOSED")})
     order = {"eligible": 0, "case_open": 1, "receiving": 2, "decided": 3, "expired": 4, "none": 5}
     out.sort(key=lambda p: (order.get(p["state"], 9), p["deadline"] or date(2100, 1, 1), -(p["missing_value"] or 0)))
     if not include_all:
