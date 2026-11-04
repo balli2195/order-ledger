@@ -29,7 +29,7 @@
   table.mo tr.mo-detail:hover { background: none; }
   table.mo td.dim, table.mo .dim { color: var(--muted); }
   table.ld tr.no td { color: var(--muted); }
-  table.mo th.pd, table.mo td.pd { width: 44px; text-align: center; padding-right: 0; }
+  table.mo th.pd, table.mo td.pd { width: 52px; text-align: center; }
   .pd-box { display: inline-flex; padding: 6px; margin: -6px; cursor: pointer; }
   .pd-box input { width: 17px; height: 17px; accent-color: var(--ok); cursor: pointer; margin: 0; }
   .pd-box input:disabled { cursor: default; }
@@ -122,7 +122,7 @@
 
   function renderWeeks() {
     const D = S.data, yr = D.this_week.slice(0, 4);
-    const head = `<thead><tr><th class="pd">Paid</th><th>Week</th><th class="num">Leads bought</th><th class="num">Units</th><th class="num">Spend</th><th class="num">Commission</th><th class="num">Not counted</th></tr></thead>`;
+    const head = `<thead><tr><th>Week</th><th class="num">Leads bought</th><th class="num">Units</th><th class="num">Spend</th><th class="num">Commission</th><th class="num">Not counted</th><th class="pd">Paid</th></tr></thead>`;
     if (!D.weeks.length) { $('#moTable').innerHTML = head + '<tbody><tr><td colspan="7" class="empty">No leads yet.</td></tr></tbody>'; return; }
     const body = D.weeks.map((w) => {
       const open = S.open.has(w.week);
@@ -130,11 +130,11 @@
       const tip = p ? `Paid ${new Date(p.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}${p.paid_by ? ' by ' + p.paid_by : ''} · ${money(p.amount)}` : (D.owner ? 'Tick once this week is paid' : 'Not paid yet');
       const diff = p && Math.abs(Number(p.amount) - w.commission) >= 0.01;
       const row = `<tr class="mo-row ${open ? 'open' : ''} ${p ? 'paid' : ''}" data-w="${w.week}">
-        <td class="pd"><label class="pd-box" title="${esc(tip)}"><input type="checkbox" data-paid="${w.week}" ${p ? 'checked' : ''} ${D.owner ? '' : 'disabled'}></label></td>
         <td><span class="chev">▸</span> <b>${wkLabel(w.week, addDays(w.week, 6).slice(0, 4) !== yr)}</b>${w.week === D.this_week ? '<span class="cur">this week</span>' : ''}</td>
         <td class="num">${w.bought}</td><td class="num">${Number(w.units).toLocaleString()}</td><td class="num">${money(w.spend)}</td>
         <td class="num"><b>${money(w.commission)}</b>${diff ? `<div class="pd-diff" title="Changed after it was paid (e.g. a canceled order)">paid ${money(p.amount)}</div>` : ''}</td>
-        <td class="num dim" title="Leads with ${esc(D.who)} as the sourcer that someone else added">${w.other_n ? `${w.other_n} · ${money(w.other_spend, 0)}` : '·'}</td></tr>`;
+        <td class="num dim" title="Leads with ${esc(D.who)} as the sourcer that someone else added">${w.other_n ? `${w.other_n} · ${money(w.other_spend, 0)}` : '·'}</td>
+        <td class="pd"><label class="pd-box" title="${esc(tip)}"><input type="checkbox" data-paid="${w.week}" ${p ? 'checked' : ''} ${D.owner ? '' : 'disabled'}></label></td></tr>`;
       if (!open) return row;
       const d = S.cache[w.week];
       return row + `<tr class="mo-detail"><td colspan="7">${d ? detail(d) : '<div class="muted" style="padding:10px">Loading…</div>'}</td></tr>`;
