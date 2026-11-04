@@ -226,8 +226,8 @@ async def ensure_recurring(force: bool = False) -> int:
                 if not _due_on(t, today):
                     continue
                 await conn.execute(
-                    "INSERT INTO tasks (title, details, kind, template_id, for_date, due, position) VALUES (%s,%s,'recurring',%s,%s,%s,%s) "
-                    "ON CONFLICT DO NOTHING", (t["title"], t["details"], t["id"], today, today, t["position"]))
+                    "INSERT INTO tasks (title, details, kind, template_id, for_date, due, position, link) VALUES (%s,%s,'recurring',%s,%s,%s,%s,%s) "
+                    "ON CONFLICT DO NOTHING", (t["title"], t["details"], t["id"], today, today, t["position"], t.get("link")))
                 n += 1
             if n:
                 await _notify(conn)
@@ -236,7 +236,7 @@ async def ensure_recurring(force: bool = False) -> int:
 
 async def list_templates() -> list[dict]:
     async with db.pool.connection() as conn:
-        cur = await conn.execute("SELECT id, title, details, freq, days, monthday, position, active FROM task_templates ORDER BY position, created_at")
+        cur = await conn.execute("SELECT id, title, details, link, freq, days, monthday, position, active FROM task_templates ORDER BY position, created_at")
         return [jsonable(dict(r)) for r in await cur.fetchall()]
 
 
@@ -259,6 +259,11 @@ def _tpl_fields(body: dict, partial: bool) -> dict:
     if "monthday" in body:
         md = body.get("monthday")
         out["monthday"] = max(1, min(31, int(md))) if md not in (None, "") else None
+    if "link" in body:
+        lk = str(body.get("link") or "").strip()[:1000]
+        if lk and not lk.startswith(("https://", "http://")):
+            raise HTTPException(400, "The link should start with https://")
+        out["link"] = lk or None
     if "active" in body:
         out["active"] = bool(body["active"])
     if "position" in body:
@@ -284,6 +289,8 @@ async def save_template(actor: Actor, tid: str | None, body: dict) -> dict:
                 if "title" in f or "details" in f:
                     await conn.execute("UPDATE tasks SET title=COALESCE(%s, title), details=COALESCE(%s, details) WHERE template_id=%s AND status='open'",
                                        (f.get("title"), f.get("details"), tid))
+                if "link" in f:
+                    await conn.execute("UPDATE tasks SET link=%s WHERE template_id=%s AND status='open'", (f["link"], tid))
                 if f.get("active") is False:   # paused: drop its unfinished copy
                     await conn.execute("DELETE FROM tasks WHERE template_id=%s AND status='open'", (tid,))
             else:

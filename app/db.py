@@ -580,6 +580,15 @@ MIGRATIONS: list[str] = [
     INSERT INTO settings (key, value) VALUES
       ('order_bonus', '[{"user": "Abby", "date": "2026-11-04", "per": 1000, "pay": 5}]')
     ON CONFLICT (key) DO NOTHING;
+    """,    # 39: daily tasks for IP complaints and authenticity complaints, linked to Nick's chat where he works on them
+            #     (Nick, Nov 4 2026). Recurring tasks can carry a link.
+    """
+    ALTER TABLE task_templates ADD COLUMN link text;
+    INSERT INTO task_templates (title, details, link, position) VALUES
+      ('Address IP complaints', 'Open IP / counterfeit / trademark notices: build or resubmit appeal packets, check deadlines.',
+       'https://claude.ai/chat/afbaf7d4-c5d4-46e8-9807-3b77589a51a7', 6),
+      ('Address authenticity customer complaints', 'Product authenticity complaints from customers: review and respond.',
+       'https://claude.ai/chat/afbaf7d4-c5d4-46e8-9807-3b77589a51a7', 7);
     """,
 ]
 

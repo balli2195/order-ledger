@@ -157,7 +157,7 @@
               : `${t.kind !== 'manual' ? `<span class="tag auto">${t.kind === 'amazon_email' ? 'Amazon email' : 'Hub'}</span>` : ''}${t.due ? `<span class="tag ${late ? 'late' : ''}">due ${esc(fmtDate(t.due))}</span>` : ''}
             <span>added ${esc(when(t.created_at))}${t.created_by_name ? ' by ' + esc(t.created_by_name) : ''}</span>`}
             ${t.status === 'done' ? `<span>· done ${esc(when(t.done_at))}${t.done_by_name ? ' by ' + esc(t.done_by_name) : ''}</span>` : ''}
-            ${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener">${t.link.includes('mail.google') || t.link.includes('outlook') ? 'Open email ↗' : t.link.includes('amazon.com') ? 'Amazon ↗' : 'open ↗'}</a>` : ''}</div></div>
+            ${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener">${t.link.includes('mail.google') || t.link.includes('outlook') ? 'Open email ↗' : t.link.includes('amazon.com') ? 'Amazon ↗' : t.link.includes('claude.ai') ? 'Open chat ↗' : 'open ↗'}</a>` : ''}</div></div>
         <div class="acts">${ed ? `<button class="icon-btn" data-act="edit" title="Edit">✎</button>${t.kind === 'recurring' ? '' : '<button class="icon-btn" data-act="del" title="Delete">🗑</button>'}` : ''}</div></div>`;
     }).join('');
   }
@@ -188,6 +188,7 @@
         <select data-rf="freq">${Object.entries(FREQ_LABEL).map(([k, v]) => `<option value="${k}" ${t.freq === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <button class="btn small ghost" data-rf="active" title="${t.active ? 'Pause' : 'Resume'}">${t.active ? 'Pause' : 'Resume'}</button>
         <button class="icon-btn" data-rf="del" title="Delete">🗑</button>
+        <div class="opts"><input type="url" data-rf="link" value="${esc(t.link || '')}" placeholder="Link (optional), e.g. a Claude chat" style="width:100%;padding:4px 8px"></div>
         ${t.freq === 'weekly' ? `<div class="opts">On ${DOW.map((d, i) => `<label><input type="checkbox" data-rf="day" value="${i}" ${(t.days || []).includes(i) ? 'checked' : ''}> ${d}</label>`).join('')}</div>` : ''}
         ${t.freq === 'monthly' ? `<div class="opts">On day <input type="number" data-rf="monthday" min="1" max="31" value="${t.monthday || 1}" style="width:64px;padding:4px 6px"> of each month</div>` : ''}
       </div>`).join('') : '<p class="muted">No recurring tasks yet.</p>';
@@ -196,6 +197,7 @@
     wrap.querySelector('#rtList').addEventListener('change', async (e) => {
       const row = e.target.closest('[data-tid]'); if (!row) return; const tid = row.dataset.tid, f = e.target.dataset.rf;
       if (f === 'title') await save(tid, { title: e.target.value });
+      else if (f === 'link') await save(tid, { link: e.target.value });
       else if (f === 'freq') await save(tid, e.target.value === 'weekly' ? { freq: 'weekly', days: [0] } : e.target.value === 'monthly' ? { freq: 'monthly', monthday: 1 } : { freq: e.target.value });
       else if (f === 'day') await save(tid, { days: [...row.querySelectorAll('[data-rf="day"]:checked')].map((x) => +x.value) });
       else if (f === 'monthday') await save(tid, { monthday: e.target.value });
