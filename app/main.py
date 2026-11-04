@@ -876,8 +876,10 @@ async def api_task_template_delete(tid: str, request: Request):
 
 
 @app.get("/api/amazon-digest")
-async def api_amazon_digest(request: Request, day: str | None = None):
+async def api_amazon_digest(request: Request, day: str | None = None, last: int = 0):
     await auth.require(request, tab="tasks")
+    if last:
+        return await T.get_digest(None, last=last)
     try:
         d = date.fromisoformat(day[:10]) if day else None
     except ValueError:

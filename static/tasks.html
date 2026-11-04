@@ -66,6 +66,17 @@
   .sec-h select { width: auto; padding: 4px 8px; }
   .dg-headline { margin: 0; padding: 14px 16px 0; font-size: 14.5px; line-height: 1.55; }
   .dg-headline:last-child { padding-bottom: 14px; }
+  .dg-day { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 11px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 14px; }
+  .dg-day .muted { font-size: 12px; }
+  .dg-p { margin: 0; padding: 12px 16px 0; font-size: 14px; line-height: 1.55; }
+  .dg-grp { padding: 10px 16px 0; }
+  .dg-grp:last-child { padding-bottom: 14px; }
+  .dg-lab { font-weight: 700; font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .dg-grp.urgent .dg-lab { color: var(--bad); }
+  .dg-lab .n { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 99px; background: var(--bad); color: #fff; font-size: 11px; text-align: center; letter-spacing: 0; margin-left: 4px; }
+  .dg-ul { margin: 5px 0 0; padding-left: 20px; font-size: 13.5px; line-height: 1.5; }
+  .dg-ul li + li { margin-top: 4px; }
+  .dg-none { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
   .inbox-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
   @media (max-width: 1000px) { .inbox-grid { grid-template-columns: minmax(0, 1fr); } }
   .dg-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-top: 14px; overflow: hidden; }
@@ -128,7 +139,7 @@
   </section>
 
   <div class="inbox-grid"><div class="col-mail">
-  <div class="sec-h"><h2>Amazon emails</h2><select id="dgDay" aria-label="Day"></select><span class="muted" id="dgMeta" style="font-size:13px"></span></div>
+  <div class="sec-h"><h2>Amazon emails</h2><span class="muted" style="font-size:13px">last 3 days</span></div>
   <div id="dgBody"></div>
   </div><div class="col-tasks">
   <div class="sec-h"><h2>IP &amp; authenticity complaints</h2><span class="muted" id="vMeta" style="font-size:13px"></span></div>
@@ -150,18 +161,28 @@
   const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 
   // ------------------------------------------------ daily Amazon email summary
-  async function loadDigest(day) {
-    const d = await api('GET', '/api/amazon-digest' + (day ? '?day=' + day : ''));
-    const sel = $('#dgDay');
-    sel.innerHTML = d.days.map((x) => `<option value="${x}" ${x === d.day ? 'selected' : ''}>${esc(fmtDate(x))}</option>`).join('') || '<option>—</option>';
-    if (!d.data) { $('#dgMeta').textContent = ''; $('#dgBody').innerHTML = '<div class="dg-empty">No summary yet. The daily Amazon email check runs every morning.</div>'; return; }
-    const g = d.data;
-    $('#dgMeta').textContent = [g.period, d.updated_at ? 'updated ' + when(d.updated_at) : ''].filter(Boolean).join(' · ');
-    // Nick, Nov 4 2026: just the summary, no per-email sections
-    const text = String(g.summary || g.headline || '').trim();
-    $('#dgBody').innerHTML = `<div class="dg-panel">${text ? text.split(/\n\s*\n/).map((x) => `<p class="dg-headline">${esc(x.trim())}</p>`).join('') : '<div class="tk-empty">No Amazon emails that day.</div>'}</div>`;
+  // Nick, Nov 4 2026: the last 3 days stacked, each a short summary with Urgent and Routine bullets
+  const rich = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  const dayLabel = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  function digestHtml(x) {
+    const g = x.data || {};
+    const list = (a) => `<ul class="dg-ul">${a.map((i) => `<li>${rich(i)}</li>`).join('')}</ul>`;
+    let body;
+    if (Array.isArray(g.urgent) || Array.isArray(g.routine)) {
+      const u = g.urgent || [], r = g.routine || [];
+      body = `${g.overview ? `<p class="dg-p">${rich(g.overview)}</p>` : ''}
+        <div class="dg-grp urgent"><div class="dg-lab">Urgent${u.length ? ` <span class="n">${u.length}</span>` : ''}</div>${u.length ? list(u) : '<p class="dg-none">Nothing needs action.</p>'}</div>
+        ${r.length ? `<div class="dg-grp"><div class="dg-lab">Routine</div>${list(r)}</div>` : ''}`;
+    } else {
+      const text = String(g.summary || g.headline || '').trim();
+      body = text ? text.split(/\n\s*\n/).map((p) => `<p class="dg-p">${rich(p.trim())}</p>`).join('') : '<p class="dg-none">No Amazon emails that day.</p>';
+    }
+    return `<div class="dg-panel"><div class="dg-day"><b>${esc(dayLabel(x.day))}</b><span class="muted">${esc([g.period, x.updated_at ? 'updated ' + when(x.updated_at) : ''].filter(Boolean).join(' · '))}</span></div>${body}</div>`;
   }
-  $('#dgDay').addEventListener('change', (e) => loadDigest(e.target.value).catch(fail));
+  async function loadDigest() {
+    const d = await api('GET', '/api/amazon-digest?last=3');
+    $('#dgBody').innerHTML = d.digests.length ? d.digests.map(digestHtml).join('') : '<div class="dg-empty">No summary yet. The daily Amazon email check runs every morning.</div>';
+  }
 
   async function load() {
     const d = await api('GET', '/api/tasks');

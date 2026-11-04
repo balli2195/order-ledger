@@ -213,8 +213,8 @@ async def upsert_violations(items: list[dict], full: bool = False, update: bool 
 
 
 async def put_digest(day: date, body: dict) -> dict:
-    """Engine: {headline, sections:[{name, items:[{title, summary, action, urgent, date, link}]}], counts:{...},
-    tasks:[{key, title, details, link}]}. Replaces that day's summary; tasks are added once each (key = email id)."""
+    """Engine: {period, overview, urgent:[...], routine:[...], violations:[...]} (Nick, Nov 4 2026: summary only, urgent and
+    routine as bullets; older days may carry summary/headline/sections). Replaces that day's summary; tasks are added once each (key = email id)."""
     body.pop("tasks", None)
     tasks = []   # Nick, Nov 3 2026: don't add tasks from email; the summary alone shows what needs action
     violations = body.pop("violations", None) or []   # ...except one task per new IP / authenticity complaint (Nov 4 2026)
@@ -234,8 +234,13 @@ async def put_digest(day: date, body: dict) -> dict:
     return {"day": day.isoformat(), "tasks": n, "violations": v["tasks"]}
 
 
-async def get_digest(day: date | None) -> dict:
+async def get_digest(day: date | None, last: int = 0) -> dict:
+    """One day's summary, or with last=N the N most recent days (newest first) for the stacked Inbox view."""
     async with db.pool.connection() as conn:
+        if last:
+            cur = await conn.execute("SELECT day, data, updated_at FROM amazon_digests ORDER BY day DESC LIMIT %s", (max(1, min(int(last), 14)),))
+            rows = [{"day": r["day"], "data": r["data"], "updated_at": r["updated_at"]} for r in await cur.fetchall()]
+            return jsonable({"digests": rows})
         if day:
             cur = await conn.execute("SELECT day, data, updated_at FROM amazon_digests WHERE day=%s", (day,))
         else:
