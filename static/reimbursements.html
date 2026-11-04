@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reimbursements · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .rb-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 26px 0 0; }
+  .rb-head h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0; }
+  .rb-head .sp { flex: 1; }
+  .stats .stat .sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  table.rb tr.pl-row { cursor: pointer; }
+  table.rb .chev { display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+  table.rb tr.pl-row.open .chev { transform: rotate(90deg); }
+  table.rb tr.pl-row.open td { background: var(--panel-2); border-bottom-color: transparent; }
+  table.rb tr.pl-detail > td { background: var(--panel-2); padding: 4px 14px 18px; cursor: default; }
+  table.rb tr.pl-detail:hover { background: none; }
+  table.rb .sub { font-size: 12px; color: var(--muted); }
+  table.rb .fc { display: inline-block; font-size: 11px; background: var(--line-2); border-radius: 99px; padding: 0 7px; margin: 2px 3px 0 0; color: var(--ink); }
+  .st { display: inline-block; font-size: 11.5px; font-weight: 600; border-radius: 99px; padding: 2px 9px; white-space: nowrap; }
+  .st.eligible { background: var(--warn-soft); color: #9a5b00; }
+  .st.case_open { background: color-mix(in srgb, #3b6fd4 14%, transparent); color: #2c5bb8; }
+  .st.receiving { background: var(--line-2); color: var(--muted); }
+  .st.decided { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .st.expired { background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--bad); }
+  .dl.soon { color: var(--bad); font-weight: 600; }
+  .rb-sec { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+  table.ins td, table.ins th { font-size: 12.5px; }
+  table.ins td.prod { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deny { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+  .deny b { color: var(--bad); font-weight: 600; }
+  a.chat { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements" class="on">Reimbursements</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+
+  <div class="rb-head"><h2>Reimbursements</h2><span class="muted" id="meta" style="font-size:13px"></span><span class="sp"></span>
+    <div class="chips" role="tablist"><button class="chip on" data-f="act">Needs action</button><button class="chip" data-f="all">All recent</button></div>
+    <a class="btn small chat" id="chatBtn" target="_blank" rel="noopener" hidden>Open reimbursements chat ↗</a>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="table-wrap" style="margin-top:16px"><table class="rb" id="tbl"></table></div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/bonus.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, $$, esc, money, api, fail, fmtDate } = LG;
+  const S = { d: null, f: 'act', open: new Set() };
+  const LABEL = { eligible: 'Ready to file', case_open: 'Case open', receiving: 'Still receiving', decided: 'Decided', expired: 'Window passed', none: '—' };
+  const sd = (d) => d ? fmtDate(d).replace(/, \d{4}$/, '') : '—';
+  const sc = (sid) => `https://sellercentral.amazon.com/fba/wmsr/${encodeURIComponent(sid)}`;
+
+  async function load() {
+    S.d = await api('GET', '/api/reimbursements' + (S.f === 'all' ? '?all=1' : ''));
+    const b = $('#chatBtn'); if (S.d.chat) { b.href = S.d.chat; b.hidden = false; }
+    render();
+  }
+
+  function render() {
+    const D = S.d, P = D.plans;
+    const synced = D.synced_at ? new Date(D.synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'not yet';
+    $('#meta').textContent = `Amazon data ${synced} · claim window ${D.window_days} days after a shipment closes`;
+    const el = P.filter((p) => p.state === 'eligible'), co = P.filter((p) => p.state === 'case_open');
+    const next = el.filter((p) => p.deadline).sort((a, b) => a.deadline < b.deadline ? -1 : 1)[0];
+    const stat = (k, v, sub) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    $('#stats').innerHTML = stat('Ready to file', `${el.length} plan${el.length === 1 ? '' : 's'}`, `${el.reduce((a, p) => a + p.missing, 0)} units · ${money(el.reduce((a, p) => a + p.missing_value, 0), 0)} est.`) +
+      stat('Cases open', String(co.reduce((a, p) => a + p.shipments.filter((s) => s.case && s.case.status !== 'decided').length, 0)), `${co.length} plan${co.length === 1 ? '' : 's'}`) +
+      stat('Next deadline', next ? sd(next.deadline) : '—', next ? `${next.days_left} day${next.days_left === 1 ? '' : 's'} left · plan ${esc(next.plan)}` : '') +
+      stat('Paid on these', money(P.reduce((a, p) => a + p.paid, 0), 0), `${P.reduce((a, p) => a + p.paid_units, 0)} units`);
+    const head = `<thead><tr><th>Plan</th><th>Status</th><th class="num">Shipped</th><th class="num">Received</th><th class="num">Missing</th><th class="num">Paid</th><th class="num">Denied</th><th>File by</th><th></th></tr></thead>`;
+    if (!P.length) { $('#tbl').innerHTML = head + `<tbody><tr><td colspan="9" class="empty">${D.synced_at ? 'Nothing needs action. 🎉' : 'Loading shipments from Amazon for the first time; this takes a few minutes.'}</td></tr></tbody>`; return; }
+    $('#tbl').innerHTML = head + '<tbody>' + P.map((p) => {
+      const open = S.open.has(p.plan);
+      const fcs = p.shipments.map((s) => `<span class="fc" title="${esc(s.id)} · ${esc(s.status)}">${esc(s.fc || '?')}</span>`).join('');
+      const cases = p.shipments.filter((s) => s.case);
+      const stx = p.state === 'case_open' ? `${cases.filter((s) => s.case.status !== 'decided').length} of ${p.shipments.length} open` : p.state === 'eligible' ? `${p.to_file} shipment${p.to_file === 1 ? '' : 's'} to file` : '';
+      const row = `<tr class="pl-row ${open ? 'open' : ''}" data-p="${esc(p.plan)}">
+        <td><span class="chev">▸</span> <b>${esc(p.plan)}</b><div class="sub">${p.shipments.length} shipment${p.shipments.length === 1 ? '' : 's'} ${fcs}</div></td>
+        <td><span class="st ${p.state}">${LABEL[p.state] || p.state}</span>${stx ? `<div class="sub">${stx}</div>` : ''}</td>
+        <td class="num">${p.shipped.toLocaleString()}</td><td class="num">${p.received.toLocaleString()}</td>
+        <td class="num"><b>${p.missing}</b><div class="sub">${p.missing_value ? money(p.missing_value, 0) + ' est.' : ''}</div></td>
+        <td class="num">${p.paid ? money(p.paid) : '·'}${p.paid_units ? `<div class="sub">${p.paid_units} units</div>` : ''}</td>
+        <td class="num">${p.denied_units || '·'}</td>
+        <td>${p.deadline ? `<span class="dl ${p.days_left <= 10 ? 'soon' : ''}">${sd(p.deadline)}</span><div class="sub">${p.days_left} day${p.days_left === 1 ? '' : 's'} left</div>` : '·'}</td>
+        <td>${D.chat ? `<a class="chat" href="${esc(D.chat)}" target="_blank" rel="noopener" data-stop>Chat ↗</a>` : ''}</td></tr>`;
+      return open ? row + `<tr class="pl-detail"><td colspan="9">${detail(p)}</td></tr>` : row;
+    }).join('') + '</tbody>';
+  }
+
+  function detail(p) {
+    const sh = p.shipments.map((s) => {
+      const c = s.case;
+      const cs = c ? `<b>${esc(c.id || '?')}</b> · ${c.status === 'decided' ? 'decided ' + sd(c.decided) : 'open since ' + sd(c.opened)}${c.rereview ? ` · re-review ${esc(c.rereview)}` : ''}` : (s.short ? (s.deadline && s.days_left >= 0 ? '<span class="st eligible">Not filed</span>' : s.status !== 'CLOSED' ? 'still receiving' : '<span class="st expired">Window passed</span>') : '—');
+      return `<tr><td><a class="mono" href="${sc(s.id)}" target="_blank" rel="noopener">${esc(s.id)}</a></td><td>${esc(s.fc || '')}</td><td>${esc(s.status)}</td>
+        <td class="num">${s.shipped}</td><td class="num">${s.received}</td><td class="num">${s.short || '·'}</td>
+        <td>${sd(s.closed)}${s.closed_est ? ' <span class="sub" title="Nothing was checked in, so there is no receipt date; estimated as a month after the plan">(est.)</span>' : ''}</td><td>${s.deadline ? `<span class="dl ${s.days_left <= 10 ? 'soon' : ''}">${sd(s.deadline)}</span>${s.days_left >= 0 ? ` <span class="sub">(${s.days_left}d)</span>` : ''}` : '·'}</td>
+        <td>${cs}</td><td class="num">${c && c.paid ? money(c.paid) : '·'}</td><td class="num">${c && c.denied_units ? c.denied_units : '·'}</td></tr>
+        ${c && c.deny && c.deny.length ? `<tr><td></td><td colspan="10"><div class="deny">${c.deny.slice(0, 8).map((x) => `<b>${esc(x.fnsku)} ×${x.units}</b> ${esc(x.note || '')}`).join('<br>')}${c.deny.length > 8 ? `<br>…and ${c.deny.length - 8} more` : ''}</div></td></tr>` : ''}`;
+    }).join('');
+    const sk = p.skus.slice(0, 60).map((r) => `<tr><td class="mono">${esc(r.sku)}</td><td class="mono">${esc(r.asin || '')}</td><td class="prod" title="${esc(r.title || '')}">${esc(r.title || '')}</td>
+      <td class="num">${r.shipped}</td><td class="num">${r.received}</td><td class="num">${r.missing ? `<b>${r.missing}</b>` : '·'}</td><td class="num">${r.extra || '·'}</td>
+      <td class="num">${r.cost ? money(r.cost) : '·'}</td><td class="num">${r.paid_units || '·'}</td></tr>`).join('');
+    return `<div class="rb-sec">Shipments</div><div class="table-wrap"><table class="ins"><thead><tr><th>Shipment</th><th>FC</th><th>Amazon status</th><th class="num">Shipped</th><th class="num">Received</th><th class="num">Missing</th><th>Closed</th><th>File by</th><th>Case</th><th class="num">Paid</th><th class="num">Denied</th></tr></thead><tbody>${sh}</tbody></table></div>
+      ${p.skus.length ? `<div class="rb-sec">Products short or over (whole plan, netted across its shipments)</div><div class="table-wrap"><table class="ins"><thead><tr><th>SKU</th><th>ASIN</th><th>Product</th><th class="num">Shipped</th><th class="num">Received</th><th class="num">Missing</th><th class="num">Extra</th><th class="num">Cost</th><th class="num">Paid units</th></tr></thead><tbody>${sk}</tbody></table></div>${p.skus.length > 60 ? `<div class="sub">${p.skus.length - 60} more</div>` : ''}` : ''}`;
+  }
+
+  $('#tbl').addEventListener('click', (e) => {
+    if (e.target.closest('a')) return;
+    const r = e.target.closest('tr.pl-row'); if (!r) return;
+    const k = r.dataset.p; S.open.has(k) ? S.open.delete(k) : S.open.add(k); render();
+  });
+  $$('.chip[data-f]').forEach((c) => c.addEventListener('click', () => { S.f = c.dataset.f; $$('.chip[data-f]').forEach((x) => x.classList.toggle('on', x === c)); load().catch(fail); }));
+  LG.header().then(load).catch(fail);
+  let t = null;
+  LG.live?.((m) => { if (m.t === 'inbound') { clearTimeout(t); t = setTimeout(() => load().catch(() => {}), 1500); } });
+})();
+</script>
+</body>
+</html>

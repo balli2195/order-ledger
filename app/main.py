@@ -7,7 +7,7 @@ import html
 import json
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,7 @@ from . import tasks as T
 from . import orders as o
 from . import commissions as comm
 from . import order_bonus
+from . import inbound
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
     brand_task = asyncio.create_task(hazmat.brand_backfill_loop())   # Keepa brands for the Transparency brand warning
     catalog_task = asyncio.create_task(catalog.loop())   # Buy qty entered -> product added to Nick's Amazon catalog
     hazmat_task = asyncio.create_task(sellable.backfill_loop())   # Amazon FBA eligibility (Keepa hazmat comes with title lookups)
+    inbound_task = asyncio.create_task(inbound.loop())   # Reimbursements page: inbound shipments from SP-API, daily
     async with mcp.session_manager.run():
         yield
     listener.cancel()
@@ -55,6 +57,7 @@ async def lifespan(app: FastAPI):
     prepos_task.cancel()
     hazmat_task.cancel()
     catalog_task.cancel()
+    inbound_task.cancel()
     brand_task.cancel()
     await db.close_pool()
 
@@ -146,6 +149,48 @@ async def tasks_page(request: Request):
 @app.get("/timeclock", include_in_schema=False)
 async def timeclock_page(request: Request):
     return await _page(request, "timeclock", "timeclock.html")
+
+
+@app.get("/reimbursements", include_in_schema=False)
+async def reimbursements_page(request: Request):
+    return await _page(request, "reimbursements", "reimbursements.html")
+
+
+@app.get("/api/reimbursements")
+async def api_reimbursements(request: Request, all: int = 0):
+    await auth.require(request, tab="reimbursements")
+    return await inbound.page(include_all=bool(all))
+
+
+@app.post("/api/engine/inbound/cases")
+async def engine_inbound_cases(request: Request, body: dict = Body(...)):
+    """Case status from Amazon's emails: {SID: {case, st, at, opened, reimb, deny, rereview}} (decisions.json shape)."""
+    auth.require_engine_key(request)
+    return await inbound.save_cases(body.get("cases") if isinstance(body.get("cases"), dict) else body)
+
+
+_inbound_run: dict = {}
+
+
+@app.post("/api/engine/inbound/sync")
+async def engine_inbound_sync(request: Request):
+    """Start a refresh from Amazon now (runs in the background; see diag 'inbound')."""
+    auth.require_engine_key(request)
+    t = _inbound_run.get("t")
+    if t and not t.done():
+        return {"running": True}
+    async def run():
+        try:
+            inbound.status["result"] = await inbound.sync()
+            inbound.status.update(last_run=_t.strftime("%Y-%m-%d %H:%M:%S"), last_error=None)
+            async with db.pool.connection() as conn:
+                await conn.execute("INSERT INTO settings (key, value) VALUES ('inbound_synced_at', %s) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                                   (json.dumps(datetime.now(timezone.utc).isoformat()),))
+        except Exception as e:
+            inbound.status["last_error"] = str(e)[:300]
+    import time as _t
+    _inbound_run["t"] = asyncio.create_task(run())
+    return {"started": True}
 
 
 @app.get("/commissions", include_in_schema=False)
@@ -512,6 +557,7 @@ async def engine_diag(request: Request):
             "WHERE l.lead_date >= current_date - 60 AND length(btrim(l.asin)) = 10 AND f.brand_checked_at IS NULL")).fetchone())["n"]
         out["catalog_counts"] = {r["status"]: r["n"] for r in await (await conn.execute("SELECT status, count(*) n FROM catalog_adds GROUP BY 1")).fetchall()}
     out["catalog"] = catalog.status
+    out["inbound"] = {k: v for k, v in inbound.status.items()}
     return out
 
 
@@ -625,7 +671,7 @@ async def api_set_can_source(kind: str, name: str, request: Request, body: dict 
 async def api_events(request: Request):
     user = await auth.require(request)
     q = live.subscribe()
-    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock", "task": "tasks"}
+    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock", "task": "tasks", "inbound": "reimbursements"}
 
     def allowed(payload: str) -> bool:
         try:

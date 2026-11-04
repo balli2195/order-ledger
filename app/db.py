@@ -600,6 +600,52 @@ MIGRATIONS: list[str] = [
     """,    # 41: Ariane's commission is 1.2% (Nick, Nov 4 2026)
     """
     UPDATE settings SET value = '0.012' WHERE key = 'bonus_rate';
+    """,    # 42: Reimbursements page (Nick, Nov 4 2026): inbound shipments with missing units, by plan (app/inbound.py)
+    """
+    CREATE TABLE inbound_shipments (
+        shipment_id    text PRIMARY KEY,
+        name           text,
+        plan_key       text,
+        plan_created   date,
+        fc             text,
+        status         text,
+        closed_seen_at timestamptz,
+        first_receipt  date,
+        last_receipt   date,
+        items_at       timestamptz,
+        updated_at     timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX inbound_shipments_plan_idx ON inbound_shipments (plan_key);
+    CREATE TABLE inbound_items (
+        shipment_id text NOT NULL,
+        sku         text NOT NULL,
+        fnsku       text,
+        shipped     integer NOT NULL DEFAULT 0,
+        received    integer NOT NULL DEFAULT 0,
+        PRIMARY KEY (shipment_id, sku)
+    );
+    CREATE TABLE inbound_skus (sku text PRIMARY KEY, asin text, fnsku text, title text);
+    CREATE TABLE inbound_reimb (
+        reimbursement_id text NOT NULL,
+        sku              text NOT NULL,
+        fnsku text, asin text, case_id text, reason text, approval_date date, amount numeric(12,2),
+        qty_cash integer, qty_inv integer, title text,
+        PRIMARY KEY (reimbursement_id, sku)
+    );
+    CREATE INDEX inbound_reimb_case_idx ON inbound_reimb (case_id);
+    CREATE TABLE inbound_cases (
+        shipment_id text PRIMARY KEY,
+        case_id     text,
+        status      text NOT NULL DEFAULT 'pending',
+        opened      date,
+        decided     date,
+        data        jsonb NOT NULL DEFAULT '{}'::jsonb,
+        updated_at  timestamptz NOT NULL DEFAULT now()
+    );
+    INSERT INTO settings (key, value) VALUES
+      ('reimb_chat_url', '"https://claude.ai/chat/5017fbab-e53b-42d0-ba5e-a97636114bb7"'),
+      ('reimb_window_days', '70')
+    ON CONFLICT (key) DO NOTHING;
     """,
 ]
 
