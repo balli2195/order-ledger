@@ -1,6 +1,6 @@
 """Commissions page (Nick, Nov 4 2026).
 
-Ariane isn't paid hourly: he earns a commission (settings bonus_rate, 1%) of the actual spend (cost x units bought) on
+Ariane isn't paid hourly: he earns a commission (settings bonus_rate, 1.2%) of the actual spend (cost x units bought) on
 leads he sourced. A lead counts only if he also added it himself: if Nick (or anyone else) added the lead, it doesn't
 count, even when Ariane sourced that product at an earlier date. Leads copied from Airtable carry who added them in
 sourced_by; leads added on the Hub also need created_by to be his login (leads.COMMISSION_COND).

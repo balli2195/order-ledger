@@ -597,6 +597,9 @@ MIGRATIONS: list[str] = [
        AND x.title IN ('Address IP complaints', 'Address authenticity customer complaints');
     INSERT INTO settings (key, value) VALUES ('violation_chat_url', '"https://claude.ai/chat/afbaf7d4-c5d4-46e8-9807-3b77589a51a7"')
     ON CONFLICT (key) DO NOTHING;
+    """,    # 41: Ariane's commission is 1.2% (Nick, Nov 4 2026)
+    """
+    UPDATE settings SET value = '0.012' WHERE key = 'bonus_rate';
     """,
 ]
 
