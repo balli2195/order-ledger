@@ -575,6 +575,11 @@ MIGRATIONS: list[str] = [
         paid_by  integer REFERENCES users(id) ON DELETE SET NULL,
         PRIMARY KEY (sourcer, week)
     );
+    """,    # 38: order bonus for a day (Nick, Nov 4 2026: Abby gets $5 for every $1,000 she orders today)
+    """
+    INSERT INTO settings (key, value) VALUES
+      ('order_bonus', '[{"user": "Abby", "date": "2026-11-04", "per": 1000, "pay": 5}]')
+    ON CONFLICT (key) DO NOTHING;
     """,
 ]
 

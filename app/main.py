@@ -27,6 +27,7 @@ from . import timeclock as tc
 from . import tasks as T
 from . import orders as o
 from . import commissions as comm
+from . import order_bonus
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -298,6 +299,12 @@ async def api_view_as_end():
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(auth.VIEW_AS_COOKIE, path="/")
     return resp
+
+
+@app.get("/api/order-bonus")
+async def api_order_bonus(request: Request):
+    user = await auth.require(request)
+    return {"bonus": await order_bonus.today(user)}
 
 
 @app.get("/api/me")
