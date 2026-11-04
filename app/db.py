@@ -533,6 +533,28 @@ MIGRATIONS: list[str] = [
             SELECT brand_key(b) AS key, b AS name FROM leads l, unnest(l.brands) b WHERE upper(btrim(l.asin)) = t.asin
             UNION SELECT brand_key(f.brand), f.brand FROM asin_flags f WHERE f.asin = t.asin
         ) k WHERE length(k.key) >= 3 AND NOT is_generic_brand(k.name);
+    """,    # 34: catalog adds run only when a lead's Buy qty is changed to more than 0 (Nick, Nov 4 2026), not by scanning
+            #     recent leads. A trigger queues the ASIN; the catalog loop checks Amazon and adds it only if it isn't listed.
+    r"""
+    CREATE TABLE catalog_queue (
+        asin       text PRIMARY KEY,
+        lead_id    uuid,
+        queued_at  timestamptz NOT NULL DEFAULT now(),
+        attempts   integer NOT NULL DEFAULT 0,
+        next_try   timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE FUNCTION queue_catalog_add() RETURNS trigger LANGUAGE plpgsql AS $$
+    DECLARE a text := upper(btrim(COALESCE(NEW.asin, '')));
+    BEGIN
+        IF COALESCE(NEW.buy_qty, 0) > 0 AND a ~ '^[A-Z0-9]{10}$'
+           AND (TG_OP = 'INSERT' OR COALESCE(OLD.buy_qty, 0) <= 0 OR upper(btrim(COALESCE(OLD.asin, ''))) <> a) THEN
+            INSERT INTO catalog_queue (asin, lead_id) VALUES (a, NEW.id)
+            ON CONFLICT (asin) DO UPDATE SET lead_id = EXCLUDED.lead_id, queued_at = now(), next_try = now(), attempts = 0;
+        END IF;
+        RETURN NEW;
+    END $$;
+    CREATE TRIGGER leads_catalog_queue AFTER INSERT OR UPDATE OF buy_qty, asin ON leads
+        FOR EACH ROW EXECUTE FUNCTION queue_catalog_add();
     """,
 ]
 

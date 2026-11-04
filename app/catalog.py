@@ -1,8 +1,8 @@
 """Add a lead's product to Nick's Amazon catalog as soon as a Buy qty is entered (Nick, Nov 3 2026).
 
 Some restrictions (e.g. Transparency codes required) only show up once the ASIN is on his account, so the Hub creates
-an offer-only FBA listing (condition New, no price, no stock) for every recent lead with a Buy qty whose ASIN isn't
-already listed. Amazon's listing issues are read back a few minutes later and a day later and shown on the lead card;
+an offer-only FBA listing (condition New, no stock) whenever a lead's Buy qty is changed to more than 0 and its ASIN
+isn't already in his catalog (Nick, Nov 4 2026: only then, not for every recent lead). Amazon's listing issues are read back a few minutes later and a day later and shown on the lead card;
 a Transparency issue also becomes a Transparency notice, so the usual warnings and same-brand warnings appear.
 
 SP-API Listings Items 2021-08-01 (needs the app's Product Listing role):
@@ -31,7 +31,6 @@ import httpx
 from . import db, sellable
 
 log = logging.getLogger("ledger.catalog")
-LOOKBACK_DAYS = 3          # leads this recent with a Buy qty are added
 RECHECK = [timedelta(minutes=10), timedelta(hours=24)]
 COMPLIANCE = ("batteries_required", "supplier_declared_dg_hz_regulation")
 status: dict = {"last_run": None, "last_error": None, "added": 0}
@@ -189,18 +188,19 @@ async def _save(asin, status_=None, sku=None, added=None, issues=None, summary=N
 
 
 async def run_once() -> int:
-    """New ASINs: recent leads with a Buy qty, not checked yet (skip ones Amazon says he can't list).
-    Rechecks: listings the Hub added, 10 minutes and a day after."""
+    """New ASINs: ones queued because a lead's Buy qty was just changed to more than 0 (Nick, Nov 4 2026). Each is
+    checked against his Amazon catalog and added only if it isn't there. Already known to be in the catalog (listed or
+    added before) -> dropped without asking Amazon; Amazon says he can't list it -> dropped; a failure is retried a day
+    later, at most 3 times. Rechecks: listings the Hub added, 10 minutes and a day after."""
     async with db.pool.connection() as conn:
-        cur = await conn.execute(
-            """SELECT DISTINCT upper(btrim(l.asin)) a FROM leads l
-                 LEFT JOIN catalog_adds c ON c.asin = upper(btrim(l.asin))
-                 LEFT JOIN asin_flags f ON f.asin = upper(btrim(l.asin))
-                WHERE COALESCE(l.buy_qty, 0) > 0 AND l.lead_date >= (now() AT TIME ZONE 'America/Chicago')::date - %s
-                  AND upper(btrim(l.asin)) ~ '^[A-Z0-9]{10}$' AND f.list_ok IS NOT FALSE
-                  AND (c.asin IS NULL OR (c.status = 'failed' AND c.checked_at < now() - interval '1 day'))
-                LIMIT 25""", (LOOKBACK_DAYS,))
-        new = [r["a"] for r in await cur.fetchall()]
+        await conn.execute(
+            """DELETE FROM catalog_queue q USING catalog_adds c
+                WHERE c.asin = q.asin AND c.status IN ('listed', 'added')""")
+        await conn.execute(
+            """DELETE FROM catalog_queue q USING asin_flags f
+                WHERE f.asin = q.asin AND f.list_ok IS FALSE""")
+        cur = await conn.execute("SELECT asin FROM catalog_queue WHERE next_try <= now() ORDER BY queued_at LIMIT 25")
+        new = [r["asin"] for r in await cur.fetchall()]
         cur = await conn.execute(
             """SELECT asin, sku FROM catalog_adds WHERE added_by_hub AND sku IS NOT NULL AND
                  ((rechecks = 0 AND created_at < now() - %s) OR (rechecks = 1 AND created_at < now() - %s)) LIMIT 25""",
@@ -210,12 +210,20 @@ async def run_once() -> int:
         unpriced = [(r["asin"], r["sku"]) for r in await cur.fetchall()]
     for a in new:
         try:
-            await process(a)
+            row = await process(a)
+            done = (row or {}).get("status") != "failed"
         except PermissionError:
             raise
         except Exception as e:
             log.warning("catalog %s failed: %s", a, e)
             await _save(a, status_="failed", error=str(e)[:300])
+            done = False
+        async with db.pool.connection() as conn:
+            if done:
+                await conn.execute("DELETE FROM catalog_queue WHERE asin=%s", (a,))
+            else:
+                await conn.execute("UPDATE catalog_queue SET attempts = attempts + 1, next_try = now() + interval '1 day' WHERE asin=%s", (a,))
+                await conn.execute("DELETE FROM catalog_queue WHERE asin=%s AND attempts >= 3", (a,))
     for a, sku in unpriced:
         try:
             await set_price(a, sku)
