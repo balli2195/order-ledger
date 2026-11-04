@@ -21,6 +21,13 @@
   .tk .m { font-size: 12px; color: var(--muted); margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .tk .tag { font-size: 11px; border-radius: 99px; padding: 1px 8px; background: var(--line-2); color: var(--muted); }
   .tk .tag.auto { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .tk .tag.rec { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); font-weight: 600; }
+  .rt-row { display: grid; grid-template-columns: 1fr 130px auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-2); }
+  .rt-row input[type=text], .rt-row select { padding: 6px 8px; }
+  .rt-row .opts { grid-column: 1 / -1; display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
+  .rt-row .opts label { display: inline-flex; flex-direction: row; gap: 4px; align-items: center; color: var(--ink); font-weight: 400; font-size: 12px; }
+  .rt-row .opts input { width: auto; }
+  .rt-row.off input[type=text] { color: var(--muted); text-decoration: line-through; }
   .tk .tag.late { background: var(--warn-soft); color: var(--bad); font-weight: 600; }
   .tk .acts { display: flex; gap: 2px; }
   .tk-empty { padding: 36px; text-align: center; color: var(--muted); }
@@ -88,6 +95,7 @@
       <button class="chip" data-f="done">Done<span class="count" id="cDone"></span></button>
       <button class="chip" data-f="all">All</button>
     </div>
+    <button class="btn small editor-only" id="recBtn" title="Tasks that come back every day, weekday, week or month">↻ Recurring tasks</button>
     <span class="muted" style="font-size:13px">Tagged tasks are added automatically: <b style="color:var(--accent)">Hub</b> for canceled orders already sent to PrepOS, <b style="color:var(--accent)">Amazon email</b> for emails that need action.</span>
   </div>
 
@@ -144,12 +152,68 @@
       return `<div class="tk ${t.status}" data-id="${esc(t.id)}">
         <input type="checkbox" data-act="toggle" ${t.status === 'done' ? 'checked' : ''} ${ed ? '' : 'disabled'} title="${t.status === 'done' ? 'Mark not done' : 'Mark done'}">
         <div><div class="t">${esc(t.title)}</div>${t.details ? `<div class="d">${esc(t.details)}</div>` : ''}
-          <div class="m">${t.kind !== 'manual' ? `<span class="tag auto">${t.kind === 'amazon_email' ? 'Amazon email' : 'Hub'}</span>` : ''}${t.due ? `<span class="tag ${late ? 'late' : ''}">due ${esc(fmtDate(t.due))}</span>` : ''}
-            <span>added ${esc(when(t.created_at))}${t.created_by_name ? ' by ' + esc(t.created_by_name) : ''}</span>
+          <div class="m">${t.kind === 'recurring' ? `<span class="tag rec">↻ ${esc(FREQ_LABEL[t.freq] || 'Recurring')}</span>${late ? `<span class="tag late">carried over from ${esc(fmtDate(t.for_date))}</span>` : t.status === 'done' ? `<span>${esc(fmtDate(t.for_date))}</span>` : ''}`
+              : `${t.kind !== 'manual' ? `<span class="tag auto">${t.kind === 'amazon_email' ? 'Amazon email' : 'Hub'}</span>` : ''}${t.due ? `<span class="tag ${late ? 'late' : ''}">due ${esc(fmtDate(t.due))}</span>` : ''}
+            <span>added ${esc(when(t.created_at))}${t.created_by_name ? ' by ' + esc(t.created_by_name) : ''}</span>`}
             ${t.status === 'done' ? `<span>· done ${esc(when(t.done_at))}${t.done_by_name ? ' by ' + esc(t.done_by_name) : ''}</span>` : ''}
             ${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener">${t.link.includes('mail.google') || t.link.includes('outlook') ? 'Open email ↗' : t.link.includes('amazon.com') ? 'Amazon ↗' : 'open ↗'}</a>` : ''}</div></div>
-        <div class="acts">${ed ? `<button class="icon-btn" data-act="edit" title="Edit">✎</button><button class="icon-btn" data-act="del" title="Delete">🗑</button>` : ''}</div></div>`;
+        <div class="acts">${ed ? `<button class="icon-btn" data-act="edit" title="Edit">✎</button>${t.kind === 'recurring' ? '' : '<button class="icon-btn" data-act="del" title="Delete">🗑</button>'}` : ''}</div></div>`;
     }).join('');
+  }
+
+  const FREQ_LABEL = { daily: 'Daily', weekdays: 'Weekdays', weekly: 'Weekly', monthly: 'Monthly' };
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  // ------------------------------------------------ recurring tasks: manage the list
+  async function recurringDialog() {
+    const wrap = document.createElement('div'); wrap.className = 'confirm-back';
+    wrap.innerHTML = `<div class="confirm-box" role="dialog" aria-modal="true" style="max-width:640px;width:100%">
+      <h3>Recurring tasks</h3>
+      <p class="muted" style="font-size:13px;margin:0 0 6px">These show up in your task list on the days they're due. If one isn't checked off, it carries over (no pile-up). Changes save as you go.</p>
+      <div id="rtList"></div>
+      <form id="rtAdd" class="rt-row" style="border-bottom:0;margin-top:6px">
+        <input type="text" name="title" placeholder="New recurring task…" maxlength="300" required>
+        <select name="freq">${Object.entries(FREQ_LABEL).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+        <button class="btn small primary">Add</button><span></span>
+      </form>
+      <div class="confirm-actions"><button class="btn" data-x>Done</button></div></div>`;
+    document.body.appendChild(wrap);
+    const close = () => { wrap.remove(); load().catch(() => {}); };
+    wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-x]')) close(); });
+    const draw = async () => {
+      const { templates } = await api('GET', '/api/task-templates');
+      wrap.querySelector('#rtList').innerHTML = templates.length ? templates.map((t) => `<div class="rt-row ${t.active ? '' : 'off'}" data-tid="${esc(t.id)}">
+        <input type="text" data-rf="title" value="${esc(t.title)}" maxlength="300">
+        <select data-rf="freq">${Object.entries(FREQ_LABEL).map(([k, v]) => `<option value="${k}" ${t.freq === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <button class="btn small ghost" data-rf="active" title="${t.active ? 'Pause' : 'Resume'}">${t.active ? 'Pause' : 'Resume'}</button>
+        <button class="icon-btn" data-rf="del" title="Delete">🗑</button>
+        ${t.freq === 'weekly' ? `<div class="opts">On ${DOW.map((d, i) => `<label><input type="checkbox" data-rf="day" value="${i}" ${(t.days || []).includes(i) ? 'checked' : ''}> ${d}</label>`).join('')}</div>` : ''}
+        ${t.freq === 'monthly' ? `<div class="opts">On day <input type="number" data-rf="monthday" min="1" max="31" value="${t.monthday || 1}" style="width:64px;padding:4px 6px"> of each month</div>` : ''}
+      </div>`).join('') : '<p class="muted">No recurring tasks yet.</p>';
+    };
+    const save = async (tid, body) => { try { await api('PATCH', `/api/task-templates/${tid}`, body); } catch (err) { fail(err); } await draw(); };
+    wrap.querySelector('#rtList').addEventListener('change', async (e) => {
+      const row = e.target.closest('[data-tid]'); if (!row) return; const tid = row.dataset.tid, f = e.target.dataset.rf;
+      if (f === 'title') await save(tid, { title: e.target.value });
+      else if (f === 'freq') await save(tid, e.target.value === 'weekly' ? { freq: 'weekly', days: [0] } : e.target.value === 'monthly' ? { freq: 'monthly', monthday: 1 } : { freq: e.target.value });
+      else if (f === 'day') await save(tid, { days: [...row.querySelectorAll('[data-rf="day"]:checked')].map((x) => +x.value) });
+      else if (f === 'monthday') await save(tid, { monthday: e.target.value });
+    });
+    wrap.querySelector('#rtList').addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-rf]'); if (!b) return; const row = b.closest('[data-tid]'), tid = row.dataset.tid;
+      if (b.dataset.rf === 'active') await save(tid, { active: row.classList.contains('off') });
+      if (b.dataset.rf === 'del' && confirm(`Delete "${row.querySelector('[data-rf=title]').value}"? It stops coming back.`)) {
+        try { await api('DELETE', `/api/task-templates/${tid}`); } catch (err) { fail(err); } await draw();
+      }
+    });
+    wrap.querySelector('#rtAdd').addEventListener('submit', async (e) => {
+      e.preventDefault(); const b = Object.fromEntries(new FormData(e.target).entries());
+      if (b.freq === 'weekly') b.days = [new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
+      if (b.freq === 'monthly') b.monthday = new Date().getDate();
+      try { await api('POST', '/api/task-templates', b); e.target.reset(); await draw(); } catch (err) { fail(err); }
+    });
+    await draw();
+    wrap.querySelector('#rtAdd input').focus();
   }
 
   function editDialog(t) {
@@ -182,6 +246,7 @@
     e.preventDefault();
     try { await api('POST', '/api/tasks', Object.fromEntries(new FormData(e.target).entries())); e.target.reset(); toast('Added'); S.f === 'done' && setF('open'); await load(); } catch (err) { fail(err); }
   });
+  $('#recBtn').addEventListener('click', () => recurringDialog().catch(fail));
   function setF(f) { S.f = f; store.set('taskFilter', f); $$('.chip[data-f]').forEach((c) => c.classList.toggle('on', c.dataset.f === f)); render(); }
   $$('.chip[data-f]').forEach((c) => c.addEventListener('click', () => setF(c.dataset.f)));
 

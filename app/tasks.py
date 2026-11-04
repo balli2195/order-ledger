@@ -10,7 +10,8 @@ from fastapi import HTTPException
 from . import db
 from .orders import Actor, _audit, jsonable
 
-COLS = ("id, title, details, status, kind, key, link, due, created_at, updated_at, done_at, "
+COLS = ("id, title, details, status, kind, key, link, due, created_at, updated_at, done_at, template_id, for_date, position, "
+        "(SELECT freq FROM task_templates x WHERE x.id=t.template_id) AS freq, "
         "(SELECT COALESCE(NULLIF(u.name,''), u.email) FROM users u WHERE u.id=t.created_by) AS created_by_name, "
         "(SELECT COALESCE(NULLIF(u.name,''), u.email) FROM users u WHERE u.id=t.done_by) AS done_by_name")
 
@@ -29,14 +30,17 @@ def _due(v):
 
 
 async def list_tasks() -> dict:
+    await ensure_recurring()
     async with db.pool.connection() as conn:
         cur = await conn.execute(f"SELECT {COLS} FROM tasks t ORDER BY (status='done'), "
-                                 f"CASE WHEN status='open' THEN due END NULLS LAST, created_at DESC LIMIT 500")
+                                 f"CASE WHEN status='open' THEN due END NULLS LAST, CASE WHEN status='open' THEN position END NULLS LAST, "
+                                 f"COALESCE(done_at, created_at) DESC LIMIT 500")
         rows = [jsonable(dict(r)) for r in await cur.fetchall()]
     return {"tasks": rows, "open": sum(1 for r in rows if r["status"] == "open")}
 
 
 async def open_count() -> int:
+    await ensure_recurring()
     async with db.pool.connection() as conn:
         cur = await conn.execute("SELECT count(*) n FROM tasks WHERE status='open'")
         return (await cur.fetchone())["n"]
@@ -177,3 +181,130 @@ async def get_digest(day: date | None) -> dict:
         cur = await conn.execute("SELECT day FROM amazon_digests ORDER BY day DESC LIMIT 60")
         days = [x["day"].isoformat() for x in await cur.fetchall()]
     return jsonable({"day": r["day"] if r else None, "data": r["data"] if r else None, "updated_at": r["updated_at"] if r else None, "days": days})
+
+
+# ---------------------------------------------------------------- recurring tasks
+
+TZ = "America/Chicago"
+FREQS = ("daily", "weekdays", "weekly", "monthly")
+_last_ensure: dict = {"day": None, "at": 0.0}
+
+
+def _due_on(t: dict, d: date) -> bool:
+    f = t["freq"]
+    if f == "daily":
+        return True
+    if f == "weekdays":
+        return d.weekday() < 5
+    if f == "weekly":
+        return d.weekday() in (t["days"] or [])
+    if f == "monthly":
+        import calendar
+        md = min(int(t["monthday"] or 1), calendar.monthrange(d.year, d.month)[1])
+        return d.day == md
+    return False
+
+
+async def ensure_recurring(force: bool = False) -> int:
+    """Add today's recurring tasks (Central time). A template whose last one is still open isn't added again:
+    the open one carries over (it shows as overdue). Runs at most once a minute."""
+    import time
+    if not force and time.monotonic() - _last_ensure["at"] < 60:
+        return 0
+    _last_ensure["at"] = time.monotonic()
+    n = 0
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute(f"SELECT (now() AT TIME ZONE '{TZ}')::date AS d")
+            today = (await cur.fetchone())["d"]
+            cur = await conn.execute(
+                "SELECT t.* FROM task_templates t WHERE t.active "
+                "AND NOT EXISTS (SELECT 1 FROM tasks x WHERE x.template_id=t.id AND (x.for_date=%s OR x.status='open')) ORDER BY position",
+                (today,))
+            for t in await cur.fetchall():
+                if not _due_on(t, today):
+                    continue
+                await conn.execute(
+                    "INSERT INTO tasks (title, details, kind, template_id, for_date, due, position) VALUES (%s,%s,'recurring',%s,%s,%s,%s) "
+                    "ON CONFLICT DO NOTHING", (t["title"], t["details"], t["id"], today, today, t["position"]))
+                n += 1
+            if n:
+                await _notify(conn)
+    return n
+
+
+async def list_templates() -> list[dict]:
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT id, title, details, freq, days, monthday, position, active FROM task_templates ORDER BY position, created_at")
+        return [jsonable(dict(r)) for r in await cur.fetchall()]
+
+
+def _tpl_fields(body: dict, partial: bool) -> dict:
+    out = {}
+    if "title" in body or not partial:
+        t = str(body.get("title") or "").strip()[:300]
+        if not t:
+            raise HTTPException(400, "Give the task a title")
+        out["title"] = t
+    if "details" in body:
+        out["details"] = str(body.get("details") or "").strip()[:5000]
+    if "freq" in body or not partial:
+        f = body.get("freq") or "daily"
+        if f not in FREQS:
+            raise HTTPException(400, "Repeat must be daily, weekdays, weekly or monthly")
+        out["freq"] = f
+    if "days" in body:
+        out["days"] = sorted({int(x) for x in (body.get("days") or []) if str(x).strip() != "" and 0 <= int(x) <= 6})
+    if "monthday" in body:
+        md = body.get("monthday")
+        out["monthday"] = max(1, min(31, int(md))) if md not in (None, "") else None
+    if "active" in body:
+        out["active"] = bool(body["active"])
+    if "position" in body:
+        out["position"] = int(body["position"] or 0)
+    if out.get("freq") == "weekly" and not out.get("days", [1]) and not partial:
+        raise HTTPException(400, "Pick the day(s) of the week")
+    return out
+
+
+async def save_template(actor: Actor, tid: str | None, body: dict) -> dict:
+    f = _tpl_fields(body, partial=bool(tid))
+    is_new = not tid
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            if tid:
+                if not f:
+                    raise HTTPException(400, "Nothing to change")
+                cur = await conn.execute(f"UPDATE task_templates SET {', '.join(k + '=%s' for k in f)} WHERE id=%s RETURNING id",
+                                         list(f.values()) + [tid])
+                if not await cur.fetchone():
+                    raise HTTPException(404, "That recurring task is gone")
+                # keep today's open copy in step with a renamed template
+                if "title" in f or "details" in f:
+                    await conn.execute("UPDATE tasks SET title=COALESCE(%s, title), details=COALESCE(%s, details) WHERE template_id=%s AND status='open'",
+                                       (f.get("title"), f.get("details"), tid))
+                if f.get("active") is False:   # paused: drop its unfinished copy
+                    await conn.execute("DELETE FROM tasks WHERE template_id=%s AND status='open'", (tid,))
+            else:
+                cur = await conn.execute("SELECT COALESCE(max(position), 0) + 1 AS p FROM task_templates")
+                f.setdefault("position", (await cur.fetchone())["p"])
+                f["created_by"] = actor.user_id
+                cur = await conn.execute(f"INSERT INTO task_templates ({', '.join(f)}) VALUES ({', '.join(['%s'] * len(f))}) RETURNING id",
+                                         list(f.values()))
+                tid = str((await cur.fetchone())["id"])
+            await _audit(conn, actor, "create" if is_new else "update", "task_template", tid, None, None, {"title": f.get("title")})
+            await _notify(conn)
+    await ensure_recurring(force=True)
+    return {"id": tid}
+
+
+async def delete_template(actor: Actor, tid: str) -> None:
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM tasks WHERE template_id=%s AND status='open'", (tid,))
+            cur = await conn.execute("DELETE FROM task_templates WHERE id=%s RETURNING title", (tid,))
+            r = await cur.fetchone()
+            if not r:
+                raise HTTPException(404, "That recurring task is gone")
+            await _audit(conn, actor, "delete", "task_template", tid, None, {"title": r["title"]}, None)
+            await _notify(conn)

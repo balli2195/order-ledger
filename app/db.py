@@ -472,6 +472,27 @@ MIGRATIONS: list[str] = [
         data       jsonb NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
     );
+    """,    # 28: recurring tasks (daily / weekdays / weekly / monthly). The Hub adds each one to the task list on the days
+            #     it's due; an unfinished one carries over instead of piling up. Seeded with Nick's daily Amazon routine.
+    """
+    CREATE TABLE task_templates (
+        id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        title      text NOT NULL,
+        details    text NOT NULL DEFAULT '',
+        freq       text NOT NULL DEFAULT 'daily' CHECK (freq IN ('daily', 'weekdays', 'weekly', 'monthly')),
+        days       integer[] NOT NULL DEFAULT '{}',
+        monthday   integer,
+        position   integer NOT NULL DEFAULT 0,
+        active     boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        created_by integer REFERENCES users(id) ON DELETE SET NULL
+    );
+    ALTER TABLE tasks ADD COLUMN template_id uuid REFERENCES task_templates(id) ON DELETE SET NULL,
+                      ADD COLUMN for_date date, ADD COLUMN position integer;
+    CREATE UNIQUE INDEX tasks_template_day_idx ON tasks (template_id, for_date) WHERE template_id IS NOT NULL;
+    INSERT INTO task_templates (title, position) VALUES
+        ('Address buyer messages', 1), ('Remove negative feedback', 2), ('Request Amazon disbursement', 3),
+        ('Turn on repricer for new products', 4), ('Check account health', 5);
     """,
 ]
 

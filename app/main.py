@@ -756,6 +756,31 @@ async def api_task_delete(tid: str, request: Request):
     return {"ok": True}
 
 
+@app.get("/api/task-templates")
+async def api_task_templates(request: Request):
+    await auth.require(request, tab="tasks")
+    return {"templates": await T.list_templates()}
+
+
+@app.post("/api/task-templates")
+async def api_task_template_add(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor", tab="tasks")
+    return await T.save_template(web_actor(user), None, body)
+
+
+@app.patch("/api/task-templates/{tid}")
+async def api_task_template_edit(tid: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor", tab="tasks")
+    return await T.save_template(web_actor(user), tid, body)
+
+
+@app.delete("/api/task-templates/{tid}")
+async def api_task_template_delete(tid: str, request: Request):
+    user = await auth.require(request, "editor", tab="tasks")
+    await T.delete_template(web_actor(user), tid)
+    return {"ok": True}
+
+
 @app.get("/api/amazon-digest")
 async def api_amazon_digest(request: Request, day: str | None = None):
     await auth.require(request, tab="tasks")
