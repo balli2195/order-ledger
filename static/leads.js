@@ -2,7 +2,7 @@
   'use strict';
   const { $, $$, esc, money, num, pct, fmtDate, api, toast, fail, can } = LG;
   const PAGE = 200;
-  const S = { hl: null, sel: new Set(), meta: null, rows: [], byId: new Map(), totals: null, dayTotals: {}, sort: 'date', desc: true, offset: 0, days: 30, openId: null, order: [] };
+  const S = { hl: null, sel: new Set(), meta: null, rows: [], byId: new Map(), totals: null, dayTotals: {}, sort: 'date', desc: true, offset: 0, days: 0, openId: null, order: [] };
 
   // Column definitions: key, header, sort key (or null), cell class, renderer.
   const band = (b) => b == null ? '<span class="muted">—</span>' : `<span class="band b${b}">${b}</span>`;
@@ -98,7 +98,6 @@
       for (const id of ['q', 'store', 'brand', 'sourced', 'band']) if (typeof v[id] === 'string') $('#' + id).value = v[id];
       if (Number($('#band').value) >= 1) $('#band').value = '';   // an old band filter (4, 7, 9): bands are gone
       for (const id of ['ordered', 'left', 'unscored']) $('#' + id).checked = !!v[id];
-      if (typeof v.days === 'number') { S.days = v.days; $$('#range .chip').forEach((x) => x.classList.toggle('on', Number(x.dataset.days) === S.days)); }
     } catch { /* storage blocked or old value */ }
   }
 
@@ -161,8 +160,21 @@
     $('#empty').classList.toggle('hidden', S.rows.length > 0);
     const left = (t.n || 0) - S.rows.length;
     $('#more').classList.toggle('hidden', left <= 0);
-    $('#moreBtn').textContent = `Show more (${num(left)} left)`;
+    $('#moreBtn').textContent = `Loading more… (${num(left)} left)`;
+    S.left = left; requestAnimationFrame(maybeMore);
   }
+
+  // No date range or "Show more" button (Nick, Nov 5 2026): every lead, and the next page loads as you scroll near the bottom.
+  let moreBusy = false;
+  function maybeMore() {
+    if (moreBusy || !(S.left > 0)) return;
+    const m = $('#more'); if (!m || m.classList.contains('hidden')) return;
+    if (m.getBoundingClientRect().top > window.innerHeight + 1200) return;
+    moreBusy = true; S.offset += PAGE;
+    load(true).catch(fail).finally(() => { moreBusy = false; requestAnimationFrame(maybeMore); });
+  }
+  window.addEventListener('scroll', maybeMore, { passive: true });
+  window.addEventListener('resize', maybeMore);
 
   function dayHtml(day) {
     const t = S.dayTotals[day] || {};
@@ -978,9 +990,7 @@
   let qt; const reload = () => { clearTimeout(qt); qt = setTimeout(() => load().catch(fail), 200); };
   $('#q').addEventListener('input', reload);
   ['ordered', 'left', 'unscored'].forEach((id) => $('#' + id).addEventListener('change', reload));
-  $$('#range .chip').forEach((c) => c.addEventListener('click', () => { $$('#range .chip').forEach((x) => x.classList.toggle('on', x === c)); S.days = Number(c.dataset.days); reload(); }));
   $('#clear').addEventListener('click', () => { ['q', 'store', 'brand', 'sourced', 'band'].forEach((id) => { $('#' + id).value = ''; }); ['ordered', 'left', 'unscored'].forEach((id) => { $('#' + id).checked = false; }); reload(); });
-  $('#moreBtn').addEventListener('click', () => { S.offset += PAGE; load(true).catch(fail); });
 
   // The filter bar stays at the top while scrolling; the table header pins just below it (Nick, Nov 2 2026).
   (() => {
@@ -996,7 +1006,7 @@
     try {   // coming from the Stores & brands page (this overrides the remembered filters)
       const pre = JSON.parse(sessionStorage.getItem('leadFilter') || 'null');
       if (pre) { sessionStorage.removeItem('leadFilter'); if (pre.store) $('#store').value = pre.store; if (pre.brand) $('#brand').value = pre.brand;
-        S.days = 0; $$('#range .chip').forEach((x) => x.classList.toggle('on', x.dataset.days === '0')); }
+        }
     } catch { /* storage blocked */ }
     // If the server is restarting (a deploy) or slow, keep trying instead of leaving an empty page.
     for (let i = 0; ; i++) {
