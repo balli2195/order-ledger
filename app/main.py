@@ -359,6 +359,22 @@ async def api_order_bonus(request: Request):
     return {"bonus": await order_bonus.today(user)}
 
 
+@app.get("/api/order-bonus/switch")
+async def api_order_bonus_switch(request: Request):
+    user = await auth.require(request)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can turn the bonus on")
+    return await order_bonus.switch_status()
+
+
+@app.post("/api/order-bonus/switch")
+async def api_order_bonus_switch_set(request: Request, body: dict = Body(...)):
+    user = await auth.require(request)
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can turn the bonus on")
+    return await order_bonus.switch(bool(body.get("on")))
+
+
 @app.get("/api/me")
 async def api_me(request: Request):
     user = await auth.require(request)

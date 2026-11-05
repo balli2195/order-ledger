@@ -60,6 +60,27 @@ window.TimeClock = (() => {
         menu.insertBefore(b, menu.firstChild);
       }
     });
+    bonusSwitch(menu);
+  }
+
+  // Owner's Menu: turn the order bonus on for today only (Nick, Nov 5 2026)
+  async function bonusSwitch(menu) {
+    if (!menu || menu.querySelector('[data-bonus-switch]')) return;
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.bonusSwitch = '1'; b.className = 'bonus-switch';
+    const money = (n) => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    let s = null;
+    const label = () => {
+      if (!s) { b.textContent = 'Bonus today'; return; }
+      b.innerHTML = `${s.on ? '🎉 ' : ''}${s.user}'s bonus today: <b>${s.on ? 'On' : 'Off'}</b><span class="sub" style="display:block;font-size:11.5px;opacity:.75">${money(s.pay)} per ${money(s.per)} ordered · ${s.on ? 'click to turn off' : 'click to turn on'}</span>`;
+    };
+    try { s = await call('GET', '/api/order-bonus/switch'); } catch { return; }
+    label();
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try { s = await call('POST', '/api/order-bonus/switch', { on: !s.on }); label(); say(`${s.user}'s bonus is ${s.on ? 'on for today' : 'off'}`); }
+      catch (err) { say('Could not change the bonus: ' + (err.message || err), true); }
+    });
+    menu.insertBefore(b, menu.querySelector('[data-go="/timeclock"]')?.nextSibling || menu.firstChild);
   }
 
   async function taskBadge() {   // open-task count on the Tasks tab

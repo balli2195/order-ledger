@@ -105,7 +105,7 @@ window.OrderBonus = (() => {
     try {
       const es = new EventSource('/api/events');
       let t = null;
-      es.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (!m.t || m.t === 'order') { clearTimeout(t); t = setTimeout(refresh, 1200); } } catch { /* ignore */ } };
+      es.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (!m.t || m.t === 'order' || m.t === 'bonus') { clearTimeout(t); t = setTimeout(refresh, 1200); } } catch { /* ignore */ } };
     } catch { /* ignore */ }
   }
   return { init, refresh, celebrate: () => st.data && celebrate(st.data) };

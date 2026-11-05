@@ -6,6 +6,7 @@ The person and the owner see a big bonus figure that celebrates each new milesto
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -35,3 +36,33 @@ async def today(user: User) -> dict | None:
     return {"user": c.get("user"), "date": day, "per": per, "pay": pay, "total": round(total, 2), "orders": r["n"],
             "milestones": steps, "bonus": round(steps * pay, 2), "next_at": (steps + 1) * per,
             "to_next": round((steps + 1) * per - total, 2), "self": user.role != "owner"}
+
+
+def _today() -> str:
+    return datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
+
+
+async def switch_status() -> dict:
+    """Owner's Menu button (Nick, Nov 5 2026: "a button to turn on only for the day"). Uses the person and rate of
+    the last bonus day set up (Abby, $5 per $1,000)."""
+    cfg = await get_setting("order_bonus", []) or []
+    day = _today()
+    last = cfg[-1] if cfg else {"user": "Abby", "per": 1000, "pay": 5}
+    on = [c for c in cfg if str(c.get("date")) == day]
+    cur = on[0] if on else last
+    return {"on": bool(on), "user": cur.get("user") or "Abby", "per": float(cur.get("per") or 1000), "pay": float(cur.get("pay") or 5), "date": day}
+
+
+async def switch(on: bool) -> dict:
+    """Turns today's bonus on or off. Only today's entry changes; past days stay as they were."""
+    st = await switch_status()
+    day = st["date"]
+    cfg = [c for c in (await get_setting("order_bonus", []) or []) if str(c.get("date")) != day]
+    if on:
+        cfg.append({"user": st["user"], "date": day, "per": st["per"], "pay": st["pay"]})
+    cfg = cfg[-60:]
+    async with db.pool.connection() as conn:
+        await conn.execute("INSERT INTO settings (key, value) VALUES ('order_bonus', %s::jsonb) "
+                           "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (json.dumps(cfg),))
+        await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "bonus", "op": "switch"}),))
+    return await switch_status()
