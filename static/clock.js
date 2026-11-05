@@ -63,24 +63,39 @@ window.TimeClock = (() => {
     bonusSwitch(menu);
   }
 
-  // Owner's Menu: turn the order bonus on for today only (Nick, Nov 5 2026)
-  async function bonusSwitch(menu) {
-    if (!menu || menu.querySelector('[data-bonus-switch]')) return;
-    const b = document.createElement('button'); b.type = 'button'; b.dataset.bonusSwitch = '1'; b.className = 'bonus-switch';
-    const money = (n) => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
-    let s = null;
-    const label = () => {
-      if (!s) { b.textContent = 'Bonus today'; return; }
-      b.innerHTML = `${s.on ? '🎉 ' : ''}${s.user}'s bonus today: <b>${s.on ? 'On' : 'Off'}</b><span class="sub" style="display:block;font-size:11.5px;opacity:.75">${money(s.pay)} per ${money(s.per)} ordered · ${s.on ? 'click to turn off' : 'click to turn on'}</span>`;
-    };
-    try { s = await call('GET', '/api/order-bonus/switch'); } catch { return; }
-    label();
+  // Owner: turn the order bonus on for today only (Nick, Nov 5 2026) — a button in the Menu, and one on the Time clock page
+  const money0 = (n) => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  const bon = { s: null, btns: [] };
+  function bonusLabel() {
+    const s = bon.s;
+    for (const [b, compact] of bon.btns) {
+      if (!s) { b.textContent = 'Bonus today'; continue; }
+      b.classList.toggle('primary', compact && s.on);
+      b.title = `${money0(s.pay)} per ${money0(s.per)} ordered, today only`;
+      b.innerHTML = compact
+        ? `${s.on ? '🎉 ' : ''}${s.user}'s bonus today: <b>${s.on ? 'On' : 'Off'}</b>`
+        : `${s.on ? '🎉 ' : ''}${s.user}'s bonus today: <b>${s.on ? 'On' : 'Off'}</b><span class="sub" style="display:block;font-size:11.5px;opacity:.75">${money0(s.pay)} per ${money0(s.per)} ordered · ${s.on ? 'click to turn off' : 'click to turn on'}</span>`;
+    }
+  }
+  async function bonusBind(b, compact) {
+    if (!b || bon.btns.some(([x]) => x === b)) return;
+    bon.btns.push([b, compact]);
+    if (!bon.s) { try { bon.s = await call('GET', '/api/order-bonus/switch'); } catch { return; } }
+    b.hidden = false; bonusLabel();
     b.addEventListener('click', async (e) => {
       e.stopPropagation();
-      try { s = await call('POST', '/api/order-bonus/switch', { on: !s.on }); label(); say(`${s.user}'s bonus is ${s.on ? 'on for today' : 'off'}`); }
+      try { bon.s = await call('POST', '/api/order-bonus/switch', { on: !bon.s.on }); bonusLabel(); say(`${bon.s.user}'s bonus is ${bon.s.on ? 'on for today' : 'off'}`); }
       catch (err) { say('Could not change the bonus: ' + (err.message || err), true); }
     });
-    menu.insertBefore(b, menu.querySelector('[data-go="/timeclock"]')?.nextSibling || menu.firstChild);
+  }
+  function bonusSwitch(menu) {
+    if (menu && !menu.querySelector('[data-bonus-switch]')) {
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.bonusSwitch = '1'; b.className = 'bonus-switch';
+      menu.insertBefore(b, menu.querySelector('[data-go="/timeclock"]')?.nextSibling || menu.firstChild);
+      bonusBind(b, false);
+    }
+    const page = document.getElementById('bonusBtn');   // Time clock page
+    if (page) bonusBind(page, true);
   }
 
   async function taskBadge() {   // open-task count on the Tasks tab
