@@ -229,7 +229,7 @@
     const f = h?.flag || null, tp = h?.transparency || null, tbm = h?.tp_brand || [];
     const nolist = f?.list_ok === false, lreasons = f?.list_reasons || [];
     const same = sameRes?.leads || [];
-    const bad = f?.fba_eligible === false, dup = same.length > 1;   // bad = FBA can't receive it
+    const bad = f?.fba_eligible === false, dup = new Set(same.map((x) => x.set_id || x.id)).size > 1;   // leads in one set count once   // bad = FBA can't receive it
     const tb = !tp && tbm.length > 0;
     const cat = h?.catalog || null, catErr = (cat?.issues || []).filter((x) => x.severity === 'ERROR');
     const GEN = /^(generic|unbranded|nobrand|genericbrand|genericunbranded|brandgeneric)$/;

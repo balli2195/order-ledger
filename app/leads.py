@@ -207,7 +207,7 @@ def _sale_dup_sql(win: tuple[str, str] | None) -> str:
         return "NULL::int AS sale_dup_n"
     a, b = win   # ISO dates checked by sale_window()
     return (f"(CASE WHEN l.lead_date BETWEEN '{a}' AND '{b}' AND {SEPH.format(t='l')} THEN "
-            f"(SELECT count(*) FROM leads d WHERE upper(btrim(d.asin)) = upper(btrim(l.asin)) AND d.lead_date BETWEEN '{a}' AND '{b}' "
+            f"(SELECT count(DISTINCT COALESCE(d.set_id, d.id)) FROM leads d WHERE upper(btrim(d.asin)) = upper(btrim(l.asin)) AND d.lead_date BETWEEN '{a}' AND '{b}' "
             f"AND {SEPH.format(t='d')}) END) AS sale_dup_n")
 
 
@@ -235,7 +235,8 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
             f"max(l.lead_date) OVER ({GROUP}) AS group_date, hf.level AS hazmat_level, hf.fba_eligible, hf.fba_reasons, hf.fba_checked_at, hf.list_ok, hf.list_checked_at, "
             f"(is_generic_brand(hf.amz_brand) OR is_generic_brand(hf.brand)) AS generic, "
             f"(SELECT EXISTS (SELECT 1 FROM jsonb_array_elements(ca.issues) x WHERE x->>'severity' = 'ERROR') FROM catalog_adds ca WHERE ca.asin = upper(btrim(l.asin))) AS cat_bad, "
-            f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
+            # leads of the same ASIN inside one set count once: a set isn't a duplicate (Nick, Nov 5 2026)
+            f"(SELECT count(DISTINCT COALESCE(d.set_id, d.id)) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
             f"{_sale_dup_sql(win)}, "
             f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
             f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency, "
@@ -299,11 +300,11 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
             lead["sale_dups"] = []
             if win:
                 cur = await conn.execute(
-                    f"SELECT l.id, l.lead_date, l.sourced_by, l.cost, l.buy_qty, l.qty_ordered FROM leads l "
+                    f"SELECT l.id, l.set_id, l.lead_date, l.sourced_by, l.cost, l.buy_qty, l.qty_ordered FROM leads l "
                     f"WHERE upper(btrim(l.asin))=upper(btrim(%s)) AND l.lead_date BETWEEN %s AND %s AND {SEPH.format(t='l')} "
                     f"ORDER BY l.lead_date, l.created_at", (lead["asin"], win[0], win[1]))
                 ds = [jsonable(dict(x)) for x in await cur.fetchall()]
-                if len(ds) > 1 and any(x["id"] == lead["id"] for x in ds):
+                if len({x["set_id"] or x["id"] for x in ds}) > 1 and any(x["id"] == lead["id"] for x in ds):
                     lead["sale_dups"] = ds
                     lead["sale_window"] = list(win)
             cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at, fba_eligible, fba_reasons, fba_checked_at, "
@@ -319,7 +320,7 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
             lead["list_reasons"] = (hz["list_reasons"] or []) if hz else []
             lead["generic"] = bool(hz and hz["generic"])
             lead["amz_brand"] = (hz["amz_brand"] or hz["keepa_brand"]) if hz else None
-            cur = await conn.execute("SELECT count(*) n FROM leads WHERE upper(asin)=upper(%s) AND lead_date=%s", (lead["asin"], r["lead_date"]))
+            cur = await conn.execute("SELECT count(DISTINCT COALESCE(set_id, id)) n FROM leads WHERE upper(asin)=upper(%s) AND lead_date=%s", (lead["asin"], r["lead_date"]))
             lead["same_day_n"] = (await cur.fetchone())["n"]
         cur = await conn.execute("SELECT qty, store, order_ref, order_date, reason, at FROM lead_cancellations WHERE lead_id=%s ORDER BY order_date, at",
                                  (r["id"],))
