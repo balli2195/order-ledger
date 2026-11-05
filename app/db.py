@@ -672,6 +672,10 @@ MIGRATIONS: list[str] = [
     """,    # 46: reopen the task that the bullet tick closed by mistake (Nov 5 2026, "Liability insurance overdue")
     """
     UPDATE tasks SET status='open', done_at=NULL, done_by=NULL WHERE id='1984b6e3-b894-4a44-8f13-4f6e3e3581ef' AND status='done';
+    """,    # 47: the current Sephora sale, for the repeated-ASIN flag on leads (Nick, Nov 5 2026)
+    """
+    INSERT INTO settings (key, value) VALUES ('sephora_sale', '{"name": "Sephora Savings Event, Fall 2026", "start": "2026-10-30", "end": "2026-11-09"}')
+    ON CONFLICT (key) DO NOTHING;
     """,
 ]
 

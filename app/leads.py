@@ -188,6 +188,29 @@ def _group_order(order: str) -> str:
     return ", ".join(parts + ["COALESCE(l.set_id, l.id)", "l.created_at DESC"])
 
 
+async def sale_window() -> tuple[str, str] | None:
+    """The current Sephora sale (settings sephora_sale = {start, end, name}); Nick, Nov 5 2026: flag an ASIN that's in more
+    than one Sephora lead during this sale only."""
+    from datetime import date as _d
+    v = await get_setting("sephora_sale", None) or {}
+    try:
+        return _d.fromisoformat(str(v["start"])).isoformat(), _d.fromisoformat(str(v["end"])).isoformat()
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+SEPH = "EXISTS (SELECT 1 FROM unnest({t}.stores) s WHERE s ILIKE 'sephora%%')"
+
+
+def _sale_dup_sql(win: tuple[str, str] | None) -> str:
+    if not win:
+        return "NULL::int AS sale_dup_n"
+    a, b = win   # ISO dates checked by sale_window()
+    return (f"(CASE WHEN l.lead_date BETWEEN '{a}' AND '{b}' AND {SEPH.format(t='l')} THEN "
+            f"(SELECT count(*) FROM leads d WHERE upper(btrim(d.asin)) = upper(btrim(l.asin)) AND d.lead_date BETWEEN '{a}' AND '{b}' "
+            f"AND {SEPH.format(t='d')}) END) AS sale_dup_n")
+
+
 async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit: int = 200, offset: int = 0, day_list: list | None = None) -> dict:
     w, a = _where(filters)
     if w:   # a filter that matches one lead of a set shows the whole set (Nick, Nov 2 2026)
@@ -203,6 +226,7 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     order = _group_order(order)
     rate, who = await bonus_params()
     bsql, bargs = _bonus_sql(rate, who)
+    win = await sale_window()
     limit = max(1, min(int(limit), 1000))
     async with db.pool.connection() as conn:
         cur = await conn.execute(
@@ -212,6 +236,7 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
             f"(is_generic_brand(hf.amz_brand) OR is_generic_brand(hf.brand)) AS generic, "
             f"(SELECT EXISTS (SELECT 1 FROM jsonb_array_elements(ca.issues) x WHERE x->>'severity' = 'ERROR') FROM catalog_adds ca WHERE ca.asin = upper(btrim(l.asin))) AS cat_bad, "
             f"(SELECT count(*) FROM leads d WHERE upper(d.asin) = upper(l.asin) AND d.lead_date = l.lead_date) AS same_day_n, "
+            f"{_sale_dup_sql(win)}, "
             f"(SELECT min(t.email_date) FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency_since, "
             f"EXISTS (SELECT 1 FROM transparency_notices t WHERE t.asin = upper(btrim(l.asin))) AS transparency, "
             f"(SELECT array_agg(DISTINCT tb.asin) FROM tb WHERE tb.asin <> upper(btrim(l.asin)) AND tb.key IN "
@@ -270,6 +295,17 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
                 (lead["asin"], r["id"]),
             )
             lead["same_asin"] = [jsonable(dict(x)) for x in await cur.fetchall()]
+            win = await sale_window()
+            lead["sale_dups"] = []
+            if win:
+                cur = await conn.execute(
+                    f"SELECT l.id, l.lead_date, l.sourced_by, l.cost, l.buy_qty, l.qty_ordered FROM leads l "
+                    f"WHERE upper(btrim(l.asin))=upper(btrim(%s)) AND l.lead_date BETWEEN %s AND %s AND {SEPH.format(t='l')} "
+                    f"ORDER BY l.lead_date, l.created_at", (lead["asin"], win[0], win[1]))
+                ds = [jsonable(dict(x)) for x in await cur.fetchall()]
+                if len(ds) > 1 and any(x["id"] == lead["id"] for x in ds):
+                    lead["sale_dups"] = ds
+                    lead["sale_window"] = list(win)
             cur = await conn.execute("SELECT level, hazmat_info, fba_ever, amazon_ever, checked_at, fba_eligible, fba_reasons, fba_checked_at, "
                                      "list_ok, list_reasons, list_checked_at, brand AS keepa_brand, amz_brand, "
                                      "(is_generic_brand(amz_brand) OR is_generic_brand(brand)) AS generic "

@@ -197,11 +197,12 @@
   const TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
   // ------------------------------------------------------------ hazmat warning (flags from Keepa, cached per ASIN)
   function hazBadge(r) {
-    const dup = (r.same_day_n || 0) > 1, nolist = r.list_ok === false, bad = r.fba_eligible === false || nolist || r.cat_bad === true || r.generic === true, tp = !!r.transparency, tb = (r.tp_brand_asins || []).length;
+    const sd = (r.sale_dup_n || 0) > 1;   // Nick, Nov 5 2026: same ASIN in more than one Sephora lead this sale
+    const dup = (r.same_day_n || 0) > 1 || sd, nolist = r.list_ok === false, bad = r.fba_eligible === false || nolist || r.cat_bad === true || r.generic === true, tp = !!r.transparency, tb = (r.tp_brand_asins || []).length;
     if (bad || dup || tp || tb) {
       const tip = [tp ? 'Enrolled in Transparency: units need Transparency codes' : '', tb && !tp ? `Same brand as ${tb} Transparency ASIN${tb === 1 ? '' : 's'}` : '',
-        r.generic ? "GENERIC brand on Amazon: you can't send generic ASINs in" : '', nolist ? "Amazon won't let your account list this" : '', r.cat_bad ? 'Amazon flagged your listing of this ASIN' : '', r.fba_eligible === false ? "Amazon says you can't send this to FBA right now" : '', dup ? `Entered ${r.same_day_n} times on this day` : ''].filter(Boolean).join(' · ');
-      const label = tp && !bad ? 'T' : bad ? '!' : dup ? r.same_day_n + '×' : 'B';
+        r.generic ? "GENERIC brand on Amazon: you can't send generic ASINs in" : '', nolist ? "Amazon won't let your account list this" : '', r.cat_bad ? 'Amazon flagged your listing of this ASIN' : '', r.fba_eligible === false ? "Amazon says you can't send this to FBA right now" : '', (r.same_day_n || 0) > 1 ? `Entered ${r.same_day_n} times on this day` : '', sd ? `In ${r.sale_dup_n} Sephora leads this sale` : ''].filter(Boolean).join(' · ');
+      const label = tp && !bad ? 'T' : bad ? '!' : dup ? Math.max(r.same_day_n || 0, r.sale_dup_n || 0) + '×' : 'B';
       return `<button class="hz-badge ${bad || tp ? '' : 'warn'}" data-hz="${esc(r.asin)}" data-hz-day="${esc(r.lead_date || '')}" data-stop title="${esc(tip)}. Click for details." aria-label="Warnings">${label}</button>`;
     }
     if (r.fba_eligible === true) {
@@ -269,7 +270,7 @@
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-hz]'); if (b) { e.preventDefault(); e.stopPropagation(); hazPopup(b.dataset.hz, '', b.dataset.hzDay || ''); } }, true);
   function hazAfterAdd(lead) {
     if (!lead || !lead.asin) return;
-    const bad = lead.fba_eligible === false, dup = (lead.same_day_n || 0) > 1;
+    const bad = lead.fba_eligible === false, dup = (lead.same_day_n || 0) > 1 || (lead.sale_dups || []).length > 1;
     if (bad || dup || lead.generic || lead.transparency || lead.list_ok === false || (lead.tp_brand || []).length) hazPopup(lead.asin, `Check the lead you just added (<b>${esc(lead.asin)}</b>) before buying.`, lead.lead_date);
   }
 
@@ -783,6 +784,8 @@
           <table class="mini"><tbody>${(l.set_members || []).map((x) => `<tr data-open="${esc(x.id)}" style="cursor:pointer" class="${x.id === l.id ? 'cur' : ''}"><td class="mono">${esc(x.asin || '—')}</td><td>${esc((x.product_name || '').slice(0, 55))}</td><td class="num">${money(x.cost)}</td><td class="num">${num(x.buy_qty)}</td></tr>`).join('')}</tbody></table>
           ${editable() ? `<div class="set-row"><button class="btn small" data-setact="remove" data-lead="${esc(l.id)}">Take this lead out of the set</button><button class="btn small ghost" data-setact="ungroup" data-set="${esc(l.set_id)}">Ungroup the whole set</button></div>` : ''}</div>` : ''}
         ${(l.same_day_n || 0) > 1 ? `<div class="hz-banner warn"><b>Entered ${l.same_day_n} times on ${esc(fmtDate(l.lead_date))}.</b> Check it's not a duplicate. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">See them</button></div>` : ''}
+        ${(l.sale_dups || []).length > 1 ? `<div class="hz-banner warn"><b>Repeated this Sephora sale: this ASIN is in ${l.sale_dups.length} Sephora leads (${esc(fmtDate(l.sale_window[0]).replace(/, \d{4}$/, ''))} – ${esc(fmtDate(l.sale_window[1]).replace(/, \d{4}$/, ''))}).</b> Check you're not buying it twice.
+          <table class="mini" style="margin-top:6px"><tbody>${l.sale_dups.map((x) => `<tr data-open="${esc(x.id)}" style="cursor:pointer" class="${x.id === l.id ? 'cur' : ''}"><td>${esc(fmtDate(x.lead_date))}</td><td>${esc(x.sourced_by || '')}</td><td class="num">${money(x.cost)}</td><td class="num">buy ${num(x.buy_qty)}</td><td class="num">ordered ${num(x.qty_ordered)}</td></tr>`).join('')}</tbody></table></div>` : ''}
         <div class="grid">
           ${field('Date', 'lead_date', l.lead_date, { type: 'date' })}
           ${field('ASIN', 'asin', l.asin, { cls: 'mono' })}
