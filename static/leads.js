@@ -6,11 +6,10 @@
 
   // Column definitions: key, header, sort key (or null), cell class, renderer.
   const band = (b) => b == null ? '<span class="muted">—</span>' : `<span class="band b${b}">${b}</span>`;
-  // Predicted ROI as a pill, coloured like the old bands (Nick, Nov 5 2026): red under 21.5% (bands 1-3),
-  // grey 21.5-35.5% (bands 4-7), green 35.5% and up (bands 8-10).
+  // Predicted ROI as a pill, coloured like the old bands: red under 15%, grey 15-30%, green above 30%.
   const roiPill = (v) => {
     if (v == null || v === '') return '<span class="muted">—</span>';
-    const x = Number(v), cls = x < 0.215 ? 'b1' : x < 0.355 ? 'b5' : 'b9';
+    const x = Number(v), cls = x < 0.15 ? 'b1' : x <= 0.30 ? 'b5' : 'b9';   // Nick, Nov 5 2026: red under 15%, green above 30%
     return `<span class="band roi ${cls}">${Math.round(x * 100)}%</span>`;
   };
   const safeUrl = (u) => { if (!u) return null; let x = String(u).trim(); if (!/^https?:\/\//i.test(x)) x = 'https://' + x; try { const v = new URL(x); return /^https?:$/.test(v.protocol) ? v.href : null; } catch { return null; } };
