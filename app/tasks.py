@@ -234,12 +234,31 @@ async def put_digest(day: date, body: dict) -> dict:
     return {"day": day.isoformat(), "tasks": n, "violations": v["tasks"]}
 
 
+def bullet_key(text: str) -> str:
+    """A digest bullet's identity for its tick box: the hash of its text (re-posting a day keeps unchanged bullets ticked)."""
+    import hashlib
+    return hashlib.sha1(" ".join(str(text or "").split()).encode()).hexdigest()[:16]
+
+
 async def get_digest(day: date | None, last: int = 0) -> dict:
-    """One day's summary, or with last=N the N most recent days (newest first) for the stacked Inbox view."""
+    """One day's summary, or with last=N the N most recent days (newest first) for the stacked Inbox view.
+    Each urgent/routine bullet gets a key; marks[key] = {done, task_id, task_status} (Nick, Nov 5 2026)."""
     async with db.pool.connection() as conn:
         if last:
             cur = await conn.execute("SELECT day, data, updated_at FROM amazon_digests ORDER BY day DESC LIMIT %s", (max(1, min(int(last), 14)),))
             rows = [{"day": r["day"], "data": r["data"], "updated_at": r["updated_at"]} for r in await cur.fetchall()]
+            days = [r["day"] for r in rows]
+            cur = await conn.execute(
+                "SELECT m.day, m.key, m.done, m.task_id, t.status AS task_status FROM digest_marks m "
+                "LEFT JOIN tasks t ON t.id = m.task_id WHERE m.day = ANY(%s)", (days,))
+            marks: dict = {}
+            for m in await cur.fetchall():
+                marks.setdefault(m["day"], {})[m["key"]] = {"done": m["done"] or m["task_status"] == "done",
+                                                           "task_id": m["task_id"], "task_status": m["task_status"]}
+            for r in rows:
+                g = r["data"] or {}
+                r["keys"] = {k: [bullet_key(x) for x in (g.get(k) or [])] for k in ("urgent", "routine")}
+                r["marks"] = marks.get(r["day"], {})
             return jsonable({"digests": rows})
         if day:
             cur = await conn.execute("SELECT day, data, updated_at FROM amazon_digests WHERE day=%s", (day,))
@@ -249,6 +268,48 @@ async def get_digest(day: date | None, last: int = 0) -> dict:
         cur = await conn.execute("SELECT day FROM amazon_digests ORDER BY day DESC LIMIT 60")
         days = [x["day"].isoformat() for x in await cur.fetchall()]
     return jsonable({"day": r["day"] if r else None, "data": r["data"] if r else None, "updated_at": r["updated_at"] if r else None, "days": days})
+
+
+async def mark_bullet(actor: Actor, day: date, key: str, done: bool) -> dict:
+    async with db.pool.connection() as conn:
+        await conn.execute(
+            "INSERT INTO digest_marks (day, key, done, by_user, at) VALUES (%s,%s,%s,%s, now()) "
+            "ON CONFLICT (day, key) DO UPDATE SET done=EXCLUDED.done, by_user=EXCLUDED.by_user, at=now()",
+            (day, key[:40], done, actor.user_id))
+        cur = await conn.execute("SELECT task_id FROM digest_marks WHERE day=%s AND key=%s", (day, key[:40]))
+        tid = (await cur.fetchone())["task_id"]
+        if tid:   # ticking the bullet also ticks the task it was moved to (and back)
+            await conn.execute("UPDATE tasks SET status=%s, done_at=CASE WHEN %s THEN now() END, done_by=CASE WHEN %s THEN %s::int END "
+                               "WHERE id=%s", ("done" if done else "open", done, done, actor.user_id, tid))
+        await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "task", "op": "digest"}),))
+    return {"ok": True}
+
+
+async def bullet_to_task(actor: Actor, day: date, key: str, text: str) -> dict:
+    """Moves an Amazon email bullet to the task list: title = its bold lead-in (or the start of the text), details = the
+    whole bullet. Moving the same bullet twice returns the task it already made."""
+    import re as _re
+    text = str(text or "").strip()
+    if bullet_key(text) != key:
+        raise HTTPException(400, "That summary changed; reload the page")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT m.task_id FROM digest_marks m JOIN tasks t ON t.id = m.task_id WHERE m.day=%s AND m.key=%s", (day, key))
+        r = await cur.fetchone()
+    if r:
+        return {"task_id": str(r["task_id"]), "existing": True}
+    m = _re.match(r"\*\*(.+?)\*\*\s*(.*)", text, _re.S)
+    plain = _re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    lead = (m.group(1).strip().rstrip(":").strip() if m else "") or plain
+    title = (lead if len(lead) <= 120 else lead[:117] + "…")
+    details = f"{plain}\n\nFrom the Amazon email summary, {day.strftime('%b')} {day.day}."
+    t = await create(actor, {"title": title, "details": details})
+    async with db.pool.connection() as conn:
+        await conn.execute(
+            "INSERT INTO digest_marks (day, key, task_id, by_user, at) VALUES (%s,%s,%s,%s, now()) "
+            "ON CONFLICT (day, key) DO UPDATE SET task_id=EXCLUDED.task_id, by_user=EXCLUDED.by_user, at=now()",
+            (day, key, t["id"], actor.user_id))
+        await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "task", "op": "digest"}),))
+    return {"task_id": t["id"], "task": t}
 
 
 # ---------------------------------------------------------------- recurring tasks

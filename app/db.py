@@ -658,6 +658,17 @@ MIGRATIONS: list[str] = [
       total int,
       fetched_at timestamptz NOT NULL DEFAULT now()
     );
+    """,    # 45: tick boxes / "move to tasks" on the Inbox's Amazon email bullets (Nick, Nov 5 2026)
+    """
+    CREATE TABLE IF NOT EXISTS digest_marks (
+      day date NOT NULL,
+      key text NOT NULL,
+      done boolean NOT NULL DEFAULT false,
+      task_id uuid,
+      by_user int,
+      at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (day, key)
+    );
     """,
 ]
 

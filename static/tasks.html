@@ -77,8 +77,21 @@
   .dg-ul { margin: 5px 0 0; padding-left: 20px; font-size: 13.5px; line-height: 1.5; }
   .dg-ul li + li { margin-top: 4px; }
   .dg-none { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-  .inbox-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
-  @media (max-width: 1000px) { .inbox-grid { grid-template-columns: minmax(0, 1fr); } }
+  /* Nick, Nov 5 2026: the page in vertical thirds — Amazon emails | IP & authenticity complaints | Tasks (right) */
+  .inbox-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
+  @media (max-width: 1100px) { .inbox-grid { grid-template-columns: minmax(0, 1fr); } .col-tasks { order: -1; } }
+  .tk-col { margin-top: 26px; }
+  .tk-col .ts-list { grid-template-columns: minmax(0, 1fr); max-height: none; }
+  .tk-col .ts .t { white-space: normal; }
+  .tk-col .tk-add { grid-template-columns: 1fr; }
+  .tk-col .tk-add textarea { grid-column: auto; }
+  .dg-ul.marks { list-style: none; padding-left: 0; }
+  .dg-li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; }
+  .dg-li input[type=checkbox] { width: 16px; height: 16px; margin: 2px 0 0; cursor: pointer; accent-color: var(--ok); }
+  .dg-li.done .tx { text-decoration: line-through; color: var(--muted); }
+  .dg-li .mv { margin-left: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--accent); border-radius: 99px; font: inherit; font-size: 11.5px; padding: 0 8px; cursor: pointer; white-space: nowrap; }
+  .dg-li .mv:hover { background: var(--accent-soft); }
+  .dg-li .mv.in { color: var(--ok); border-color: transparent; background: color-mix(in srgb, var(--ok) 12%, transparent); cursor: default; }
   .dg-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-top: 14px; overflow: hidden; }
   .dg-sec { border-top: 1px solid var(--line); padding: 2px 0; }
   .dg-sec:first-child, .dg-headline + .dg-sec { border-top: 0; }
@@ -117,7 +130,15 @@
   </header>
   <nav class="tabs"><a href="/tasks" data-tab="tasks" class="on">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
 
-  <section class="tk-strip">
+
+  <div class="inbox-grid"><div class="col-mail">
+  <div class="sec-h"><h2>Amazon emails</h2><span class="muted" style="font-size:13px">last 3 days</span></div>
+  <div id="dgBody"></div>
+  </div><div class="col-viol">
+  <div class="sec-h"><h2>IP &amp; authenticity complaints</h2><span class="muted" id="vMeta" style="font-size:13px"></span></div>
+  <div class="tk-list" id="vlist"></div>
+  </div><div class="col-tasks">
+  <section class="tk-strip tk-col">
     <div class="ts-head"><h2>Tasks</h2>
       <div class="chips" role="tablist">
         <button class="chip on" data-f="open">Open<span class="count" id="cOpen"></span></button>
@@ -137,13 +158,6 @@
     <div class="ts-list" id="list"></div>
     <button type="button" class="ts-more" id="tsMore" hidden></button>
   </section>
-
-  <div class="inbox-grid"><div class="col-mail">
-  <div class="sec-h"><h2>Amazon emails</h2><span class="muted" style="font-size:13px">last 3 days</span></div>
-  <div id="dgBody"></div>
-  </div><div class="col-tasks">
-  <div class="sec-h"><h2>IP &amp; authenticity complaints</h2><span class="muted" id="vMeta" style="font-size:13px"></span></div>
-  <div class="tk-list" id="vlist"></div>
   </div></div>
 </div>
 <div id="toasts" class="toasts"></div>
@@ -166,13 +180,20 @@
   const dayLabel = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
   function digestHtml(x) {
     const g = x.data || {};
-    const list = (a) => `<ul class="dg-ul">${a.map((i) => `<li>${rich(i)}</li>`).join('')}</ul>`;
+    const ed = canEdit();
+    const list = (a, kind) => `<ul class="dg-ul marks">${a.map((i, n) => {
+      const key = ((x.keys || {})[kind] || [])[n] || '', m = (x.marks || {})[key] || {};
+      return `<li class="dg-li ${m.done ? 'done' : ''}" data-day="${esc(x.day)}" data-key="${esc(key)}" data-kind="${kind}" data-n="${n}">
+        <input type="checkbox" data-dg="tick" ${m.done ? 'checked' : ''} ${ed && key ? '' : 'disabled'} aria-label="Done">
+        <div><span class="tx">${rich(i)}</span>${!key || !ed ? '' : m.task_id ? '<span class="mv in" title="This is in your task list">✓ in Tasks</span>' : '<button type="button" class="mv" data-dg="task" title="Add this to your task list">→ Task</button>'}</div></li>`;
+    }).join('')}</ul>`;
+    S.dg = S.dg || {}; S.dg[x.day] = g;
     let body;
     if (Array.isArray(g.urgent) || Array.isArray(g.routine)) {
       const u = g.urgent || [], r = g.routine || [];
       body = `${g.overview ? `<p class="dg-p">${rich(g.overview)}</p>` : ''}
-        <div class="dg-grp urgent"><div class="dg-lab">Urgent${u.length ? ` <span class="n">${u.length}</span>` : ''}</div>${u.length ? list(u) : '<p class="dg-none">Nothing needs action.</p>'}</div>
-        ${r.length ? `<div class="dg-grp"><div class="dg-lab">Routine</div>${list(r)}</div>` : ''}`;
+        <div class="dg-grp urgent"><div class="dg-lab">Urgent${u.length ? ` <span class="n">${u.length}</span>` : ''}</div>${u.length ? list(u, 'urgent') : '<p class="dg-none">Nothing needs action.</p>'}</div>
+        ${r.length ? `<div class="dg-grp"><div class="dg-lab">Routine</div>${list(r, 'routine')}</div>` : ''}`;
     } else {
       const text = String(g.summary || g.headline || '').trim();
       body = text ? text.split(/\n\s*\n/).map((p) => `<p class="dg-p">${rich(p.trim())}</p>`).join('') : '<p class="dg-none">No Amazon emails that day.</p>';
@@ -183,6 +204,21 @@
     const d = await api('GET', '/api/amazon-digest?last=3');
     $('#dgBody').innerHTML = d.digests.length ? d.digests.map(digestHtml).join('') : '<div class="dg-empty">No summary yet. The daily Amazon email check runs every morning.</div>';
   }
+
+  $('#dgBody').addEventListener('click', async (e) => {   // tick a bullet, or move it to the task list (Nick, Nov 5 2026)
+    const li = e.target.closest('.dg-li'); const act = e.target.closest('[data-dg]')?.dataset.dg; if (!li || !act) return;
+    const day = li.dataset.day, key = li.dataset.key;
+    try {
+      if (act === 'tick') { li.classList.toggle('done', e.target.checked); await api('PUT', `/api/amazon-digest/${day}/mark`, { key, done: e.target.checked }); }
+      else if (act === 'task') {
+        const text = ((S.dg[day] || {})[li.dataset.kind] || [])[+li.dataset.n];
+        const b = e.target.closest('button'); b.disabled = true;
+        const r = await api('POST', `/api/amazon-digest/${day}/to-task`, { key, text });
+        b.outerHTML = '<span class="mv in" title="This is in your task list">✓ in Tasks</span>';
+        toast(r.existing ? 'Already in your tasks' : 'Added to your tasks'); if (S.f === 'done') setF('open'); await load();
+      }
+    } catch (err) { fail(err); loadDigest().catch(() => {}); }
+  });
 
   async function load() {
     const d = await api('GET', '/api/tasks');
@@ -226,7 +262,7 @@
     $('#list').innerHTML = list.length ? list.map((t) => rowCompact(t, ed)).join('') : `<div class="ts-empty">${S.f === 'open' ? 'Nothing to do. 🎉' : 'No tasks here.'}</div>`;
     const box = $('#list'), more = $('#tsMore');
     requestAnimationFrame(() => {
-      const over = box.scrollHeight > 108;
+      const over = false;   // the task column shows every task (Nov 5 2026)
       more.hidden = !over && !S.allTasks;
       more.textContent = S.allTasks ? 'Show less' : `Show all ${list.length}`;
     });
@@ -341,7 +377,7 @@
       const f = store.get('taskFilter'); if (['open', 'done', 'all'].includes(f)) setF(f);
       await Promise.all([load(), loadDigest()]);
     } catch (e) { fail(e); }
-    let pend; LG.live((m) => { if (m.t === 'task') { clearTimeout(pend); pend = setTimeout(() => { load().catch(() => {}); if (m.op === 'digest') loadDigest().catch(() => {}); }, 300); } });
+    let pend; LG.live((m) => { if (m.t === 'task') { clearTimeout(pend); pend = setTimeout(() => { load().catch(() => {}); loadDigest().catch(() => {}); }, 300); } });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load().catch(() => {}); });
   })();
 })();

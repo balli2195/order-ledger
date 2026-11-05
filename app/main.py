@@ -910,6 +910,26 @@ async def api_amazon_digest(request: Request, day: str | None = None, last: int 
     return await T.get_digest(d)
 
 
+@app.put("/api/amazon-digest/{day}/mark")
+async def api_digest_mark(day: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor", tab="tasks")
+    try:
+        d = date.fromisoformat(day[:10])
+    except ValueError:
+        raise HTTPException(400, "day must be a date")
+    return await T.mark_bullet(web_actor(user), d, str(body.get("key") or ""), bool(body.get("done")))
+
+
+@app.post("/api/amazon-digest/{day}/to-task")
+async def api_digest_to_task(day: str, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, "editor", tab="tasks")
+    try:
+        d = date.fromisoformat(day[:10])
+    except ValueError:
+        raise HTTPException(400, "day must be a date")
+    return await T.bullet_to_task(web_actor(user), d, str(body.get("key") or ""), str(body.get("text") or ""))
+
+
 @app.post("/api/engine/violations")
 async def engine_violations(request: Request, body: dict = Body(...)):
     """One Inbox task per IP / authenticity complaint: {violations:[{kind: ip|authenticity, asin, title, reason, date,
