@@ -778,7 +778,7 @@
   function field(label, key, val, opts = {}) {
     const dis = editable() && !opts.ro ? '' : 'disabled';
     const cls = opts.cls || '';
-    if (opts.area) return `<label class="${opts.wide ? 'wide' : ''}">${label}<textarea data-k="${key}" rows="${opts.rows || 2}" ${dis}>${esc(val ?? '')}</textarea></label>`;
+    if (opts.area) return `<label class="${opts.wide ? 'wide' : ''}" ${opts.span ? `style="grid-column: span ${opts.span}"` : ''}>${label}<textarea data-k="${key}" rows="${opts.rows || 2}" ${dis}>${esc(val ?? '')}</textarea></label>`;
     return `<label ${opts.span ? `style="grid-column: span ${opts.span}"` : ''}>${label}<input data-k="${key}" class="${cls}" ${opts.type ? `type="${opts.type}"` : ''} ${opts.list ? `list="${opts.list}"` : ''} value="${esc(val ?? '')}" ${dis}></label>`;
   }
 
@@ -809,22 +809,22 @@
         ${(l.same_day_n || 0) > 1 ? `<div class="hz-banner warn"><b>Entered ${l.same_day_n} times on ${esc(fmtDate(l.lead_date))}.</b> Check it's not a duplicate. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">See them</button></div>` : ''}
         ${(l.sale_dups || []).length > 1 ? `<div class="hz-banner warn"><b>Repeated this Sephora sale: this ASIN is in ${l.sale_dups.length} Sephora leads (${esc(fmtDate(l.sale_window[0]).replace(/, \d{4}$/, ''))} – ${esc(fmtDate(l.sale_window[1]).replace(/, \d{4}$/, ''))}).</b> Check you're not buying it twice.
           <table class="mini" style="margin-top:6px"><tbody>${l.sale_dups.map((x) => `<tr data-open="${esc(x.id)}" style="cursor:pointer" class="${x.id === l.id ? 'cur' : ''}"><td>${esc(fmtDate(x.lead_date))}</td><td>${esc(x.sourced_by || '')}</td><td class="num">${money(x.cost)}</td><td class="num">buy ${num(x.buy_qty)}</td><td class="num">ordered ${num(x.qty_ordered)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-        <div class="grid">
+        <div class="grid lead-grid">   <!-- condensed (Nick, Nov 5 2026): six columns, short notes boxes -->
           ${field('Date', 'lead_date', l.lead_date, { type: 'date' })}
           ${field('ASIN', 'asin', l.asin, { cls: 'mono' })}
           <label>Sourced by<select data-k="sourced_by" ${editable() ? '' : 'disabled'}><option value=""></option>${sourcers.concat(l.sourced_by && !sourcers.includes(l.sourced_by) ? [l.sourced_by] : []).map((s) => `<option ${s === l.sourced_by ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
-          ${field('Product', 'product_name', l.product_name, { area: true, wide: true, rows: 2 })}
-          ${field('Store(s), comma-separated', 'stores', (l.stores || []).join(', '), { list: 'dlStores', span: 2 })}
           ${field('Cost / unit', 'cost', l.cost == null ? '' : Number(l.cost).toFixed(2), { cls: 'num' })}
-          ${field('Brand(s), comma-separated', 'brands', (l.brands || []).join(', '), { list: 'dlBrands', span: 2 })}
-          ${field('Promo code', 'promo_code', l.promo_code)}
-          ${field('Store link', 'store_link', l.store_link, { span: 3 })}
+          ${field('Promo code', 'promo_code', l.promo_code, { span: 2 })}
+          ${field('Product', 'product_name', l.product_name, { area: true, wide: true, rows: 1 })}
+          ${field('Store(s)', 'stores', (l.stores || []).join(', '), { list: 'dlStores', span: 2 })}
+          ${field('Brand(s)', 'brands', (l.brands || []).join(', '), { list: 'dlBrands', span: 2 })}
           ${field('Buy qty', 'buy_qty', l.buy_qty, { cls: 'num' })}
           ${field('Qty ordered', 'qty_ordered', l.qty_ordered, { cls: 'num' })}
-          <label>Left to buy<input value="${esc(l.left_to_buy ?? '')}" class="num" disabled></label>
-          ${field('VA notes', 'va_notes', l.va_notes, { area: true, wide: true })}
-          ${field('Buyer notes', 'buyer_notes', l.buyer_notes, { area: true, wide: true })}
-          ${field('Feedback', 'feedback', l.feedback, { area: true, wide: true })}
+          ${field('Store link', 'store_link', l.store_link, { span: 5 })}
+          <label>Left to buy<input id="leftCalc" value="${esc(l.left_to_buy ?? '')}" class="num" disabled></label>
+          ${field('VA notes', 'va_notes', l.va_notes, { area: true, span: 2, rows: 2 })}
+          ${field('Buyer notes', 'buyer_notes', l.buyer_notes, { area: true, span: 2, rows: 2 })}
+          ${field('Feedback', 'feedback', l.feedback, { area: true, span: 2, rows: 2 })}
         </div>
         <div class="stats">
           <div class="stat"><div class="k">Expected spend</div><div class="v">${money(l.expected_spend)}</div></div>
@@ -981,6 +981,12 @@
   });
   document.addEventListener('focusin', (e) => { if (e.target.matches?.('#drawer [data-k]')) e.target.dataset.orig = e.target.value; });
   document.addEventListener('change', (e) => { if (e.target.matches('#drawer [data-k]')) saveField(e.target); });
+  document.addEventListener('input', (e) => {   // Left to buy follows Buy qty / Qty ordered as you type
+    if (!e.target.matches?.('#drawer [data-k="buy_qty"], #drawer [data-k="qty_ordered"]')) return;
+    const out = $('#leftCalc'); if (!out) return;
+    const buy = parseInt($('#drawer [data-k="buy_qty"]')?.value, 10), got = parseInt($('#drawer [data-k="qty_ordered"]')?.value, 10) || 0;
+    out.value = Number.isFinite(buy) ? Math.max(0, buy - got) : '';
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('#drawer').classList.contains('hidden')) closeDrawer();
     if (e.key === 'Enter' && e.target.matches('#drawer input[data-k]')) e.target.blur();

@@ -550,3 +550,12 @@ td.promo, .wrap.full td.promo { max-width: min(280px, 13vw); }
 .wrap.full :is(th[data-col="buy_qty"], td[data-k="buy_qty"], th[data-col="qty_ordered"], td[data-k="qty_ordered"], th[data-col="left"], td[data-k="left"],
   th[data-col="spend"], td[data-k="spend"], th[data-col="roi"], td[data-k="roi"], th[data-col="claude_qty"], td[data-k="claude_qty"]) { padding-left: 5px; padding-right: 5px; }
 .wrap.full :is(th[data-col="by"], td[data-k="by"]) { padding-left: 10px; }
+
+/* Lead card, condensed (Nick, Nov 5 2026): six columns, tighter boxes, notes side by side */
+.lead-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 10px; }
+.lead-grid .wide { grid-column: span 6; }
+.lead-grid label { gap: 2px; font-size: 11.5px; }
+.lead-grid input, .lead-grid select, .lead-grid textarea { padding: 6px 9px; font-size: 13.5px; }
+.lead-grid textarea { min-height: 0; line-height: 1.35; resize: vertical; }
+.lead-grid textarea[data-k="product_name"] { min-height: 34px; }
+@media (max-width: 760px) { .lead-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lead-grid > label { grid-column: span 1 !important; } .lead-grid > label.wide, .lead-grid > label:has(textarea) { grid-column: span 2 !important; } }
