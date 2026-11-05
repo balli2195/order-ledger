@@ -60,7 +60,7 @@ window.TimeClock = (() => {
         menu.insertBefore(b, menu.firstChild);
       }
     });
-    bonusSwitch(menu);
+    bonusSwitch();
   }
 
   // Owner: turn the order bonus on for today only (Nick, Nov 5 2026) — a button in the Menu, and one on the Time clock page
@@ -88,12 +88,7 @@ window.TimeClock = (() => {
       catch (err) { say('Could not change the bonus: ' + (err.message || err), true); }
     });
   }
-  function bonusSwitch(menu) {
-    if (menu && !menu.querySelector('[data-bonus-switch]')) {
-      const b = document.createElement('button'); b.type = 'button'; b.dataset.bonusSwitch = '1'; b.className = 'bonus-switch';
-      menu.insertBefore(b, menu.querySelector('[data-go="/timeclock"]')?.nextSibling || menu.firstChild);
-      bonusBind(b, false);
-    }
+  function bonusSwitch() {   // Nick, Nov 5 2026: only on the Time clock page, not in the Menu
     const page = document.getElementById('bonusBtn');   // Time clock page
     if (page) bonusBind(page, true);
   }
