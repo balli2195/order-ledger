@@ -545,3 +545,8 @@ td.promo, .wrap.full td.promo { max-width: min(280px, 13vw); }
 @media (max-width: 1700px) { td.note-cell { max-width: 7.6vw; } .wrap.full td.promo { max-width: 12vw; } }
 #newrow select[data-n="sourced_by"] { min-width: 84px; }
 .wrap.full th[data-col="roi"], .wrap.full th[data-col="claude_qty"], .wrap.full th[data-col="by"] { white-space: normal; line-height: 1.2; }
+/* Nick, Nov 5 2026: Buy qty … Claude qty packed closer together, next to By */
+.wrap.full th[data-col="buy_qty"], .wrap.full td[data-k="buy_qty"], .wrap.full th[data-col="qty_ordered"], .wrap.full td[data-k="qty_ordered"] { width: 1%; }
+.wrap.full :is(th[data-col="buy_qty"], td[data-k="buy_qty"], th[data-col="qty_ordered"], td[data-k="qty_ordered"], th[data-col="left"], td[data-k="left"],
+  th[data-col="spend"], td[data-k="spend"], th[data-col="roi"], td[data-k="roi"], th[data-col="claude_qty"], td[data-k="claude_qty"]) { padding-left: 5px; padding-right: 5px; }
+.wrap.full :is(th[data-col="by"], td[data-k="by"]) { padding-left: 10px; }
