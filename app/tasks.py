@@ -276,11 +276,8 @@ async def mark_bullet(actor: Actor, day: date, key: str, done: bool) -> dict:
             "INSERT INTO digest_marks (day, key, done, by_user, at) VALUES (%s,%s,%s,%s, now()) "
             "ON CONFLICT (day, key) DO UPDATE SET done=EXCLUDED.done, by_user=EXCLUDED.by_user, at=now()",
             (day, key[:40], done, actor.user_id))
-        cur = await conn.execute("SELECT task_id FROM digest_marks WHERE day=%s AND key=%s", (day, key[:40]))
-        tid = (await cur.fetchone())["task_id"]
-        if tid:   # ticking the bullet also ticks the task it was moved to (and back)
-            await conn.execute("UPDATE tasks SET status=%s, done_at=CASE WHEN %s THEN now() END, done_by=CASE WHEN %s THEN %s::int END "
-                               "WHERE id=%s", ("done" if done else "open", done, done, actor.user_id, tid))
+        # Ticking the bullet doesn't touch a task it was moved to (Nick, Nov 5 2026: a ticked bullet must still land in
+        # Tasks); finishing that task does cross the bullet out (get_digest).
         await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "task", "op": "digest"}),))
     return {"ok": True}
 

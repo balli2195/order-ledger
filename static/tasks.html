@@ -80,7 +80,8 @@
   /* Nick, Nov 5 2026: the page in vertical thirds — Amazon emails | IP & authenticity complaints | Tasks (right) */
   .inbox-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
   @media (max-width: 1100px) { .inbox-grid { grid-template-columns: minmax(0, 1fr); } .col-tasks { order: -1; } }
-  .tk-col { margin-top: 26px; }
+  .col-tasks .sec-h .btn { padding-top: 4px; padding-bottom: 4px; }
+  .tk-col { margin-top: 14px; border-radius: var(--radius); }   /* box top lines up with the other two columns */
   .tk-col .ts-list { grid-template-columns: minmax(0, 1fr); max-height: none; }
   .tk-col .ts .t { white-space: normal; }
   .tk-col .tk-add { grid-template-columns: 1fr; }
@@ -138,16 +139,16 @@
   <div class="sec-h"><h2>IP &amp; authenticity complaints</h2><span class="muted" id="vMeta" style="font-size:13px"></span></div>
   <div class="tk-list" id="vlist"></div>
   </div><div class="col-tasks">
+  <div class="sec-h"><h2>Tasks</h2><span class="muted" id="tMeta" style="font-size:13px"></span><span style="flex:1"></span>
+    <button class="btn small editor-only" id="recBtn" title="Tasks that come back every day, weekday, week or month">↻ Recurring</button>
+    <button class="btn small primary editor-only" id="newTaskBtn">+ Add task</button></div>
   <section class="tk-strip tk-col">
-    <div class="ts-head"><h2>Tasks</h2>
+    <div class="ts-head">
       <div class="chips" role="tablist">
         <button class="chip on" data-f="open">Open<span class="count" id="cOpen"></span></button>
         <button class="chip" data-f="done">Done<span class="count" id="cDone"></span></button>
         <button class="chip" data-f="all">All</button>
       </div>
-      <span style="flex:1"></span>
-      <button class="btn small editor-only" id="recBtn" title="Tasks that come back every day, weekday, week or month">↻ Recurring tasks</button>
-      <button class="btn small primary editor-only" id="newTaskBtn">+ Add task</button>
     </div>
     <form class="tk-add editor-only" id="addForm" hidden>
       <input name="title" placeholder="New task…" maxlength="300" required autocomplete="off">
@@ -257,7 +258,7 @@
     const ed = canEdit();
     const reg = S.tasks.filter((t) => t.kind !== 'violation'), viol = S.tasks.filter((t) => t.kind === 'violation' && t.status === 'open');
     const open = reg.filter((t) => t.status === 'open'), done = reg.filter((t) => t.status === 'done');
-    $('#cOpen').textContent = open.length || ''; $('#cDone').textContent = done.length || '';
+    $('#cOpen').textContent = open.length || ''; $('#cDone').textContent = done.length || ''; $('#tMeta').textContent = open.length ? `${open.length} open` : '';
     const list = S.f === 'open' ? open : S.f === 'done' ? done : reg;
     $('#list').innerHTML = list.length ? list.map((t) => rowCompact(t, ed)).join('') : `<div class="ts-empty">${S.f === 'open' ? 'Nothing to do. 🎉' : 'No tasks here.'}</div>`;
     const box = $('#list'), more = $('#tsMore');

@@ -669,6 +669,9 @@ MIGRATIONS: list[str] = [
       at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (day, key)
     );
+    """,    # 46: reopen the task that the bullet tick closed by mistake (Nov 5 2026, "Liability insurance overdue")
+    """
+    UPDATE tasks SET status='open', done_at=NULL, done_by=NULL WHERE id='1984b6e3-b894-4a44-8f13-4f6e3e3581ef' AND status='done';
     """,
 ]
 
