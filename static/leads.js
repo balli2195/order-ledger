@@ -661,7 +661,8 @@
     const el = document.createElement('div');
     el.className = 'note-pop';
     el.innerHTML = `<div class="note-pop-head"><b>${label}</b> <span class="muted mono">${esc(row.asin || '')}</span></div>
-      <textarea rows="7" ${can('editor') ? '' : 'readonly'}>${esc(orig)}</textarea>
+      ${field === 'feedback' && can('editor') ? `<div class="fb-picks">${FEEDBACK_OPTS.map((o) => `<button class="btn small" data-fb-pick="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : ''}
+      <textarea rows="${field === 'feedback' ? 3 : 7}" ${can('editor') ? '' : 'readonly'} ${field === 'feedback' ? 'placeholder="Or type custom feedback"' : ''}>${esc(orig)}</textarea>
       <div class="note-pop-foot"><span class="muted">${can('editor') ? '⌘/Ctrl+Enter to save · Esc to cancel' : ''}</span>
       ${can('editor') ? '<button class="btn small" data-note-act="cancel">Cancel</button><button class="btn small primary" data-note-act="save">Save</button>' : '<button class="btn small" data-note-act="cancel">Close</button>'}</div>`;
     document.body.appendChild(el);
@@ -678,6 +679,7 @@
   });
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-note]'); if (b) { e.preventDefault(); openNote(b); return; }
+    const fp = e.target.closest('[data-fb-pick]'); if (fp && notePop) { e.preventDefault(); notePop.el.querySelector('textarea').value = fp.dataset.fbPick; closeNote(true); return; }
     const a = e.target.closest('[data-note-act]'); if (a) closeNote(a.dataset.noteAct === 'save');
   }, true);
   document.addEventListener('keydown', (e) => {
@@ -775,6 +777,23 @@
     try { renderDrawer(await api('GET', '/api/leads/' + id)); } catch (e) { fail(e); closeDrawer(); }
   }
 
+  // Feedback: pick a reason, or Custom… for your own text (Nick, Nov 5 2026)
+  const FEEDBACK_OPTS = ['ROI too low', 'Historical price too low', 'Price likely to tank'];
+  function feedbackField(val) {
+    const v = (val || '').trim(), dis = editable() ? '' : 'disabled';
+    const preset = FEEDBACK_OPTS.includes(v), custom = !!v && !preset;
+    return `<label style="grid-column: span 2">Feedback
+      <select data-fb ${dis}><option value="" ${!v ? 'selected' : ''}>—</option>${FEEDBACK_OPTS.map((o) => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__custom" ${custom ? 'selected' : ''}>Custom…</option></select>
+      <textarea data-k="feedback" rows="1" ${dis} ${custom ? '' : 'hidden'} placeholder="Type your feedback">${esc(v)}</textarea></label>`;
+  }
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest?.('#drawer select[data-fb]'); if (!sel) return;
+    const ta = sel.parentElement.querySelector('textarea[data-k="feedback"]');
+    ta.dataset.orig = ta.value;
+    if (sel.value === '__custom') { if (FEEDBACK_OPTS.includes(ta.value)) ta.value = ''; ta.hidden = false; ta.focus(); return; }
+    ta.hidden = true; ta.value = sel.value; saveField(ta);
+  });
+
   function field(label, key, val, opts = {}) {
     const dis = editable() && !opts.ro ? '' : 'disabled';
     const cls = opts.cls || '';
@@ -824,7 +843,7 @@
           <label>Left to buy<input id="leftCalc" value="${esc(l.left_to_buy ?? '')}" class="num" disabled></label>
           ${field('VA notes', 'va_notes', l.va_notes, { area: true, span: 2, rows: 2 })}
           ${field('Buyer notes', 'buyer_notes', l.buyer_notes, { area: true, span: 2, rows: 2 })}
-          ${field('Feedback', 'feedback', l.feedback, { area: true, span: 2, rows: 2 })}
+          ${feedbackField(l.feedback)}
         </div>
         <div class="stats">
           <div class="stat"><div class="k">Expected spend</div><div class="v">${money(l.expected_spend)}</div></div>
