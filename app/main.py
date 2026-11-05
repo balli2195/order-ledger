@@ -508,7 +508,7 @@ ENTITY_TAB = {"order": "orders", "item": "orders", "batch": "orders", "lead": "l
 
 # ---------------------------------------------------------------- leads API
 
-LEAD_FILTERS = ("q", "asin", "store", "brand", "date_from", "date_to", "sourced_by", "ordered", "left", "unscored", "band_min", "replen")
+LEAD_FILTERS = ("q", "asin", "store", "brand", "date_from", "date_to", "sourced_by", "ordered", "left", "unscored", "band_min", "roi_min", "replen")
 
 
 @app.get("/api/leads")

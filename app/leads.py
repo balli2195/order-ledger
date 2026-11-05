@@ -166,6 +166,8 @@ def _where(f: dict) -> tuple[list[str], list]:
         w.append("l.lead_score_band IS NULL")
     if f.get("band_min") not in (None, ""):
         w.append("l.lead_score_band >= %s"); a.append(int(f["band_min"]))
+    if f.get("roi_min") not in (None, ""):   # Nick, Nov 5 2026: predicted ROI replaces the band in the lead list
+        w.append("l.lead_score_roi >= %s"); a.append(float(f["roi_min"]))
     if f.get("replen") in (True, "1", "true", "yes"):
         w.append("l.replen")
     return w, a

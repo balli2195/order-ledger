@@ -6,6 +6,13 @@
 
   // Column definitions: key, header, sort key (or null), cell class, renderer.
   const band = (b) => b == null ? '<span class="muted">—</span>' : `<span class="band b${b}">${b}</span>`;
+  // Predicted ROI as a pill, coloured like the old bands (Nick, Nov 5 2026): red under 21.5% (bands 1-3),
+  // grey 21.5-35.5% (bands 4-7), green 35.5% and up (bands 8-10).
+  const roiPill = (v) => {
+    if (v == null || v === '') return '<span class="muted">—</span>';
+    const x = Number(v), cls = x < 0.215 ? 'b1' : x < 0.355 ? 'b5' : 'b9';
+    return `<span class="band roi ${cls}">${Math.round(x * 100)}%</span>`;
+  };
   const safeUrl = (u) => { if (!u) return null; let x = String(u).trim(); if (!/^https?:\/\//i.test(x)) x = 'https://' + x; try { const v = new URL(x); return /^https?:$/.test(v.protocol) ? v.href : null; } catch { return null; } };
   const storeCell = (r) => {
     const names = r.stores || []; const url = safeUrl(r.store_link);
@@ -25,8 +32,7 @@
     qty_ordered: ['Ordered', 'qty_ordered', 'num', (r) => numEditCell(r, 'qty_ordered')],
     left: ['Left', 'left', 'num', (r) => num(r.left_to_buy)],
     spend: ['Spend', 'spend', 'num', (r) => r.actual_spend ? money(r.actual_spend, 0) : '—'],
-    band: ['Band', 'band', 'center', (r) => band(r.lead_score_band)],
-    roi: ['Pred ROI', 'roi', 'num', (r) => r.lead_score_roi == null || r.lead_score_roi === '' ? '—' : Math.round(Number(r.lead_score_roi) * 100) + '%'],
+    roi: ['Pred ROI', 'roi', 'center', (r) => roiPill(r.lead_score_roi)],
     claude_qty: ['Claude qty', 'claude_qty', 'num', (r) => num(r.claude_buy_qty)],
     by: ['By', null, 'tight', (r) => esc(r.sourced_by || '')],
     promo: ['Promo', null, 'promo', (r) => r.promo_code ? `<span class="promo-code">${esc(r.promo_code)}</span>` : '<span class="muted">—</span>'],
@@ -34,7 +40,7 @@
     buyer_notes: ['Buyer notes', null, 'note-cell', (r) => noteCell(r, 'buyer_notes')],
     feedback: ['Feedback', null, 'note-cell', (r) => noteCell(r, 'feedback')],
   };
-  const DEFAULT_ORDER = ['product', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'feedback', 'buy_qty', 'qty_ordered', 'left', 'spend', 'band', 'roi', 'claude_qty', 'by'];
+  const DEFAULT_ORDER = ['product', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'feedback', 'buy_qty', 'qty_ordered', 'left', 'spend', 'roi', 'claude_qty', 'by'];
   const ORDER_KEY = 'leadColOrder.v3';
   function loadOrder() {
     try {
@@ -61,6 +67,7 @@
   });
   function saveSort() { try { localStorage.setItem('leadSort', JSON.stringify({ sort: S.sort, desc: S.desc })); } catch { /* ignore */ } }
   try { const v = JSON.parse(localStorage.getItem('leadSort') || 'null'); if (v && v.sort) { S.sort = v.sort; S.desc = !!v.desc; } } catch { /* ignore */ }
+  if (S.sort === 'band') S.sort = 'roi';
   function saveOrder() { try { localStorage.setItem(ORDER_KEY, JSON.stringify(S.order)); } catch { /* ignore */ } }
 
   const isHome = () => S.meta?.mode === 'home';
@@ -70,7 +77,7 @@
     const f = {};
     const q = $('#q').value.trim(); if (q) f.q = q;
     if (S.days) { const d = new Date(); d.setDate(d.getDate() - S.days + 1); f.date_from = d.toISOString().slice(0, 10); }
-    for (const [id, key] of [['store', 'store'], ['brand', 'brand'], ['sourced', 'sourced_by'], ['band', 'band_min']]) { const v = $('#' + id).value.trim(); if (v) f[key] = v; }
+    for (const [id, key] of [['store', 'store'], ['brand', 'brand'], ['sourced', 'sourced_by'], ['band', 'roi_min']]) { const v = $('#' + id).value.trim(); if (v) f[key] = v; }
     for (const id of ['ordered', 'left', 'unscored']) if ($('#' + id).checked) f[id] = '1';
     return f;
   }
@@ -89,6 +96,7 @@
     try {
       const v = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null'); if (!v) return;
       for (const id of ['q', 'store', 'brand', 'sourced', 'band']) if (typeof v[id] === 'string') $('#' + id).value = v[id];
+      if (Number($('#band').value) >= 1) $('#band').value = '';   // an old band filter (4, 7, 9): bands are gone
       for (const id of ['ordered', 'left', 'unscored']) $('#' + id).checked = !!v[id];
       if (typeof v.days === 'number') { S.days = v.days; $$('#range .chip').forEach((x) => x.classList.toggle('on', Number(x.dataset.days) === S.days)); }
     } catch { /* storage blocked or old value */ }
@@ -457,7 +465,7 @@
     store: { input: 'store', show: (v) => v },
     brand: { input: 'brand', show: (v) => v },
     by: { input: 'sourced', show: (v) => v },
-    band: { input: 'band', show: (v) => v + '+' },
+    roi: { input: 'band', show: (v) => Math.round(Number(v) * 1000) / 10 + '%+' },
   };
   let hPop = null;
   function closeHeaderFilter() { const el = hPop; hPop = null; if (el) el.remove(); }
@@ -482,10 +490,10 @@
         ${S.sort === key ? '<button class="hp-opt" data-hp-sort="off">Newest first (default)</button>' : ''}`;
     } else if (key === 'by') {
       el.innerHTML = opt('', 'Anyone') + (S.meta?.sourcers || []).map((x) => opt(x, x)).join('');
-    } else if (key === 'band') {
-      el.innerHTML = `<div class="hp-label">Show</div>${opt('', 'Any band')}${opt('4', 'Band 4+ (buy line)')}${opt('7', 'Band 7+')}${opt('9', 'Band 9+')}
-        <div class="hp-label">Sort</div><button class="hp-opt ${S.sort === 'band' && S.desc ? 'on' : ''}" data-hp-sort="desc">High → low</button>
-        <button class="hp-opt ${S.sort === 'band' && !S.desc ? 'on' : ''}" data-hp-sort="asc">Low → high</button>`;
+    } else if (key === 'roi') {
+      el.innerHTML = `<div class="hp-label">Show</div>${opt('', 'Any ROI')}${opt('0.215', '21.5%+ (buy line)')}${opt('0.355', '35.5%+')}${opt('0.5', '50%+')}
+        <div class="hp-label">Sort</div><button class="hp-opt ${S.sort === 'roi' && S.desc ? 'on' : ''}" data-hp-sort="desc" data-hp-key="roi">High → low</button>
+        <button class="hp-opt ${S.sort === 'roi' && !S.desc ? 'on' : ''}" data-hp-sort="asc" data-hp-key="roi">Low → high</button>`;
     }
     document.body.appendChild(el);
     const r = th.getBoundingClientRect();
@@ -814,7 +822,7 @@
           <div class="stat"><div class="k">Potential bonus</div><div class="v">${money(l.potential_bonus)}</div></div>
         </div>
 
-        <div class="section-title">Lead Score ${band(l.lead_score_band)} <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.lead_score_roi != null ? 'predicted ROI ' + pct(l.lead_score_roi) : ''}${l.lead_score_band != null ? ` · ${l.lead_score_at ? 'scored ' + esc(new Date(l.lead_score_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })) : 'scoring date not recorded'}` : ''}</span>
+        <div class="section-title">Lead Score ${roiPill(l.lead_score_roi)} <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.lead_score_roi != null ? 'predicted ROI' : ''}${l.lead_score_band != null ? ` · ${l.lead_score_at ? 'scored ' + esc(new Date(l.lead_score_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })) : 'scoring date not recorded'}` : ''}</span>
           ${editable() ? `<button class="btn small" data-act="score">Score now</button>` : ''}</div>
         ${l.lead_score_notes ? `<pre class="notes">${esc(l.lead_score_notes)}</pre>` : '<p class="muted">Not scored yet.</p>'}
 
@@ -931,7 +939,7 @@
           break;
         case 'home-no': renderBanner(); break;
         case 'home-yes': { b.disabled = true; b.textContent = 'Copying…'; const r = await api('POST', '/api/leads-admin/make-home'); toast('Leads now live here' + (r.final_sync ? ` (final copy: ${r.final_sync.changed} updated)` : '')); await loadMeta(); await load(); break; }
-        case 'score': { b.disabled = true; b.textContent = 'Scoring… (10–30 s)'; const r = await api('POST', `/api/leads/${S.openId}/score`); toast(r.ok ? `Band ${r.band}` : `Not scored: ${r.why}`, !r.ok); b.disabled = false; b.textContent = 'Score now'; break; }
+        case 'score': { b.disabled = true; b.textContent = 'Scoring… (10–30 s)'; const r = await api('POST', `/api/leads/${S.openId}/score`); toast(r.ok ? `Predicted ROI ${Math.round(Number(r.pred_roi) * 100)}%` : `Not scored: ${r.why}`, !r.ok); b.disabled = false; b.textContent = 'Score now'; break; }
         case 'del': $('#delWrap').innerHTML = `<span class="confirm"><button class="btn small" data-act="del-no">Keep</button><button class="btn small danger" data-act="del-yes">Delete lead</button></span>`; break;
         case 'del-no': $('#delWrap').innerHTML = `<button class="btn small danger" data-act="del">Delete</button>`; break;
         case 'del-yes': await api('DELETE', '/api/leads/' + S.openId); closeDrawer(); toast('Lead deleted'); load().catch(() => {}); break;
