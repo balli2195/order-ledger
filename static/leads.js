@@ -236,12 +236,15 @@
     const isGen = (b) => GEN.test(String(b || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
     const generic = isGen(f?.amz_brand) || isGen(f?.brand);
     const nWarn = [bad, dup, !!tp, tb, nolist, catErr.length > 0, generic].filter(Boolean).length;
+    if (!nWarn && !intro) {   // e.g. the other lead of the day was deleted: nothing to warn about any more
+      close(); toast('No warnings for ' + asin + ' any more'); load().catch(() => {}); return;
+    }
     const shortD = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     const reasons = f?.reason_text || [];
     const KEEP = ['transportation_regulatory_class', 'united_nations_regulatory_id', 'proper_shipping_name'];
     const kinfo = (f?.hazmat_info || []).filter((x) => KEEP.includes(x.aspect)).map((x) => `${esc(String(x.aspect).replace(/_/g, ' '))}: ${esc(x.value)}`).join(' · ');
     wrap.innerHTML = `<div class="confirm-box hz-box" role="alertdialog" aria-modal="true" aria-labelledby="hzT">
-      <h3 id="hzT"><span class="hz-icon ${bad || tp || nolist || generic ? '' : 'warn'}">!</span> ${nWarn > 1 ? nWarn + ' warnings' : generic ? 'Generic brand: never send in' : nolist ? "You can't list this" : tp ? 'Enrolled in Transparency' : tb ? 'Brand uses Transparency' : bad ? (f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now") : 'Entered more than once today'}</h3>
+      <h3 id="hzT"><span class="hz-icon ${bad || tp || nolist || generic ? '' : 'warn'}">!</span> ${nWarn > 1 ? nWarn + ' warnings' : generic ? 'Generic brand: never send in' : nolist ? "You can't list this" : tp ? 'Enrolled in Transparency' : tb ? 'Brand uses Transparency' : bad ? (f?.hazmat_reason ? "Hazmat: can't go to FBA yet" : "You can't send this to FBA right now") : dup ? 'Entered more than once today' : 'No warnings'}</h3>
       ${intro ? `<p>${intro}</p>` : ''}
       <p><a class="mono" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener">${esc(asin)}</a>${f?.title ? ` · ${esc(f.title)}` : ''}</p>
       ${nolist ? `<div class="hz-sec"><p><b>Amazon won't let your account list this ASIN</b> (new condition). Amazon's reason${lreasons.length === 1 ? '' : 's'}:</p>
@@ -441,6 +444,7 @@
         S.rows = S.rows.filter((x) => x.id !== id); S.byId.delete(id);
         if (S.openId === id) closeDrawer();
         render(); toast('Lead deleted');
+        load().catch(() => {});   // other leads of the same ASIN/day lose their "entered twice" flag (Nick, Nov 5 2026)
       } catch (err) { yes.disabled = false; yes.textContent = 'Delete'; fail(err); }
     });
   }
@@ -883,6 +887,7 @@
             const fresh = await api('GET', '/api/leads/' + id);
             const i = S.rows.findIndex((r) => r.id === id);
             if (i >= 0 && (fresh.set_id || S.rows[i].set_id) && fresh.set_id !== S.rows[i].set_id) setsChanged = true;   // grouped / ungrouped: reload so sets regroup
+            if (i >= 0 && ((fresh.asin || '').toUpperCase() !== (S.rows[i].asin || '').toUpperCase() || fresh.lead_date !== S.rows[i].lead_date)) setsChanged = true;   // ASIN or date changed: other rows' duplicate counts change too
             if (i >= 0) S.rows[i] = { ...S.rows[i], ...fresh };
             S.byId.set(id, S.rows[i]); changedVisible = true;
             const tr = $(`tr[data-id="${CSS.escape(id)}"]`); if (tr) { tr.outerHTML = rowHtml(S.rows[i]); const n = $(`tr[data-id="${CSS.escape(id)}"]`); n.classList.add('flash'); setTimeout(() => n.classList.remove('flash'), 1200); }
@@ -929,7 +934,7 @@
         case 'score': { b.disabled = true; b.textContent = 'Scoring… (10–30 s)'; const r = await api('POST', `/api/leads/${S.openId}/score`); toast(r.ok ? `Band ${r.band}` : `Not scored: ${r.why}`, !r.ok); b.disabled = false; b.textContent = 'Score now'; break; }
         case 'del': $('#delWrap').innerHTML = `<span class="confirm"><button class="btn small" data-act="del-no">Keep</button><button class="btn small danger" data-act="del-yes">Delete lead</button></span>`; break;
         case 'del-no': $('#delWrap').innerHTML = `<button class="btn small danger" data-act="del">Delete</button>`; break;
-        case 'del-yes': await api('DELETE', '/api/leads/' + S.openId); closeDrawer(); toast('Lead deleted'); break;
+        case 'del-yes': await api('DELETE', '/api/leads/' + S.openId); closeDrawer(); toast('Lead deleted'); load().catch(() => {}); break;
       }
     } catch (err) { fail(err); }
   });
