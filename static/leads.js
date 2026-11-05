@@ -778,7 +778,7 @@
   }
 
   // Feedback: pick a reason, or Custom… for your own text (Nick, Nov 5 2026)
-  const FEEDBACK_OPTS = ['ROI too low', 'Historical price too low', 'Price likely to tank'];
+  const FEEDBACK_OPTS = ['Good lead', 'ROI too low', 'Historical price too low', 'Price likely to tank'];
   function feedbackField(val) {
     const v = (val || '').trim(), dis = editable() ? '' : 'disabled';
     const preset = FEEDBACK_OPTS.includes(v), custom = !!v && !preset;
