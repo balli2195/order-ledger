@@ -829,7 +829,7 @@
         ${link ? `<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Open store ↗</a>` : ''}
         ${l.asin ? `<a class="btn small" href="https://www.amazon.com/dp/${esc(l.asin)}" target="_blank" rel="noopener">Amazon ↗</a>` : ''}
         ${l.asin ? ((l.skus || []).length
-          ? `<a class="btn small" href="https://sellercentral.amazon.com/skucentral?mSku=${encodeURIComponent(l.skus[0])}" target="_blank" rel="noopener" title="SKU Central for ${esc(l.skus[0])}${l.skus.length > 1 ? ` (other SKUs: ${esc(l.skus.slice(1).join(', '))})` : ''}">Seller Central ↗</a>`
+          ? l.skus.map((k) => `<a class="btn small" href="https://sellercentral.amazon.com/skucentral?mSku=${encodeURIComponent(k)}" target="_blank" rel="noopener" title="SKU Central for ${esc(k)}">${l.skus.length > 1 ? `SC ${esc(k)}` : 'Seller Central'} ↗</a>`).join('')
           : `<a class="btn small" href="https://sellercentral.amazon.com/myinventory/inventory?searchField=all&searchTerm=${encodeURIComponent(l.asin)}" target="_blank" rel="noopener" title="No SKU on file for this ASIN yet: opens Manage inventory searched by ASIN">Seller Central ↗</a>`) : ''}
         ${editable() ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
