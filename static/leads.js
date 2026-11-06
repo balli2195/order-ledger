@@ -802,13 +802,10 @@
     const body = lines[1]?.match(/^Today's ROI is (-?\d+)%(?: \(on (\$[\d.,]+): the (\$[\d.,]+) entered cost \+ (\d+)% for this store's tax\/shipping\))?\. After the usual price drift, a typical lead like this ends up around (-?\d+)%\. What moved it from there:$/);
     const facts = lines.slice(2).map((x) => x.match(/^([+-]\d+)\s+(.+)$/));
     if (!head || !body || facts.some((f) => !f)) return `<pre class="notes">${esc(text)}</pre>`;
-    const verdict = head[3].charAt(0).toUpperCase() + head[3].slice(1);
-    const vcls = /skip/i.test(head[3]) ? 'b1' : /spare/i.test(head[3]) ? 'b5' : 'b9';
     const [, today, basis, cost, extra, typical] = body;
     const chip = (n) => `<span class="sn-pts ${Number(n) > 0 ? 'up' : Number(n) < 0 ? 'down' : ''}">${esc(n)}</span>`;
     const main = facts.filter((f) => !/^Smaller factors/i.test(f[2])), rest = facts.find((f) => /^Smaller factors/i.test(f[2]));
     return `<div class="score-notes">
-      <div class="sn-verdict"><span class="band roi ${vcls}">${esc(verdict)}</span> <span class="muted">band ${esc(head[2])}</span></div>
       <dl class="sn-figs">
         <div><dt>Today's ROI</dt><dd><b>${esc(today)}%</b>${basis ? ` <span class="muted">on ${esc(basis)} (${esc(cost)} cost + ${esc(extra)}% tax/shipping)</span>` : ''}</dd></div>
         <div><dt>Typical lead after price drift</dt><dd><b>${esc(typical)}%</b></dd></div>
