@@ -794,6 +794,31 @@
     ta.hidden = true; ta.value = sel.value; saveField(ta);
   });
 
+  // Lead Score explanation, laid out instead of shown as raw text (Nick, Nov 6 2026).
+  // Falls back to the plain text if the Lead Score server's wording ever changes.
+  function scoreNotesHtml(text) {
+    const lines = String(text).split('\n').map((x) => x.trim()).filter(Boolean);
+    const head = lines[0]?.match(/^Predicted ROI (-?\d+)% → band (\d+) \(([^)]+)\)\.?$/);
+    const body = lines[1]?.match(/^Today's ROI is (-?\d+)%(?: \(on (\$[\d.,]+): the (\$[\d.,]+) entered cost \+ (\d+)% for this store's tax\/shipping\))?\. After the usual price drift, a typical lead like this ends up around (-?\d+)%\. What moved it from there:$/);
+    const facts = lines.slice(2).map((x) => x.match(/^([+-]\d+)\s+(.+)$/));
+    if (!head || !body || facts.some((f) => !f)) return `<pre class="notes">${esc(text)}</pre>`;
+    const verdict = head[3].charAt(0).toUpperCase() + head[3].slice(1);
+    const vcls = /skip/i.test(head[3]) ? 'b1' : /spare/i.test(head[3]) ? 'b5' : 'b9';
+    const [, today, basis, cost, extra, typical] = body;
+    const chip = (n) => `<span class="sn-pts ${Number(n) > 0 ? 'up' : Number(n) < 0 ? 'down' : ''}">${esc(n)}</span>`;
+    const main = facts.filter((f) => !/^Smaller factors/i.test(f[2])), rest = facts.find((f) => /^Smaller factors/i.test(f[2]));
+    return `<div class="score-notes">
+      <div class="sn-verdict"><span class="band roi ${vcls}">${esc(verdict)}</span> <span class="muted">band ${esc(head[2])}</span></div>
+      <dl class="sn-figs">
+        <div><dt>Today's ROI</dt><dd><b>${esc(today)}%</b>${basis ? ` <span class="muted">on ${esc(basis)} (${esc(cost)} cost + ${esc(extra)}% tax/shipping)</span>` : ''}</dd></div>
+        <div><dt>Typical lead after price drift</dt><dd><b>${esc(typical)}%</b></dd></div>
+        <div><dt>Predicted ROI</dt><dd><b>${esc(head[1])}%</b></dd></div>
+      </dl>
+      ${facts.length ? `<div class="sn-sub">What moved it <span class="muted">(ROI points vs. a typical lead)</span></div>
+      <ul class="sn-facts">${main.map((f) => `<li>${chip(f[1])}<span>${esc(f[2])}</span></li>`).join('')}${rest ? `<li class="muted">${chip(rest[1])}<span>${esc(rest[2])}</span></li>` : ''}</ul>` : ''}
+    </div>`;
+  }
+
   function field(label, key, val, opts = {}) {
     const dis = editable() && !opts.ro ? '' : 'disabled';
     const cls = opts.cls || '';
@@ -854,7 +879,7 @@
 
         <div class="section-title">Lead Score ${roiPill(l.lead_score_roi)} <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.lead_score_roi != null ? 'predicted ROI' : ''}${l.lead_score_band != null ? ` · ${l.lead_score_at ? 'scored ' + esc(new Date(l.lead_score_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })) : 'scoring date not recorded'}` : ''}</span>
           ${editable() ? `<button class="btn small" data-act="score">Score now</button>` : ''}</div>
-        ${l.lead_score_notes ? `<pre class="notes">${esc(l.lead_score_notes)}</pre>` : '<p class="muted">Not scored yet.</p>'}
+        ${l.lead_score_notes ? scoreNotesHtml(l.lead_score_notes) : '<p class="muted">Not scored yet.</p>'}
 
         <div class="section-title">Claude buy qty <span style="text-transform:none;letter-spacing:0;font-weight:400">${l.claude_buy_qty ?? '—'}</span></div>
         ${l.claude_buy_note ? `<pre class="notes">${esc(l.claude_buy_note)}</pre>` : '<p class="muted">No suggestion recorded.</p>'}

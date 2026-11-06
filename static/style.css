@@ -561,3 +561,19 @@ td.promo, .wrap.full td.promo { max-width: min(280px, 13vw); }
 @media (max-width: 760px) { .lead-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lead-grid > label { grid-column: span 1 !important; } .lead-grid > label.wide, .lead-grid > label:has(textarea) { grid-column: span 2 !important; } }
 .fb-picks { display: flex; flex-wrap: wrap; gap: 6px; }
 .lead-grid label:has(select[data-fb]) textarea { margin-top: 4px; }
+
+/* Lead Score explanation on the lead card */
+.score-notes { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 14px; line-height: 1.45; }
+.sn-verdict { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.sn-figs { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 6px 28px; margin: 0 0 12px; }
+.sn-figs dt { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.sn-figs dd { margin: 2px 0 0; }
+.sn-figs dd b { font-size: 17px; }
+.sn-sub { font-weight: 600; margin-bottom: 6px; }
+.sn-facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.sn-facts li { display: grid; grid-template-columns: 42px 1fr; gap: 8px; align-items: baseline; }
+.sn-pts { font: 600 12.5px/1.6 var(--mono); text-align: center; border-radius: 6px; background: var(--line-2); }
+.sn-pts.up { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.sn-pts.down { background: var(--warn-soft); color: var(--bad); }
+@media (max-width: 700px) { .sn-figs { grid-template-columns: 1fr; } }
+.sn-sub .muted { font-weight: 400; }
