@@ -24,7 +24,7 @@
   const COLS = {
     // Title on top; ASIN (with its warning badge) and store link underneath (Nick, Oct 30 2026)
     product: ['Product · Store', null, 'prod', (r) => `<div class="prod-title">${esc(r.product_name || '') || '<span class="muted">—</span>'}</div>`
-      + `<div class="prod-sub"><span class="badge-slot">${r.asin ? hazBadge(r) : ''}</span>${r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a><button class="copy-btn" data-copy="${esc(r.asin)}" data-stop title="Copy ASIN" aria-label="Copy ASIN ${esc(r.asin)}">${COPY_ICON}</button>` : '<span class="muted">no ASIN</span>'}${storeCell(r)}${r.set_id ? `<span class="set-chip" title="${esc((r.set_name ? r.set_name + ' · ' : '') + 'Part of a set: stays together when you sort or filter')}">⧉ ${esc(r.set_name || 'Set')}</span>` : ''}</div>`],
+      + `<div class="prod-sub"><span class="badge-slot">${r.asin ? hazBadge(r) : ''}</span>${r.asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener" data-stop title="Open on Amazon">${esc(r.asin)}</a><button class="copy-btn" data-copy="${esc(r.asin)}" data-stop title="Copy ASIN" aria-label="Copy ASIN ${esc(r.asin)}">${COPY_ICON}</button>` : '<span class="muted">no ASIN</span>'}${storeCell(r)}${r.set_id ? `<span class="set-chip" title="Part of a set: stays together when you sort or filter">⧉ Set</span>` : ''}</div>`],
     brand: ['Brand', null, 'tags', (r) => (r.brands || []).length ? `<span class="pill-list">${r.brands.map((b) => `<span>${esc(b)}</span>`).join('')}</span>` : '<span class="muted">—</span>'],
     cost: ['Cost', 'cost', 'num', (r) => money(r.cost)],
     buy_qty: ['Buy qty', 'buy_qty', 'num', (r) => numEditCell(r, 'buy_qty')],
@@ -336,26 +336,23 @@
   // ------------------------------------------------------------ lead sets (split sets): group leads so they stay together
   async function groupDialog() {
     const picked = S.rows.filter((r) => S.sel.has(r.id)); if (picked.length < 2) return;
-    const brands = [...new Set(picked.flatMap((r) => r.brands || []))];
     const already = [...new Set(picked.map((r) => r.set_id).filter(Boolean))];
     const wrap = document.createElement('div'); wrap.className = 'confirm-back';
     wrap.innerHTML = `<div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="gsT">
       <h3 id="gsT">Group ${picked.length} leads as a set</h3>
       <p class="muted" style="font-size:13px">They'll stay together when you sort or filter: if one matches a filter, the whole set shows.${already.length ? ' Leads already in another set move into this one.' : ''}</p>
-      <label style="display:block;margin:10px 0 4px;font-size:13px">Set name (optional)</label>
-      <input id="gsName" style="width:100%" maxlength="120" placeholder="e.g. ${esc(brands[0] || 'Brand')} gift set split" value="${esc(brands.length === 1 ? brands[0] + ' set' : '')}">
       <ul class="hz-reasons" style="margin-top:10px;max-height:180px;overflow:auto">${picked.map((r) => `<li><span class="mono">${esc(r.asin || '—')}</span> ${esc((r.product_name || '').slice(0, 60))}</li>`).join('')}</ul>
       <div class="confirm-actions"><button class="btn" data-gs="no">Cancel</button><button class="btn primary" data-gs="yes">Group as set</button></div></div>`;
     document.body.appendChild(wrap);
-    const inp = wrap.querySelector('#gsName'); inp.focus(); inp.select();
+    wrap.querySelector('[data-gs="yes"]').focus();
     const close = () => wrap.remove();
     const go = async () => {
       try {
-        await api('POST', '/api/lead-sets', { lead_ids: picked.map((r) => r.id), name: inp.value.trim() || null });
+        await api('POST', '/api/lead-sets', { lead_ids: picked.map((r) => r.id), name: null });
         close(); [...S.sel].forEach((id) => setPick(id, false)); S.sel.clear(); toast(`Grouped ${picked.length} leads as a set`); await load();
       } catch (err) { fail(err); }
     };
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } if (e.key === 'Escape') close(); });
+    wrap.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
     wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-gs="no"]')) close(); if (e.target.closest('[data-gs="yes"]')) go(); });
   }
   async function ungroupSelected() {
@@ -831,6 +828,9 @@
         <h2>${esc(l.asin || 'Lead')} <span class="muted" style="font-size:15px">${esc(fmtDate(l.lead_date))}</span></h2>
         ${link ? `<a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Open store ↗</a>` : ''}
         ${l.asin ? `<a class="btn small" href="https://www.amazon.com/dp/${esc(l.asin)}" target="_blank" rel="noopener">Amazon ↗</a>` : ''}
+        ${l.asin ? ((l.skus || []).length
+          ? `<a class="btn small" href="https://sellercentral.amazon.com/skucentral?mSku=${encodeURIComponent(l.skus[0])}" target="_blank" rel="noopener" title="SKU Central for ${esc(l.skus[0])}${l.skus.length > 1 ? ` (other SKUs: ${esc(l.skus.slice(1).join(', '))})` : ''}">Seller Central ↗</a>`
+          : `<a class="btn small" href="https://sellercentral.amazon.com/myinventory/inventory?searchField=all&searchTerm=${encodeURIComponent(l.asin)}" target="_blank" rel="noopener" title="No SKU on file for this ASIN yet: opens Manage inventory searched by ASIN">Seller Central ↗</a>`) : ''}
         ${editable() ? `<span id="delWrap"><button class="btn small danger" data-act="del">Delete</button></span>` : ''}
         <button class="icon-btn" data-act="close" style="font-size:20px">✕</button>
       </div>
@@ -844,7 +844,6 @@
         ${l.fba_eligible === false ? `<div class="hz-banner"><b>! You can't send this to FBA right now.</b> Amazon's eligibility check says it isn't eligible${(l.fba_reasons || []).length ? ` (${(l.fba_reasons || []).map(esc).join(', ')})` : ''}. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">Why?</button></div>`
           : l.fba_eligible === true && !l.transparency && l.list_ok !== false && !l.generic ? `<div class="hz-banner ok"><b>✓ ${l.list_ok === true ? 'You can list this and FBA can receive it.' : "FBA can receive it."}</b>${l.list_ok === true ? '' : " Whether your account can list it isn't checked yet."}</div>` : ''}
         ${l.set_id ? `<div class="set-box"><div class="section-title">Set <span style="text-transform:none;letter-spacing:0;font-weight:400">${(l.set_members || []).length} leads · stays together when you sort or filter</span></div>
-          <div class="set-row">${editable() ? `<input id="setNameEdit" value="${esc(l.set_name || '')}" placeholder="Set name" maxlength="120"><button class="btn small" data-setact="rename" data-set="${esc(l.set_id)}">Rename</button>` : `<b>${esc(l.set_name || 'Set')}</b>`}</div>
           <table class="mini"><tbody>${(l.set_members || []).map((x) => `<tr data-open="${esc(x.id)}" style="cursor:pointer" class="${x.id === l.id ? 'cur' : ''}"><td class="mono">${esc(x.asin || '—')}</td><td>${esc((x.product_name || '').slice(0, 55))}</td><td class="num">${money(x.cost)}</td><td class="num">${num(x.buy_qty)}</td></tr>`).join('')}</tbody></table>
           ${editable() ? `<div class="set-row"><button class="btn small" data-setact="remove" data-lead="${esc(l.id)}">Take this lead out of the set</button><button class="btn small ghost" data-setact="ungroup" data-set="${esc(l.set_id)}">Ungroup the whole set</button></div>` : ''}</div>` : ''}
         ${(l.same_day_n || 0) > 1 ? `<div class="hz-banner warn"><b>Entered ${l.same_day_n} times on ${esc(fmtDate(l.lead_date))}.</b> Check it's not a duplicate. <button class="btn small" data-hz="${esc(l.asin)}" data-hz-day="${esc(l.lead_date || '')}">See them</button></div>` : ''}

@@ -332,6 +332,12 @@ async def get_lead(lead_id: str | None = None, airtable_id: str | None = None) -
                                      (lead["asin"],))
             c = await cur.fetchone()
             lead["catalog"] = jsonable(dict(c)) if c else None
+            # your SKU(s) for this ASIN, for the Seller Central (SKU Central) button
+            cur = await conn.execute(
+                """SELECT sku FROM (SELECT sku, 0 o FROM catalog_adds WHERE asin=upper(btrim(%s)) AND sku IS NOT NULL
+                       UNION SELECT sku, 1 FROM inbound_skus WHERE upper(asin)=upper(btrim(%s))) x ORDER BY o, sku""",
+                (lead["asin"], lead["asin"]))
+            lead["skus"] = list(dict.fromkeys(x["sku"] for x in await cur.fetchall()))
     if lead.get("asin"):
         lead["transparency"] = await transparency.get(lead["asin"])
         lead["tp_brand"] = await transparency.brand_matches(lead["asin"])
