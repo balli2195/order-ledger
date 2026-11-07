@@ -189,7 +189,7 @@ async def engine_inbound_sync(request: Request):
     async def run():
         try:
             inbound.status["result"] = await inbound.sync()
-            inbound.status.update(last_run=_t.strftime("%Y-%m-%d %H:%M:%S"), last_error=None)
+            inbound.status.update(last_run=_t.strftime("%Y-%m-%d %H:%M:%S"), last_error=None, rss_mb_after=inbound.mem_trim())
             async with db.pool.connection() as conn:
                 await conn.execute("INSERT INTO settings (key, value) VALUES ('inbound_synced_at', %s) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
                                    (json.dumps(datetime.now(timezone.utc).isoformat()),))
@@ -581,6 +581,7 @@ async def engine_diag(request: Request):
         out["catalog_counts"] = {r["status"]: r["n"] for r in await (await conn.execute("SELECT status, count(*) n FROM catalog_adds GROUP BY 1")).fetchall()}
     out["catalog"] = catalog.status
     out["inbound"] = {k: v for k, v in inbound.status.items()}
+    out["memory_mb"] = inbound.mem_mb()
     return out
 
 

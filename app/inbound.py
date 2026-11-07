@@ -86,15 +86,26 @@ def _ts(v) -> datetime | None:
         return None
 
 
-async def _download(c, doc_id: str) -> list[dict]:
+async def _download(c, doc_id: str, keep=None) -> list[dict]:
+    """Report rows. `keep(row)` returns the slimmed row to keep, or None to drop it. The file is decompressed and read
+    line by line, so a big report (the inventory ledger is every sale, transfer and adjustment) never sits in memory
+    whole: holding it all ran the 512 MB server out of memory (Nov 2026)."""
     d = await _get(c, f"/reports/2021-06-30/documents/{doc_id}", {})
     raw = (await c.get(d["url"])).content
-    if d.get("compressionAlgorithm") == "GZIP":
-        raw = gzip.decompress(raw)
-    return list(csv.DictReader(io.StringIO(raw.decode("utf-8", errors="replace")), delimiter="\t"))
+    buf = gzip.GzipFile(fileobj=io.BytesIO(raw)) if d.get("compressionAlgorithm") == "GZIP" else io.BytesIO(raw)
+    del raw
+    out = []
+    with io.TextIOWrapper(buf, encoding="utf-8", errors="replace", newline="") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            if keep is not None:
+                row = keep(row)
+                if row is None:
+                    continue
+            out.append(row)
+    return out
 
 
-async def _report(c, rtype: str, start: datetime, end: datetime | None = None) -> list[dict]:
+async def _report(c, rtype: str, start: datetime, end: datetime | None = None, keep=None) -> list[dict]:
     # A report covering the same range made in the last 20 hours is reused (createReport has a small quota).
     since = (datetime.now(timezone.utc) - timedelta(hours=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
     j = await _get(c, "/reports/2021-06-30/reports", {"reportTypes": rtype, "processingStatuses": "DONE", "createdSince": since, "pageSize": 50})
@@ -102,7 +113,7 @@ async def _report(c, rtype: str, start: datetime, end: datetime | None = None) -
     for x in j.get("reports", []):
         a, b = _ts(x.get("dataStartTime")), _ts(x.get("dataEndTime"))
         if a and b and a <= start + timedelta(days=1) and b >= want_end - timedelta(days=1) and x.get("reportDocumentId"):
-            return await _download(c, x["reportDocumentId"])
+            return await _download(c, x["reportDocumentId"], keep)
     body = {"reportType": rtype, "marketplaceIds": [sellable.MP], "dataStartTime": start.strftime("%Y-%m-%dT%H:%M:%SZ")}
     if end:
         body["dataEndTime"] = end.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -119,10 +130,20 @@ async def _report(c, rtype: str, start: datetime, end: datetime | None = None) -
         j = await _get(c, f"/reports/2021-06-30/reports/{rid}", {})
         st = j.get("processingStatus")
         if st == "DONE":
-            return await _download(c, j["reportDocumentId"])
+            return await _download(c, j["reportDocumentId"], keep)
         if st in ("CANCELLED", "FATAL"):
             return []   # CANCELLED = no data in the range
     raise RuntimeError(f"report {rtype} timed out")
+
+
+_LEDGER_COLS = ("Event Type", "Reference ID", "Date", "Date and Time", "MSKU", "ASIN", "FNSKU", "Title")
+
+
+def _receipt_row(row: dict) -> dict | None:
+    """Only Receipts rows (and only the columns the sync reads) are kept from the ledger."""
+    if (row.get("Event Type") or "").strip() != "Receipts":
+        return None
+    return {k: row.get(k) for k in _LEDGER_COLS}
 
 
 async def _ledger(c, start: datetime, now: datetime) -> list[dict]:
@@ -147,14 +168,38 @@ async def _ledger(c, start: datetime, now: datetime) -> list[dict]:
         cands = [h for h in have if h[0] <= cur + timedelta(days=1) and h[1] > cur + timedelta(days=1)]
         if cands:
             a, b, doc = max(cands, key=lambda h: h[1])
-            rows += await _download(c, doc)
+            rows += await _download(c, doc, _receipt_row)
             cur = b
         else:
             nxt = min([h[0] for h in have if h[0] > cur] or [now])
             end = min(cur + timedelta(days=89), nxt + timedelta(days=1), now - timedelta(hours=1))
-            rows += await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", cur, end)
+            rows += await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", cur, end, _receipt_row)
             cur = end
     return rows
+
+
+def mem_mb() -> dict:
+    """This process's memory now and at its peak (MB), from /proc."""
+    out = {}
+    try:
+        for line in open("/proc/self/status"):
+            if line.startswith(("VmRSS:", "VmHWM:")):
+                out["rss" if line.startswith("VmRSS") else "peak"] = round(int(line.split()[1]) / 1024)
+    except OSError:
+        pass
+    return out
+
+
+def mem_trim() -> dict:
+    """Hand memory Python has freed back to the system (glibc keeps it otherwise)."""
+    import gc
+    gc.collect()
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+    return mem_mb()
 
 
 async def sync() -> dict:
@@ -294,6 +339,8 @@ async def loop() -> None:
         except Exception as e:
             status["last_error"] = str(e)[:300]
             log.exception("inbound sync failed")
+        finally:
+            status["rss_mb_after"] = mem_trim()
         await asyncio.sleep(1800)
 
 
