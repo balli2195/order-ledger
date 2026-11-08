@@ -660,6 +660,51 @@ async def api_score_lead(lead_id: str, request: Request):
     return await L.score_lead(lead_id)
 
 
+# Rescore every lead on one day (button on the day row of the Leads page; Nick, Nov 8 2026).
+# Runs in the background, 3 at a time; each lead's row updates live as its score lands.
+_rescore: dict = {}
+
+
+@app.post("/api/leads-day/rescore")
+async def api_rescore_day(request: Request, day: str):
+    await auth.require(request, "editor", tab="leads")
+    d = date.fromisoformat(day)
+    job = _rescore.get(d.isoformat())
+    if job and not job["task"].done():
+        return {k: v for k, v in job.items() if k != "task"}
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT id FROM leads WHERE lead_date=%s AND btrim(coalesce(asin,'')) <> '' AND cost > 0 "
+                                 "AND btrim(coalesce(store_link,'')) <> '' ORDER BY created_at", (d,))
+        ids = [str(r["id"]) for r in await cur.fetchall()]
+    job = {"day": d.isoformat(), "total": len(ids), "done": 0, "ok": 0, "failed": 0, "running": True}
+    sem = asyncio.Semaphore(3)
+
+    async def one(i):
+        async with sem:
+            try:
+                r = await L.score_lead(i)
+                job["ok" if r.get("ok") else "failed"] += 1
+            except Exception:
+                job["failed"] += 1
+            job["done"] += 1
+
+    async def run():
+        try:
+            await asyncio.gather(*(one(i) for i in ids))
+        finally:
+            job["running"] = False
+    job["task"] = asyncio.create_task(run())
+    _rescore[d.isoformat()] = job
+    return {k: v for k, v in job.items() if k != "task"}
+
+
+@app.get("/api/leads-day/rescore")
+async def api_rescore_day_status(request: Request, day: str):
+    await auth.require(request, "viewer", tab="leads")
+    job = _rescore.get(date.fromisoformat(day).isoformat())
+    return {k: v for k, v in job.items() if k != "task"} if job else {"day": day, "running": False, "total": 0, "done": 0}
+
+
 @app.post("/api/leads-admin/make-home")
 async def api_make_home(request: Request):
     user = await auth.require(request, "owner")

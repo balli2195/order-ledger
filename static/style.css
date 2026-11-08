@@ -577,3 +577,5 @@ td.promo, .wrap.full td.promo { max-width: min(280px, 13vw); }
 .sn-pts.down { background: var(--warn-soft); color: var(--bad); }
 @media (max-width: 700px) { .sn-figs { grid-template-columns: 1fr; } }
 .sn-sub .muted { font-weight: 400; }
+
+tr.day-row .day-rescore { margin-left: 12px; padding: 2px 10px; font-size: 12.5px; vertical-align: 1px; }

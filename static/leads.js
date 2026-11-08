@@ -175,6 +175,22 @@
   window.addEventListener('scroll', maybeMore, { passive: true });
   window.addEventListener('resize', maybeMore);
 
+  async function rescoreDay(day) {
+    S.rescore = S.rescore || {};
+    const paint = () => document.querySelectorAll(`[data-rescore="${day}"]`).forEach((b) => {
+      const j = S.rescore[day]; b.disabled = !!(j && j.running); b.textContent = j && j.running ? `Rescoring ${j.done}/${j.total}…` : '↻ Rescore day'; });
+    try {
+      let j = await api('POST', `/api/leads-day/rescore?day=${encodeURIComponent(day)}`);
+      if (!j.total) { toast('No leads on this day have an ASIN, cost and store link to score', true); return; }
+      S.rescore[day] = j; paint();
+      while (j.running) {
+        await new Promise((r) => setTimeout(r, 2500));
+        j = await api('GET', `/api/leads-day/rescore?day=${encodeURIComponent(day)}`); S.rescore[day] = j; paint();
+      }
+      toast(`Rescored ${j.ok} of ${j.total} lead${j.total === 1 ? '' : 's'}${j.failed ? ` · ${j.failed} couldn't be scored` : ''}`, !!j.failed && !j.ok);
+    } catch (e) { S.rescore[day] = null; paint(); fail(e); }
+  }
+
   function dayHtml(day) {
     const t = S.dayTotals[day] || {};
     const label = day ? new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'No date';
@@ -183,7 +199,9 @@
     if (t.actual) bits.push(`${money(t.actual, 0)} spent`);
     if (t.expected) bits.push(`${money(t.expected, 0)} planned`);
     const cs = t.claude_n ? `<span class="day-claude" title="Sum of Claude buy qty × cost for this day's leads">Claude suggested spend <b>${money(t.claude_spend, 0)}</b></span>` : '';
-    return `<tr class="day-row"><td colspan="${S.order.length + 1 + (canPick() ? 1 : 0)}">${cs}<b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span></td></tr>`;
+    const rj = (S.rescore || {})[day];
+    const rs = day && can('editor') ? `<button class="btn small day-rescore" data-rescore="${esc(day)}" ${rj && rj.running ? 'disabled' : ''} title="Run every lead on this day through the Lead Score again">${rj && rj.running ? `Rescoring ${rj.done}/${rj.total}…` : '↻ Rescore day'}</button>` : '';
+    return `<tr class="day-row"><td colspan="${S.order.length + 1 + (canPick() ? 1 : 0)}">${cs}<b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span>${rs}</td></tr>`;
   }
 
   function setEdge(r) {   // 'set-first' / 'set-last' for the top and bottom rows of a set (for the box around it)
@@ -975,6 +993,7 @@
     const th = t.closest('th[data-sort]');
     if (th && !S.justDragged) { const k = th.dataset.sort; if (S.sort === k) { if (S.desc === !['asin'].includes(k)) S.desc = !S.desc; else { S.sort = 'date'; S.desc = true; } } else { S.sort = k; S.desc = !['asin'].includes(k); } saveSort(); load().catch(fail); return; }
     const tr = t.closest('#rows tr[data-id]'); if (tr) { openLead(tr.dataset.id); return; }
+    const rsb = t.closest('[data-rescore]'); if (rsb) { rescoreDay(rsb.dataset.rescore); return; }
     if (t.closest('#rows tr.day-row')) return;
     const o = t.closest('[data-open]'); if (o) { openLead(o.dataset.open); return; }
     if (t.id === 'scrim') { closeDrawer(); return; }
