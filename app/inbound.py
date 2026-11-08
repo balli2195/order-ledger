@@ -461,6 +461,7 @@ async def page(include_all: bool = False) -> dict:
                 WHERE upper(btrim(asin)) = ANY(%s) AND cost > 0 ORDER BY upper(btrim(asin)), lead_date DESC""", (asins,))
         for r in await cur.fetchall():
             cost.setdefault(r["asin"], float(r["cost"]))
+    fn_asin = {i["fnsku"]: sku_asin[i["sku"]] for i in items if i.get("fnsku") and i["sku"] in sku_asin}
     by_ship: dict = {}
     for i in items:
         by_ship.setdefault(i["shipment_id"], []).append(i)
@@ -505,13 +506,15 @@ async def page(include_all: bool = False) -> dict:
                     if key not in seen:
                         seen.add(key)
                         paid_rows.append(r)
-            denied = sum(int(v[0]) for v in (cdata.get("deny") or {}).values() if isinstance(v, list) and v)
+            dn = [(k, int(v[0])) for k, v in (cdata.get("deny") or {}).items() if isinstance(v, list) and v]
+            denied = sum(u for _, u in dn)
+            denied_v = sum(u * (cost.get(fn_asin.get(k)) or 0) for k, u in dn)   # at your average cost per unit
             case = None
             if cs:
                 case = {"id": cs["case_id"], "status": cs["status"], "opened": cs["opened"], "decided": cs["decided"],
                         "paid": round(sum(float(r["amount"] or 0) for r in paid_rows), 2),
                         "paid_units": sum((r["qty_cash"] or 0) + (r["qty_inv"] or 0) for r in paid_rows),
-                        "denied_units": denied, "rereview": (cdata.get("rereview") or {}).get("case"),
+                        "denied_units": denied, "denied_value": round(denied_v, 2), "rereview": (cdata.get("rereview") or {}).get("case"),
                         "deny": [{"fnsku": k, "units": v[0], "note": v[1] if len(v) > 1 else ""} for k, v in (cdata.get("deny") or {}).items()]}
             sc_msg = (sc or {}).get("msg") or ""
             sc_expired = "no longer eligible" in sc_msg.lower() or "NINE_MONTH" in sc_msg
@@ -583,6 +586,7 @@ async def page(include_all: bool = False) -> dict:
             "paid": round(sum((s["case"] or {}).get("paid", 0) for s in shp), 2),
             "paid_units": sum((s["case"] or {}).get("paid_units", 0) for s in shp),
             "denied_units": sum((s["case"] or {}).get("denied_units", 0) for s in shp),
+            "denied_value": round(sum((s["case"] or {}).get("denied_value", 0) for s in shp), 2),
             "deadline": min(open_deadlines) if open_deadlines else None,
             "days_left": (min(open_deadlines) - today).days if open_deadlines else None,
             "state": state, "skus": sku_rows, "unfiled": len(unfiled),
