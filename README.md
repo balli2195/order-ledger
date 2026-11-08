@@ -47,3 +47,10 @@ For the lead scoring / Claude Buy QTY jobs. Header `X-Engine-Key: <ENGINE_KEY>` 
 ## Brand sellers tab (Nov 2, 2026)
 - Page /brand-sellers (static/brand-sellers.html), tab key `brand_sellers`: Sephora brands Nick can sell, ranked by distinct third-party sellers. Owners see it; tick it per person in Users & logins.
 - Data: hub doc `brand_sellers/latest` = {label, builtAt, notes[], rows:[{rank, brand, sellers, fba, avg, asins, live, me, top_asin, top_n, verdict, new, thin, hist}]}. Refresh with `PUT /api/engine/docs/brand_sellers/latest` (X-Engine-Key); no redeploy needed. Method: project doc claude/sephora-brand-eligibility-2026-11-02.md.
+
+## Profit page (Nov 8, 2026)
+`/profit` (tab `profit`): Amazon P&L for any date range, updated through the day. Code: `app/profit.py`, `static/profit.html`.
+- **Amazon lines:** SP-API Finances v0 `listFinancialEvents`, one Pacific day per pull (the same posted transactions Link My Books books into QuickBooks; Sep 2026 tied to QuickBooks to the cent on every Amazon.com line). Tables `fin_days`, `fin_agg` (day × currency × P&L line × charge type), `fin_units` (units shipped/refunded per SKU per day). Loop: last 3 days every 3 h, last 14 days daily, history from setting `profit_start` (default 2026-01-01), newest first.
+- **FX:** MXN/CAD → USD at the day's ECB rate (frankfurter.dev), table `fx_rates`.
+- **COGS:** units shipped × `sku_costs` (latest cost dated on/before the day, else the earliest after). Sources: `il_month` (InventoryLab SKU Profitability cost/unit for that month, as_of = 1st) and `inventorylab` (FBA Inventory active cost/unit snapshot). Fallback: order ledger average cost for the ASIN (`sku_asin`). Returns don't credit cost back (as Link My Books).
+- **Engine API (X-Engine-Key):** `GET /api/engine/profit?start&end&us=1`, `POST /api/engine/profit/costs {source, as_of, rows:[{sku, asin, cost}]}` (also accepts cross-origin POSTs from InventoryLab's own pages, for the daily cost run), `POST /api/engine/profit/repull {start, end}`, `GET /api/engine/profit/status`.

@@ -676,6 +676,26 @@ MIGRATIONS: list[str] = [
     """
     INSERT INTO settings (key, value) VALUES ('sephora_sale', '{"name": "Sephora Savings Event, Fall 2026", "start": "2026-10-30", "end": "2026-11-09"}')
     ON CONFLICT (key) DO NOTHING;
+    """,    # 48: Profit page — Amazon finance events by day, units per SKU, unit costs, FX (Nick, Nov 8 2026)
+    """
+    CREATE TABLE IF NOT EXISTS fin_days (
+      day date PRIMARY KEY, pulled_at timestamptz NOT NULL DEFAULT now(), pages int, events int, complete boolean NOT NULL DEFAULT false
+    );
+    CREATE TABLE IF NOT EXISTS fin_agg (
+      day date NOT NULL, currency text NOT NULL, line text NOT NULL, detail text NOT NULL, amount numeric(14,2) NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS fin_agg_day ON fin_agg (day);
+    CREATE TABLE IF NOT EXISTS fin_units (
+      day date NOT NULL, marketplace text NOT NULL, sku text NOT NULL, shipped int NOT NULL DEFAULT 0, refunded int NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS fin_units_day ON fin_units (day);
+    CREATE TABLE IF NOT EXISTS sku_costs (
+      sku text NOT NULL, as_of date NOT NULL, source text NOT NULL, cost numeric(12,4) NOT NULL, asin text,
+      PRIMARY KEY (sku, as_of, source)
+    );
+    CREATE INDEX IF NOT EXISTS sku_costs_sku_asof ON sku_costs (sku, as_of);
+    CREATE TABLE IF NOT EXISTS sku_asin (sku text PRIMARY KEY, asin text NOT NULL);
+    CREATE TABLE IF NOT EXISTS fx_rates (day date NOT NULL, currency text NOT NULL, usd numeric(14,8) NOT NULL, PRIMARY KEY (day, currency));
     """,
 ]
 

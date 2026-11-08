@@ -22,6 +22,7 @@ from . import docs as hubdocs
 from . import hazmat
 from . import transparency
 from . import sellable
+from . import profit
 from . import catalog
 from . import timeclock as tc
 from . import tasks as T
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
     catalog_task = asyncio.create_task(catalog.loop())   # Buy qty entered -> product added to Nick's Amazon catalog
     hazmat_task = asyncio.create_task(sellable.backfill_loop())   # Amazon FBA eligibility (Keepa hazmat comes with title lookups)
     inbound_task = asyncio.create_task(inbound.loop())   # Reimbursements page: inbound shipments from SP-API, daily
+    profit_task = asyncio.create_task(profit.loop())   # Profit page: Amazon finance events, rolling refresh + history backfill
     async with mcp.session_manager.run():
         yield
     listener.cancel()
@@ -58,11 +60,32 @@ async def lifespan(app: FastAPI):
     hazmat_task.cancel()
     catalog_task.cancel()
     inbound_task.cancel()
+    profit_task.cancel()
     brand_task.cancel()
     await db.close_pool()
 
 
 app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+# The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
+# Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
+_IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
+_CORS_PATHS = ("/api/engine/profit/costs",)
+
+
+@app.middleware("http")
+async def il_cors(request: Request, call_next):
+    origin = request.headers.get("origin", "")
+    if request.url.path in _CORS_PATHS and origin in _IL_ORIGINS:
+        h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST, OPTIONS",
+             "Access-Control-Allow-Headers": "Content-Type, X-Engine-Key", "Access-Control-Max-Age": "600", "Vary": "Origin"}
+        if request.method == "OPTIONS":
+            return JSONResponse({}, headers=h)
+        resp = await call_next(request)
+        for k, v in h.items():
+            resp.headers[k] = v
+        return resp
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -154,6 +177,87 @@ async def timeclock_page(request: Request):
 @app.get("/reimbursements", include_in_schema=False)
 async def reimbursements_page(request: Request):
     return await _page(request, "reimbursements", "reimbursements.html")
+
+
+@app.get("/profit", include_in_schema=False)
+async def profit_page(request: Request):
+    return await _page(request, "profit", "profit.html")
+
+
+def _range(start: str | None, end: str | None) -> tuple[date, date]:
+    t = profit.today_pt()
+    try:
+        a = date.fromisoformat(start) if start else t.replace(day=1)
+        b = date.fromisoformat(end) if end else t
+    except ValueError:
+        raise HTTPException(400, "Dates look like 2026-09-30")
+    if b < a:
+        a, b = b, a
+    if (b - a).days > 400:
+        raise HTTPException(400, "Pick 400 days or fewer")
+    return a, b
+
+
+@app.get("/api/profit")
+async def api_profit(request: Request, start: str | None = None, end: str | None = None, us: int = 0):
+    await auth.require(request, tab="profit")
+    a, b = _range(start, end)
+    return profit_json(await profit.report(a, b, bool(us)))
+
+
+def profit_json(r: dict) -> dict:
+    from .orders import jsonable
+    return jsonable(r)
+
+
+@app.get("/api/engine/profit")
+async def engine_profit(request: Request, start: str | None = None, end: str | None = None, us: int = 0):
+    """The Profit page's numbers for a date range (Pacific days), for checks against QuickBooks."""
+    auth.require_engine_key(request)
+    a, b = _range(start, end)
+    return profit_json(await profit.report(a, b, bool(us)))
+
+
+@app.post("/api/engine/profit/costs")
+async def engine_profit_costs(request: Request, body: dict = Body(...)):
+    """Unit costs: {source: 'inventorylab'|'il_month'|..., as_of: 'YYYY-MM-DD', rows: [{sku, asin, cost}]}. Replaces that source+day."""
+    auth.require_engine_key(request)
+    try:
+        as_of = date.fromisoformat(str(body.get("as_of")))
+    except ValueError:
+        raise HTTPException(400, "as_of looks like 2026-11-08")
+    src = str(body.get("source") or "inventorylab")[:40]
+    return await profit.save_costs(src, as_of, body.get("rows") or [])
+
+
+_profit_run: dict = {}
+
+
+@app.post("/api/engine/profit/repull")
+async def engine_profit_repull(request: Request, body: dict = Body(...)):
+    """Re-pull Amazon finance events for {start, end} now (background). GET /api/engine/profit/status to follow it."""
+    auth.require_engine_key(request)
+    a, b = _range(body.get("start"), body.get("end"))
+    t = _profit_run.get("t")
+    if t and not t.done():
+        return {"running": True}
+    async def run():
+        try:
+            _profit_run["result"] = await profit.repull(a, b)
+        except Exception as e:
+            _profit_run["result"] = {"error": str(e)[:300]}
+    _profit_run["t"] = asyncio.create_task(run())
+    return {"started": True, "start": a.isoformat(), "end": b.isoformat()}
+
+
+@app.get("/api/engine/profit/status")
+async def engine_profit_status(request: Request):
+    auth.require_engine_key(request)
+    async with db.pool.connection() as conn:
+        d = await (await conn.execute("SELECT count(*) n, min(day) first, max(day) last, max(pulled_at) newest FROM fin_days")).fetchone()
+        c = await (await conn.execute("SELECT source, as_of, count(*) n FROM sku_costs GROUP BY 1,2 ORDER BY 2 DESC LIMIT 20")).fetchall()
+    t = _profit_run.get("t")
+    return profit_json({"loop": profit.status, "days": d, "costs": c, "repull": {"running": bool(t and not t.done()), "result": _profit_run.get("result")}})
 
 
 @app.get("/api/reimbursements")

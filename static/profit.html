@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Profit · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .pf-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 26px 0 0; }
+  .pf-head h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0; }
+  .pf-head .sp { flex: 1; }
+  .pf-range { display: flex; gap: 6px; align-items: center; }
+  .pf-range input { width: 140px; padding: 5px 8px; }
+  .pf-toggle { white-space: nowrap; display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
+  #presets { overflow-x: auto; max-width: 100%; } #presets .chip { white-space: nowrap; }
+  .stat.big .v { font-size: 24px; }
+  .stat .sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .v.pos { color: var(--ok); } .v.neg { color: var(--bad); }
+  .pf-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; align-items: start; }
+  @media (max-width: 960px) { .pf-grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .card h3 { font-size: 13px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+  table.pl td { padding: 6px 4px; border-bottom: 1px solid var(--line-2); font-variant-numeric: tabular-nums; }
+  table.pl td.n { text-align: right; white-space: nowrap; }
+  table.pl td.p { text-align: right; color: var(--muted); font-size: 12px; width: 64px; }
+  table.pl tr.sec td { font-weight: 600; padding-top: 14px; border-bottom: 1px solid var(--line); }
+  table.pl tr.grp { cursor: pointer; }
+  table.pl tr.grp:hover td { background: var(--panel-2); }
+  table.pl tr.grp td:first-child::before { content: "›"; display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+  table.pl tr.grp.open td:first-child::before { transform: rotate(90deg); }
+  table.pl tr.part td { font-size: 12.5px; color: var(--muted); padding-left: 22px; }
+  table.pl tr.part.has { cursor: pointer; }
+  table.pl tr.det td { font-size: 12px; color: var(--muted); padding-left: 40px; border-bottom: 0; padding-top: 2px; padding-bottom: 2px; }
+  table.pl tr.tot td { font-weight: 600; border-top: 1px solid var(--line); }
+  table.pl tr.profit td { font-weight: 600; font-size: 16px; border-top: 2px solid var(--ink); border-bottom: 0; padding-top: 10px; }
+  .chart { width: 100%; height: 220px; display: block; }
+  .chart .bar.pos { fill: var(--ok); } .chart .bar.neg { fill: var(--bad); }
+  .chart .bar:hover { opacity: .75; }
+  .chart .axis { stroke: var(--line); } .chart text { fill: var(--muted); font-size: 10px; font-family: var(--sans); }
+  .tip { font-size: 12.5px; color: var(--muted); min-height: 18px; margin-top: 4px; }
+  .cov { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  .cov b { color: var(--ink); font-weight: 600; }
+  .cov .warn { color: var(--bad); }
+  .unc { margin: 6px 0 0; padding-left: 16px; }
+  .loading { opacity: .5; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit" class="on">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+
+  <div class="pf-head"><h2>Profit</h2><span class="muted" id="meta" style="font-size:13px"></span><span class="sp"></span>
+    <div class="chips" id="presets">
+      <button class="chip" data-p="today">Today</button><button class="chip" data-p="yesterday">Yesterday</button>
+      <button class="chip" data-p="7d">Last 7 days</button><button class="chip on" data-p="mtd">This month</button>
+      <button class="chip" data-p="lm">Last month</button><button class="chip" data-p="ytd">This year</button>
+    </div>
+    <div class="pf-range"><input type="date" id="from" aria-label="From"><span class="muted">–</span><input type="date" id="to" aria-label="To"></div>
+    <label class="pf-toggle" title="Leave out Amazon.com.mx and Amazon.ca, to compare with QuickBooks' (US) accounts"><input type="checkbox" id="usOnly"> US only</label>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="pf-grid" id="body">
+    <div class="card"><h3>Profit &amp; loss · Amazon</h3><table class="pl" id="pl"></table></div>
+    <div>
+      <div class="card"><h3>Profit by day</h3><svg class="chart" id="chart" role="img" aria-label="Profit by day"></svg><div class="tip" id="tip">Hover a bar for that day.</div></div>
+      <div class="card" style="margin-top:16px"><h3>About these numbers</h3><div class="cov" id="cov"></div></div>
+    </div>
+  </div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/bonus.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, $$, esc, money, num, api, fail } = LG;
+  const m0 = (n) => money(n, 0);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  // Amazon's day is Pacific time; "today" follows that.
+  const ptToday = () => { const s = new Date().toLocaleString('en-CA', { timeZone: 'America/Los_Angeles' }).slice(0, 10); return new Date(s + 'T12:00:00Z'); };
+  const addDays = (d, n) => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + n); return x; };
+  function preset(p) {
+    const t = ptToday();
+    if (p === 'today') return [t, t];
+    if (p === 'yesterday') return [addDays(t, -1), addDays(t, -1)];
+    if (p === '7d') return [addDays(t, -6), t];
+    if (p === 'mtd') return [new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 1, 12)), t];
+    if (p === 'lm') { const a = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - 1, 1, 12)); const b = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 0, 12)); return [a, b]; }
+    if (p === 'ytd') return [new Date(Date.UTC(t.getUTCFullYear(), 0, 1, 12)), t];
+  }
+  const st = { a: null, b: null, us: false, data: null, open: new Set() };
+  try { st.us = localStorage.getItem('pf_us') === '1'; } catch { /* storage off */ }
+  $('#usOnly').checked = st.us;
+
+  function setRange(a, b, p) {
+    st.a = iso(a); st.b = iso(b); $('#from').value = st.a; $('#to').value = st.b;
+    $$('#presets .chip').forEach((c) => c.classList.toggle('on', c.dataset.p === p));
+    load();
+  }
+
+  async function load() {
+    $('#body').classList.add('loading');
+    try {
+      st.data = await api('GET', `/api/profit?start=${st.a}&end=${st.b}&us=${st.us ? 1 : 0}`);
+      render();
+    } catch (e) { fail(e); } finally { $('#body').classList.remove('loading'); }
+  }
+
+  const pctOf = (v, base) => base ? (v / base * 100).toFixed(1) + '%' : '';
+
+  function render() {
+    const d = st.data, T = d.totals, cov = d.coverage;
+    const fees = T.expense;
+    $('#stats').innerHTML = [
+      ['Sales', m0(T.sales), `${num(cov.units)} units shipped`],
+      ['Amazon income', m0(T.income), 'after refunds, promos, reimbursements'],
+      ['Product cost', m0(-T.cogs), 'COGS + inbound shipping'],
+      ['Amazon fees', m0(-fees), pctOf(-fees, T.sales) + ' of sales'],
+      ['Profit', m0(T.profit), T.margin != null ? pctOf(T.profit, T.sales) + ' of sales' : '', true],
+    ].map(([k, v, sub, big]) => `<div class="stat ${big ? 'big' : ''}"><div class="k">${k}</div><div class="v ${big ? (T.profit >= 0 ? 'pos' : 'neg') : ''}">${v}</div><div class="sub">${esc(sub)}</div></div>`).join('');
+
+    const rows = [];
+    const secName = { income: 'Income', cogs: 'Cost of goods sold', expense: 'Amazon expenses' };
+    const totName = { income: 'Total income', cogs: 'Total cost of goods sold', expense: 'Total Amazon expenses' };
+    const secTot = { income: T.income, cogs: T.cogs, expense: T.expense };
+    let last = null;
+    d.groups.forEach((g, gi) => {
+      if (g.section !== last) {
+        if (last) rows.push(`<tr class="tot"><td>${totName[last]}</td><td class="n">${money(secTot[last])}</td><td class="p">${pctOf(secTot[last], T.sales)}</td></tr>`);
+        if (last === 'cogs') rows.push(`<tr class="tot"><td>Gross profit</td><td class="n">${money(T.income + T.cogs)}</td><td class="p">${pctOf(T.income + T.cogs, T.sales)}</td></tr>`);
+        rows.push(`<tr class="sec"><td colspan="3">${secName[g.section]}</td></tr>`); last = g.section;
+      }
+      const open = st.open.has('g' + gi);
+      rows.push(`<tr class="grp ${open ? 'open' : ''}" data-k="g${gi}"><td>${esc(g.name)}</td><td class="n">${money(g.amount)}</td><td class="p">${pctOf(g.amount, T.sales)}</td></tr>`);
+      if (open) g.parts.forEach((p, pi) => {
+        const k = `p${gi}_${pi}`, po = st.open.has(k);
+        rows.push(`<tr class="part ${p.detail.length ? 'has' : ''}" data-k="${k}"><td>${esc(p.line === 'COGS' ? 'Units shipped × InventoryLab unit cost' : p.line)}</td><td class="n">${money(p.amount)}</td><td class="p"></td></tr>`);
+        if (po) p.detail.forEach((x) => rows.push(`<tr class="det"><td>${esc(x.what)}</td><td class="n">${money(x.amount)}</td><td class="p"></td></tr>`));
+      });
+    });
+    if (last) rows.push(`<tr class="tot"><td>${totName[last]}</td><td class="n">${money(secTot[last])}</td><td class="p">${pctOf(secTot[last], T.sales)}</td></tr>`);
+    rows.push(`<tr class="profit"><td>Amazon profit</td><td class="n">${money(T.profit)}</td><td class="p">${pctOf(T.profit, T.sales)}</td></tr>`);
+    $('#pl').innerHTML = rows.join('');
+
+    chart(d.daily);
+
+    const cs = cov.cost_snapshot ? LG.fmtDate(cov.cost_snapshot) : 'none yet';
+    const unc = cov.uncosted_units;
+    const fx = Object.entries(cov.other_currency || {}).map(([c, v]) => `${c} ${num(Math.round(v))}`).join(', ');
+    $('#cov').innerHTML = `
+      <div>Amazon transactions by <b>posted date, Pacific time</b> — the same transactions Link My Books books into QuickBooks. ${cov.days_loaded} of ${cov.days} days loaded${cov.days_loaded < cov.days ? ' <span class="warn">(history still loading)</span>' : ''}; last pulled ${cov.newest_pull ? new Date(cov.newest_pull).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}. The last two days can still grow as Amazon posts late orders.</div>
+      <div style="margin-top:6px">Product cost: <b>${num(cov.costed_inventorylab)}</b> units at InventoryLab cost (its monthly SKU cost, or the latest daily snapshot: ${esc(cs)})${cov.costed_ledger ? `, <b>${num(cov.costed_ledger)}</b> at the order ledger's average cost` : ''}${unc ? `, <span class="warn"><b>${num(unc)}</b> units with no cost</span> (not in the profit above)` : ''}.</div>
+      ${unc ? `<ul class="unc">${cov.uncosted.slice(0, 8).map((u) => `<li>${esc(u.sku)}${u.asin ? ` · <a href="https://www.amazon.com/dp/${esc(u.asin)}" target="_blank" rel="noopener">${esc(u.asin)}</a>` : ''} — ${num(u.units)} units</li>`).join('')}</ul>` : ''}
+      ${fx && !d.us_only ? `<div style="margin-top:6px">Includes Amazon Mexico/Canada activity (${esc(fx)}) converted at the day's ECB rate. Tick “US only” to compare with QuickBooks' US accounts.</div>` : ''}
+      <div style="margin-top:6px">Not included yet: bank and card costs (prep center, contractors, software, cash back).</div>`;
+    $('#meta').textContent = `${LG.fmtDate(d.start)} – ${LG.fmtDate(d.end)}`;
+  }
+
+  function chart(days) {
+    const svg = $('#chart'); const W = svg.clientWidth || 500, H = 220, padL = 46, padB = 22, padT = 8;
+    const vals = days.map((x) => x.profit); const mx = Math.max(0, ...vals), mn = Math.min(0, ...vals);
+    const span = (mx - mn) || 1; const y = (v) => padT + (mx - v) / span * (H - padT - padB);
+    const bw = (W - padL - 6) / Math.max(days.length, 1);
+    const ticks = [mx, (mx + mn) / 2, mn].filter((v, i, a) => a.indexOf(v) === i);
+    let s = `<line class="axis" x1="${padL}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>`;
+    s += ticks.map((v) => `<text x="${padL - 6}" y="${y(v) + 3}" text-anchor="end">${m0(v)}</text>`).join('');
+    days.forEach((x, i) => {
+      const x0 = padL + i * bw + bw * .12, w = Math.max(1, bw * .76), y0 = y(Math.max(0, x.profit)), h = Math.max(1, Math.abs(y(x.profit) - y(0)));
+      s += `<rect class="bar ${x.profit >= 0 ? 'pos' : 'neg'}" x="${x0}" y="${y0}" width="${w}" height="${h}" rx="1.5" data-i="${i}"><title>${x.day}: ${m0(x.profit)}</title></rect>`;
+    });
+    const every = Math.ceil(days.length / 8);
+    days.forEach((x, i) => { if (i % every === 0) s += `<text x="${padL + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${LG.fmtDate(x.day).replace(/, \d{4}$/, '')}</text>`; });
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = s;
+    svg.onmousemove = (e) => { const r = e.target.closest('rect'); if (!r) return; const x = days[+r.dataset.i];
+      $('#tip').textContent = `${LG.fmtDate(x.day)} · profit ${money(x.profit)} · sales ${money(x.sales)} · ${num(x.units)} units`; };
+  }
+
+  $('#pl').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-k]'); if (!tr) return;
+    const k = tr.dataset.k; st.open.has(k) ? st.open.delete(k) : st.open.add(k); render();
+  });
+  $('#presets').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; const [a, b] = preset(c.dataset.p); setRange(a, b, c.dataset.p); });
+  const custom = () => { if ($('#from').value && $('#to').value) setRange(new Date($('#from').value + 'T12:00:00Z'), new Date($('#to').value + 'T12:00:00Z'), null); };
+  $('#from').addEventListener('change', custom); $('#to').addEventListener('change', custom);
+  $('#usOnly').addEventListener('change', () => { st.us = $('#usOnly').checked; try { localStorage.setItem('pf_us', st.us ? '1' : '0'); } catch { /* ignore */ } load(); });
+  window.addEventListener('resize', () => st.data && chart(st.data.daily));
+
+  LG.header().then(() => { const [a, b] = preset('mtd'); setRange(a, b, 'mtd'); }).catch(fail);
+})();
+</script>
+</body>
+</html>
