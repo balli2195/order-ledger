@@ -35,7 +35,7 @@ from . import db, sellable
 log = logging.getLogger("ledger.profit")
 PT = ZoneInfo("America/Los_Angeles")
 SP = sellable.SP
-status: dict = {"last_pull": None, "last_error": None, "pulled_days": 0, "phase": None}
+status: dict = {"last_pull": None, "last_error": None, "pulled_days": 0, "phase": None, "throttled": 0, "last_day": None}
 _lock = asyncio.Lock()
 
 # ---------------------------------------------------------------- mapping SP-API amounts to P&L lines
@@ -188,6 +188,7 @@ async def _get(c: httpx.AsyncClient, params: dict) -> dict:
         r = await c.get(SP + "/finances/v0/financialEvents", params=params,
                         headers={"x-amz-access-token": await sellable._token(c)})
         if r.status_code == 429 or r.status_code >= 500:
+            status["throttled"] += 1
             await asyncio.sleep(min(60, 4 * (attempt + 1)))
             continue
         if r.status_code != 200:
@@ -200,6 +201,7 @@ async def pull_day(day: date) -> dict:
     a, b = window(day)
     if a >= b:
         return {"day": day.isoformat(), "skipped": True}
+    t0 = time.monotonic()
     pages = []
     async with httpx.AsyncClient(timeout=60) as c:
         params = {"PostedAfter": a, "PostedBefore": b, "MaxResultsPerPage": 100}
@@ -230,7 +232,8 @@ async def pull_day(day: date) -> dict:
                    ON CONFLICT (day) DO UPDATE SET pulled_at=now(), pages=EXCLUDED.pages, events=EXCLUDED.events, complete=EXCLUDED.complete""",
                 (day, len(pages), n, complete))
     status["pulled_days"] += 1
-    return {"day": day.isoformat(), "pages": len(pages), "events": n}
+    status["last_day"] = {"day": day.isoformat(), "pages": len(pages), "events": n, "secs": round(time.monotonic() - t0, 1)}
+    return status["last_day"]
 
 
 async def fx_refresh(start: date, end: date) -> int:
