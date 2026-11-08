@@ -514,6 +514,8 @@ async def page(include_all: bool = False) -> dict:
                 case = {"id": cs["case_id"], "status": cs["status"], "opened": cs["opened"], "decided": cs["decided"],
                         "paid": round(sum(float(r["amount"] or 0) for r in paid_rows), 2),
                         "paid_units": sum((r["qty_cash"] or 0) + (r["qty_inv"] or 0) for r in paid_rows),
+                        "paid_cost": round(sum(((r["qty_cash"] or 0) + (r["qty_inv"] or 0)) * (cost.get((r["asin"] or "").strip().upper() or sku_asin.get(r["sku"])) or 0)
+                                               for r in paid_rows), 2),   # the same units at your average cost
                         "denied_units": denied, "denied_value": round(denied_v, 2), "rereview": (cdata.get("rereview") or {}).get("case"),
                         "deny": [{"fnsku": k, "units": v[0], "note": v[1] if len(v) > 1 else ""} for k, v in (cdata.get("deny") or {}).items()]}
             sc_msg = (sc or {}).get("msg") or ""
@@ -586,6 +588,7 @@ async def page(include_all: bool = False) -> dict:
             "paid": round(sum((s["case"] or {}).get("paid", 0) for s in shp), 2),
             "paid_units": sum((s["case"] or {}).get("paid_units", 0) for s in shp),
             "denied_units": sum((s["case"] or {}).get("denied_units", 0) for s in shp),
+            "paid_cost": round(sum((s["case"] or {}).get("paid_cost", 0) for s in shp), 2),
             "denied_value": round(sum((s["case"] or {}).get("denied_value", 0) for s in shp), 2),
             "deadline": min(open_deadlines) if open_deadlines else None,
             "days_left": (min(open_deadlines) - today).days if open_deadlines else None,

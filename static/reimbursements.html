@@ -90,7 +90,7 @@
     $('#stats').innerHTML = stat('Ready to file', `${el.length} plan${el.length === 1 ? '' : 's'}`, `${el.reduce((a, p) => a + p.missing, 0)} units · ${money(el.reduce((a, p) => a + p.missing_value, 0), 0)} est.`) +
       stat('Cases open', String(co.reduce((a, p) => a + p.shipments.filter((s) => s.case && s.case.status !== 'decided').length, 0)), `${co.length} plan${co.length === 1 ? '' : 's'}`) +
       stat('Next deadline', next ? sd(next.deadline) : '—', next ? `${next.days_left} day${next.days_left === 1 ? '' : 's'} left · plan ${esc(next.plan)}` : '') +
-      stat('Paid on these', money(P.reduce((a, p) => a + p.paid, 0), 0), `${P.reduce((a, p) => a + p.paid_units, 0)} units`) +
+      stat('Paid on these', money(P.reduce((a, p) => a + p.paid, 0), 0), `Amazon paid · ${P.reduce((a, p) => a + p.paid_units, 0)} units<br>${money(P.reduce((a, p) => a + (p.paid_cost || 0), 0), 0)} at your cost`) +
       stat('Declined', money(P.reduce((a, p) => a + (p.denied_value || 0), 0), 0), `${P.reduce((a, p) => a + (p.denied_units || 0), 0)} units · at your cost`);
     const head = `<thead><tr><th>Plan</th><th>Status</th><th class="num">Shipped</th><th class="num">Received</th><th class="num">Missing</th><th class="num">Paid</th><th class="num">Denied</th><th>File by</th><th></th></tr></thead>`;
     if (!P.length) { $('#tbl').innerHTML = head + `<tbody><tr><td colspan="9" class="empty">${D.synced_at ? 'Nothing needs action. 🎉' : 'Loading shipments from Amazon for the first time; this takes a few minutes.'}</td></tr></tbody>`; return; }
