@@ -199,10 +199,10 @@ def _range(start: str | None, end: str | None) -> tuple[date, date]:
 
 
 @app.get("/api/profit")
-async def api_profit(request: Request, start: str | None = None, end: str | None = None, us: int = 0):
+async def api_profit(request: Request, start: str | None = None, end: str | None = None, us: int = 0, inbound: int = 0):
     await auth.require(request, tab="profit")
     a, b = _range(start, end)
-    return profit_json(await profit.report(a, b, bool(us)))
+    return profit_json(await profit.report(a, b, bool(us), bool(inbound)))
 
 
 def profit_json(r: dict) -> dict:
@@ -211,11 +211,11 @@ def profit_json(r: dict) -> dict:
 
 
 @app.get("/api/engine/profit")
-async def engine_profit(request: Request, start: str | None = None, end: str | None = None, us: int = 0):
+async def engine_profit(request: Request, start: str | None = None, end: str | None = None, us: int = 0, inbound: int = 0):
     """The Profit page's numbers for a date range (Pacific days), for checks against QuickBooks."""
     auth.require_engine_key(request)
     a, b = _range(start, end)
-    return profit_json(await profit.report(a, b, bool(us)))
+    return profit_json(await profit.report(a, b, bool(us), bool(inbound)))
 
 
 @app.post("/api/engine/profit/costs")

@@ -79,7 +79,7 @@ GROUPS = [
     ("income", "Amazon FBA Inventory Reimbursement", ["Inventory reimbursements"]),
     ("income", "Other Amazon adjustments", ["Other adjustments"]),
     ("cogs", "Product cost", ["COGS"]),
-    ("cogs", "Inventory written off", ["Lost in warehouse (net of found)", "Damaged in warehouse", "Unrecoverable"]),
+    ("cogs", "Inventory written off", ["Lost in warehouse (net of found)", "Damaged in warehouse", "Unrecoverable", "Missing inbound"]),
     ("cogs", "Amazon Inbound Shipping", ["Inbound shipping"]),
     ("expense", "Amazon Seller Fees & Charges", ["Referral fees", "Refund administration fee"]),
     ("expense", "Amazon FBA Warehousing & Fulfillment", ["FBA fulfillment fees", "Shipping & gift wrap chargebacks",
@@ -293,7 +293,49 @@ def _due(stamp, hours: float) -> bool:
     return datetime.now(timezone.utc) - datetime.fromisoformat(stamp) > timedelta(hours=hours)
 
 
-WO_KIND = {"lost": "Lost in warehouse (net of found)", "damaged": "Damaged in warehouse", "unrecoverable": "Unrecoverable"}
+WO_KIND = {"lost": "Lost in warehouse (net of found)", "damaged": "Damaged in warehouse", "unrecoverable": "Unrecoverable",
+           "inbound": "Missing inbound"}
+
+
+async def missing_inbound(a: date, b: date) -> list[tuple]:
+    """Units missing from inbound shipment plans whose shipments are all closed, dated the day the plan's last shipment
+    closed: [(day, sku, units)]. Same numbers as the Reimbursements page: per SKU across the plan (Amazon nets a plan's
+    shipments), Seller Central's expected vs located for closed shipments when the Hub has it, else the API's
+    shipped vs received. Optional on the Profit page (Nick, Nov 8 2026: some of it may be prep-center mistakes)."""
+    from . import inbound
+    async with db.pool.connection() as conn:
+        ships = {r["shipment_id"]: dict(r) for r in await (await conn.execute(
+            "SELECT * FROM inbound_shipments WHERE status = ANY(%s)", (list(inbound.ACTIVE),))).fetchall()}
+        items = await (await conn.execute("SELECT * FROM inbound_items WHERE shipment_id = ANY(%s)", (list(ships),))).fetchall()
+        scs = {r["shipment_id"]: dict(r) for r in await (await conn.execute(
+            "SELECT * FROM inbound_sc WHERE shipment_id = ANY(%s)", (list(ships),))).fetchall()}
+    by_ship: dict = {}
+    for i in items:
+        by_ship.setdefault(i["shipment_id"], []).append(dict(i))
+    plans: dict = {}
+    for sid, sh in ships.items():
+        plans.setdefault(sh["plan_key"], []).append(sh)
+    out = []
+    for ss in plans.values():
+        if any(sh["status"] != "CLOSED" for sh in ss):
+            continue
+        closed = [sh["last_receipt"] or (sh["closed_seen_at"].date() if sh["closed_seen_at"] else None) for sh in ss]
+        if any(c is None for c in closed):
+            continue
+        day = max(closed)
+        if not (a <= day <= b):
+            continue
+        agg: dict = {}
+        for sh in ss:
+            rows, _ = inbound._sc_rows(by_ship.get(sh["shipment_id"], []), scs.get(sh["shipment_id"]))
+            for r in rows:
+                g = agg.setdefault(r["sku"], [0, 0])
+                g[0] += r["shipped"]
+                g[1] += r["received"]
+        for sku, (shipped, received) in agg.items():
+            if shipped > received:
+                out.append((day, sku, shipped - received))
+    return out
 
 
 def _adj_row(row: dict) -> dict | None:
@@ -438,6 +480,8 @@ async def save_costs(source: str, as_of: date, rows: list[dict]) -> dict:
 # ---------------------------------------------------------------- report
 UNITS_SHIPPED = """SELECT fu.day, fu.marketplace, fu.sku, fu.shipped FROM fin_units fu
   WHERE fu.day BETWEEN %(a)s AND %(b)s AND fu.shipped > 0 AND (%(us)s = false OR fu.marketplace = 'Amazon.com')"""
+UNITS_GIVEN = """SELECT t.day, 'inbound'::text AS marketplace, t.sku, t.shipped
+  FROM unnest(%(d)s::date[], %(s)s::text[], %(q)s::int[]) AS t(day, sku, shipped)"""
 UNITS_WRITTEN_OFF = """SELECT w.day, w.kind AS marketplace, w.sku, w.units AS shipped FROM inv_writeoff w
   WHERE w.day BETWEEN %(a)s AND %(b)s"""
 COGS_SQL = """
@@ -457,7 +501,7 @@ FROM c
 """
 
 
-async def report(a: date, b: date, us_only: bool = False) -> dict:
+async def report(a: date, b: date, us_only: bool = False, inbound: bool = False) -> dict:
     async with db.pool.connection() as conn:
         fx = {}
         for r in await (await conn.execute("SELECT day, currency, usd FROM fx_rates WHERE day BETWEEN %s AND %s ORDER BY day",
@@ -469,6 +513,11 @@ async def report(a: date, b: date, us_only: bool = False) -> dict:
         cogs_rows = await (await conn.execute(COGS_SQL.format(units=UNITS_SHIPPED), {"a": a, "b": b, "us": us_only})).fetchall()
         wo_rows = await (await conn.execute(COGS_SQL.format(units=UNITS_WRITTEN_OFF), {"a": a, "b": b, "us": us_only})).fetchall()
         wo_last = (await (await conn.execute("SELECT max(day) d FROM inv_writeoff")).fetchone())["d"]
+        mi = await missing_inbound(a, b) if inbound else []
+        if mi:
+            wo_rows = list(wo_rows) + list(await (await conn.execute(COGS_SQL.format(units=UNITS_GIVEN), {
+                "a": a, "b": b, "us": us_only, "d": [x[0] for x in mi], "s": [x[1] for x in mi], "q": [x[2] for x in mi]})).fetchall())
+        inbound_synced = await _setting("inbound_synced_at")
         days = await (await conn.execute(
             "SELECT count(*) n, min(pulled_at) oldest, max(pulled_at) newest FROM fin_days WHERE day BETWEEN %s AND %s", (a, b))).fetchone()
         span = (b - a).days + 1
@@ -577,6 +626,7 @@ async def report(a: date, b: date, us_only: bool = False) -> dict:
                      "uncosted": sorted(uncosted.values(), key=lambda z: -z["units"])[:30],
                      "cost_snapshot": cost_asof["d"], "cost_snapshot_skus": cost_asof["n"],
                      "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "writeoff_through": wo_last,
+                     "inbound_included": inbound, "inbound_units": sum(x[2] for x in mi), "inbound_synced": inbound_synced,
                      "other_currency": {k: round(v, 2) for k, v in other_cur.items()}},
         "status": {k: v for k, v in status.items()},
     }
