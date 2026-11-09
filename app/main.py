@@ -23,6 +23,7 @@ from . import hazmat
 from . import transparency
 from . import sellable
 from . import profit
+from . import bank
 from . import catalog
 from . import timeclock as tc
 from . import tasks as T
@@ -241,6 +242,34 @@ async def engine_profit_other(request: Request, body: dict = Body(...)):
         raise HTTPException(400, "start/end look like 2026-11-08")
     src = str(body.get("source") or "quickbooks")[:40]
     return await profit.save_other(src, a, b, body.get("rows") or [])
+
+
+@app.post("/api/engine/bank/statement")
+async def engine_bank_statement(request: Request, body: dict = Body(...)):
+    """One parsed bank/card statement: {statement: {...}, rows: [...], dropbox_path?, content_hash?}. Replaces it if loaded before."""
+    auth.require_engine_key(request)
+    try:
+        return await bank.save_statement(body)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/engine/bank/txns")
+async def engine_bank_txns(request: Request, body: dict = Body(...)):
+    """QuickBooks bank/card transactions: {start, end, accounts?, rows: [{id, qb_account_id, day, amount, description, payee,
+    category, type, state}]}. Replaces QuickBooks rows in start..end on those accounts."""
+    auth.require_engine_key(request)
+    try:
+        return await bank.save_qb(body)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/engine/bank")
+async def engine_bank(request: Request):
+    """Loaded statements (with content hashes, to skip files already loaded) and transaction counts by account and source."""
+    auth.require_engine_key(request)
+    return profit_json(await bank.summary())
 
 
 _profit_run: dict = {}

@@ -706,6 +706,23 @@ MIGRATIONS: list[str] = [
         id text PRIMARY KEY, day date NOT NULL, kind text NOT NULL, amount numeric(12,2) NOT NULL,
         memo text, source text NOT NULL, loaded_at timestamptz NOT NULL DEFAULT now());
     CREATE INDEX IF NOT EXISTS profit_other_day ON profit_other (day);
+    """,    # 51: bank and card transactions — statements (Dropbox PDFs) and QuickBooks rows, all stored (Nick, Nov 8 2026)
+    """
+    CREATE TABLE IF NOT EXISTS bank_statements (
+        id text PRIMARY KEY, account text NOT NULL, bank text NOT NULL, last4 text NOT NULL, opened date, closed date NOT NULL,
+        previous_balance numeric(14,2), new_balance numeric(14,2), n_rows int NOT NULL DEFAULT 0, rows_total numeric(14,2),
+        expected_total numeric(14,2), ties boolean NOT NULL DEFAULT false, file text, dropbox_path text, content_hash text,
+        loaded_at timestamptz NOT NULL DEFAULT now());
+    CREATE TABLE IF NOT EXISTS bank_txns (
+        id text PRIMARY KEY, account text NOT NULL, card text, day date NOT NULL, amount numeric(14,2) NOT NULL,
+        description text, source text NOT NULL, statement_id text, qb_id text, qb_account_id text, category text, payee text,
+        qb_type text, qb_state text, loaded_at timestamptz NOT NULL DEFAULT now());
+    CREATE INDEX IF NOT EXISTS bank_txns_acct_day ON bank_txns (account, day);
+    CREATE INDEX IF NOT EXISTS bank_txns_stmt ON bank_txns (statement_id);
+    CREATE OR REPLACE VIEW bank_best AS
+      SELECT t.* FROM bank_txns t
+      WHERE t.source = 'statement'
+         OR NOT EXISTS (SELECT 1 FROM bank_statements s WHERE s.account = t.account AND t.day BETWEEN s.opened AND s.closed);
     """,
 ]
 
