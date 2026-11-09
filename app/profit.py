@@ -91,6 +91,8 @@ GROUPS = [
     ("expense", "Amazon Advertising", ["Advertising"]),
     ("expense", "Other Amazon fees", ["Other fees"]),
     ("opex", "Contractors", ["Ariane Armada (Wise)", "Leen Rodriguez (ACH)"]),
+    ("opex", "Software & apps", ["Software & apps"]),
+    ("opex", "Business insurance", ["Business insurance"]),
     ("other", "Cash back", ["Chase cash back", "Amex cash back"]),
 ]
 # Other income kinds a daily task loads from QuickBooks (profit_other.kind -> page line).
@@ -566,6 +568,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
             "SELECT count(*) n, min(pulled_at) oldest, max(pulled_at) newest FROM fin_days WHERE day BETWEEN %s AND %s", (a, b))).fetchone()
         span = (b - a).days + 1
         contractor = await bank.contractor_rows(conn, a, b)
+        recurring = await bank.recurring_rows(conn, a, b)
         other_rows = await (await conn.execute(
             "SELECT day, kind, amount, memo FROM profit_other WHERE day BETWEEN %s AND %s ORDER BY day", (a, b))).fetchall()
         cost_asof = await (await conn.execute("SELECT max(as_of) d, count(*) FILTER (WHERE as_of=(SELECT max(as_of) FROM sku_costs)) n FROM sku_costs")).fetchone()
@@ -674,11 +677,21 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         dd["fees"] += v
         contractor_pending += 1 if r["pending"] else 0
 
+    # Software & insurance (Nick, Nov 8 2026): recognised by merchant in the stored card/bank transactions (bank.RECURRING),
+    # on the transaction date; the detail is by vendor.
+    for r in recurring:
+        v = r["amount"]
+        lines[r["line"]] = lines.get(r["line"], 0.0) + v
+        detail[(r["line"], r["vendor"], "USD")] = detail.get((r["line"], r["vendor"], "USD"), 0.0) + v
+        dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
+        dd["fees"] += v
+
     groups = []
     tot = {"income": 0.0, "cogs": 0.0, "expense": 0.0, "opex": 0.0, "other": 0.0}
     for sec, name, ls in GROUPS:
         amt = sum(lines.get(x, 0.0) for x in ls)
-        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep", "Cash back", "Contractors"):
+        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep", "Cash back", "Contractors",
+                                                "Software & apps", "Business insurance"):
             continue
         parts = []
         for x in ls:
@@ -713,6 +726,8 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                      "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "writeoff_through": wo_last,
                      "inbound_included": inbound, "inbound_units": sum(x[2] for x in mi), "inbound_synced": inbound_synced,
                      "prep_included": prep, "prep_units": prep_units, "prep_rate": prep_rate,
+                     "recurring_payments": len(recurring),
+                     "bank_through": await bank.coverage(),
                      "contractor_payments": len(contractor), "contractor_pending": contractor_pending,
                      "contractor_through": max((r["day"] for r in contractor), default=None),
                      "other_loaded": other_loaded, "cashback": {k: round(lines.get(v, 0.0), 2) for k, v in OTHER_LINES.items()},

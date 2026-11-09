@@ -163,3 +163,71 @@ async def contractor_rows(conn, a: date, b: date) -> list[dict]:
             out.append({"line": line, "day": r["day"], "amount": float(r["amount"]), "description": r["description"] or "",
                         "pending": r["qb_state"] == "pending"})
     return out
+
+# Recurring business expenses on the Profit page (Nick, Nov 8 2026): software and insurance, recognised by merchant
+# in the stored bank/card transactions. The merchant list is what the bookkeeper files under QuickBooks'
+# "Office Expenses:Software & Apps" and "General Business Expenses:Business Insurance" in 2026.
+# (page line, vendor shown in the detail, bank-text pattern) — first match wins.
+RECURRING = [
+    ("Business insurance", "The Hartford", r"hartford"),
+    ("Software & apps", "Seller Snap", r"seller ?snap"),
+    ("Software & apps", "Keepa", r"keepa"),
+    ("Software & apps", "Airtable", r"airtable"),
+    ("Software & apps", "InventoryLab (Threecolts)", r"threecolts"),
+    ("Software & apps", "QuickBooks", r"intuit.*qbooks|qbooks online"),
+    ("Software & apps", "Asinzen", r"asinzen"),
+    ("Software & apps", "Datadoe", r"datadoe"),
+    ("Software & apps", "Retool", r"retool"),
+    ("Software & apps", "Notion", r"notion"),
+    ("Software & apps", "Asana", r"asana\.com"),
+    ("Software & apps", "Google Workspace", r"google.{0,3}workspace"),
+    ("Software & apps", "Dropbox", r"dropbox"),
+    ("Software & apps", "JetBrains", r"jetbrains"),
+    ("Software & apps", "DigitalOcean", r"digitalocean"),
+    ("Software & apps", "Anthropic / Claude", r"anthropic|claude\.ai"),
+    ("Software & apps", "OpenAI / ChatGPT", r"openai|chatgpt"),
+    ("Software & apps", "Adobe", r"adobe"),
+    ("Software & apps", "Lovable", r"lovable"),
+    ("Software & apps", "Reventure", r"reventure"),
+    ("Software & apps", "PDF tools (Smallpdf, PDF Guru, PDF Expert)", r"smallpdf|pdfguru|pdf expert"),
+    ("Software & apps", "Ahrefs", r"ahrefs"),
+    ("Software & apps", "GMB Everywhere", r"gmbeverywhere"),
+    ("Software & apps", "Local Falcon", r"local ?falcon"),
+    ("Software & apps", "Chatbase", r"chatbase"),
+    ("Software & apps", "n8n (Paddle)", r"paddle\.net"),
+    ("Software & apps", "Twilio", r"twilio"),
+    ("Software & apps", "Tello", r"tello us"),
+    ("Software & apps", "Porkbun (domains)", r"porkbun"),
+    ("Software & apps", "Niimbot", r"niimbot"),
+    ("Software & apps", "Kindle / Audible", r"kindle (svcs|unltd)|audible"),
+]
+_RECUR_ANY = "|".join(f"({p})" for _, _, p in RECURRING)
+
+
+async def recurring_rows(conn, a: date, b: date) -> list[dict]:
+    import re as _re
+    pats = [(line, vendor, _re.compile(p, _re.I)) for line, vendor, p in RECURRING]
+    out = []
+    for r in await (await conn.execute(
+            """SELECT day, account, amount, description, qb_state FROM bank_best
+               WHERE day BETWEEN %s AND %s AND description ~* %s""", (a, b, _RECUR_ANY))).fetchall():
+        d = r["description"] or ""
+        for line, vendor, rx in pats:
+            if rx.search(d):
+                out.append({"line": line, "vendor": vendor, "day": r["day"], "account": r["account"], "amount": float(r["amount"]),
+                            "pending": r["qb_state"] == "pending"})
+                break
+    return out
+
+
+async def coverage() -> dict:
+    """Per account: last statement closing date and last QuickBooks feed day — how current the bank side is."""
+    async with db.pool.connection() as conn:
+        st = await (await conn.execute("SELECT account, max(closed) d FROM bank_statements GROUP BY 1")).fetchall()
+        qb = await (await conn.execute("SELECT account, max(day) d FROM bank_txns WHERE source='quickbooks' GROUP BY 1")).fetchall()
+    out: dict = {}
+    for r in st:
+        out.setdefault(r["account"], {})["statement"] = r["d"].isoformat()
+    for r in qb:
+        out.setdefault(r["account"], {})["quickbooks"] = r["d"].isoformat()
+    return out
