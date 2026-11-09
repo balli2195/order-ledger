@@ -184,6 +184,9 @@ RECURRING = [
     ("Memberships", "Amex Plum annual fee", r"^annual fee$|renewal membership fee"),
     ("Bank & card fees", "Chase checking fees", r"rtp/same day|standard ach pmnts|chase service fee"),
     ("Bank & card fees", "Card late fees", r"^late fee"),
+    # Huntington checking …1948 (statement text has no spaces): RealTime payment fees, paper-statement charge,
+    # NSF fees, and the occasional fee refund (positive, so it nets off).
+    ("Bank & card fees", "Huntington checking fees", r"realtimepmtotherfees|statementcharge|returnednsfitemfee|otherservicefeesrefund"),
     ("Software & apps", "Seller Snap", r"seller ?snap"),
     ("Software & apps", "Keepa", r"keepa"),
     ("Software & apps", "Airtable", r"airtable"),
