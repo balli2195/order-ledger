@@ -17,7 +17,9 @@ Product cost
   costs for older months. A sale uses the latest cost dated on or before its day, else the earliest one after.
   SKUs InventoryLab has no cost for fall back to the order ledger's average cost for the ASIN; anything left is
   counted as uncosted units on the page.
-- COGS is charged on units shipped only, like Link My Books (returns don't credit cost back).
+- COGS is charged on units shipped. Customer returns Amazon puts back in sellable stock credit their cost back on the
+  return day ("Restocked customer returns", from the inventory ledger; Nick, Nov 8 2026). Link My Books and so
+  QuickBooks don't make this credit.
 - Inventory written off (Nick, Nov 8 2026): units Amazon lost or damaged in its warehouses, from the inventory ledger
   (GET_LEDGER_DETAIL_VIEW_DATA, Adjustments), at the same unit cost, on the ledger date. Lost = reason M on sellable
   stock, less units found again (F); damaged = units moved into the WAREHOUSE_DAMAGED disposition (P); plus
@@ -80,7 +82,7 @@ GROUPS = [
     ("income", "Amazon Discounts & Promotions", ["Promotions"]),
     ("income", "Amazon FBA Inventory Reimbursement", ["Inventory reimbursements"]),
     ("income", "Other Amazon adjustments", ["Other adjustments"]),
-    ("cogs", "Product cost", ["COGS"]),
+    ("cogs", "Product cost", ["COGS", "Restocked customer returns"]),
     ("cogs", "Inventory written off", ["Lost in warehouse (net of found)", "Damaged in warehouse", "Unrecoverable", "Destroyed by Amazon",
                                       "Missing inbound"]),
     ("cogs", "Amazon Inbound Shipping", ["Inbound shipping"]),
@@ -316,7 +318,7 @@ def _due(stamp, hours: float) -> bool:
 
 
 WO_KIND = {"lost": "Lost in warehouse (net of found)", "damaged": "Damaged in warehouse", "unrecoverable": "Unrecoverable",
-           "disposed": "Destroyed by Amazon", "inbound": "Missing inbound"}
+           "disposed": "Destroyed by Amazon", "inbound": "Missing inbound", "returned": "Restocked customer returns"}
 
 
 async def missing_inbound(a: date, b: date) -> list[tuple]:
@@ -361,15 +363,23 @@ async def missing_inbound(a: date, b: date) -> list[tuple]:
 
 
 def _adj_row(row: dict) -> dict | None:
-    """Inventory ledger Adjustments that are warehouse losses. units > 0 = written off, < 0 = found again."""
-    if (row.get("Event Type") or "").strip() != "Adjustments":
+    """Inventory ledger rows that move cost: warehouse losses (Adjustments; units > 0 = written off, < 0 = found again)
+    and customer returns Amazon put back in sellable stock (CustomerReturns, SELLABLE; units < 0 = cost credited back,
+    Nick, Nov 8 2026: the unit is inventory again and its cost was charged at the first sale, so without the credit
+    it would be charged twice when it resells)."""
+    ev = (row.get("Event Type") or "").strip()
+    if ev not in ("Adjustments", "CustomerReturns"):
         return None
     rs, disp = (row.get("Reason") or "").strip(), (row.get("Disposition") or "").strip()
     try:
         q = int(row.get("Quantity") or 0)
     except ValueError:
         return None
-    if rs in ("M", "F") and disp == "SELLABLE":
+    if ev == "CustomerReturns":
+        if disp != "SELLABLE" or not q:
+            return None
+        kind, units = "returned", -abs(q)
+    elif rs in ("M", "F") and disp == "SELLABLE":
         kind, units = "lost", -q
     elif rs == "P" and disp == "WAREHOUSE_DAMAGED":
         kind, units = "damaged", q
@@ -681,15 +691,21 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         dd["cogs"] -= q * float(c)
     lines["COGS"] = cogs
 
-    wo_units = wo_uncosted = 0
+    wo_units = wo_uncosted = ret_units = ret_uncosted = 0
     for r in wo_rows:
         q = int(r["shipped"])
         c = r["il_cost"] if r["il_cost"] is not None else r["ledger_cost"]
         ln = WO_KIND[r["marketplace"]]
-        wo_units += q
-        if c is None:
-            wo_uncosted += q
-            continue
+        if r["marketplace"] == "returned":
+            ret_units -= q
+            if c is None:
+                ret_uncosted -= q
+                continue
+        else:
+            wo_units += q
+            if c is None:
+                wo_uncosted += q
+                continue
         v = -q * float(c)
         lines[ln] = lines.get(ln, 0.0) + v
         detail[(ln, r["sku"] + (f" · {r['asin']}" if r["asin"] else ""), "USD")] = detail.get((ln, r["sku"] + (f" · {r['asin']}" if r["asin"] else ""), "USD"), 0.0) + v
@@ -769,7 +785,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                      "uncosted_units": units - costed_il - costed_ledger,
                      "uncosted": sorted(uncosted.values(), key=lambda z: -z["units"])[:30],
                      "cost_snapshot": cost_asof["d"], "cost_snapshot_skus": cost_asof["n"],
-                     "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "writeoff_through": wo_last,
+                     "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "returned_units": ret_units, "returned_uncosted": ret_uncosted, "writeoff_through": wo_last,
                      "inbound_included": inbound, "inbound_units": sum(x[2] for x in mi), "inbound_synced": inbound_synced,
                      "recurring_payments": len(recurring),
                      "bank_through": await bank.coverage(),
