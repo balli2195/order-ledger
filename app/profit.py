@@ -444,13 +444,19 @@ async def ledger_sync(start: date) -> dict:
     from . import inbound
     now = datetime.now(timezone.utc)
     async with httpx.AsyncClient(timeout=120) as c:
-        rows = await inbound._ledger(c, datetime(start.year, start.month, start.day, tzinfo=timezone.utc), now, keep=_adj_row)
+        rows = await inbound._ledger(c, datetime(start.year, start.month, start.day, tzinfo=timezone.utc), now, keep=_adj_row,
+                                     need={"Adjustments", "CustomerReturns"})
     agg: dict = {}
     seen: set = set()
+    occ: dict = {}
     for r in rows:
-        if r["day"] < start or not r["sku"] or r["key"] in seen:   # overlapping ledger reports repeat rows
+        # Overlapping ledger reports repeat rows, but one report can also hold identical real rows (two returns of a
+        # SKU at one FC on one day): number each row's occurrence within its report, and skip only repeats of that.
+        n = occ[(r.get("_doc"), r["key"])] = occ.get((r.get("_doc"), r["key"]), 0) + 1
+        k2 = (r["key"], n)
+        if r["day"] < start or not r["sku"] or k2 in seen:
             continue
-        seen.add(r["key"])
+        seen.add(k2)
         k = (r["day"], r["sku"], r["kind"])
         agg[k] = agg.get(k, 0) + r["units"]
     last = max((k[0] for k in agg), default=None)

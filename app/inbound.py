@@ -86,7 +86,7 @@ def _ts(v) -> datetime | None:
         return None
 
 
-async def _download(c, doc_id: str, keep=None) -> list[dict]:
+async def _download(c, doc_id: str, keep=None, seen: set | None = None) -> list[dict]:
     """Report rows. `keep(row)` returns the slimmed row to keep, or None to drop it. The file is decompressed and read
     line by line, so a big report (the inventory ledger is every sale, transfer and adjustment) never sits in memory
     whole: holding it all ran the 512 MB server out of memory (Nov 2026)."""
@@ -97,6 +97,8 @@ async def _download(c, doc_id: str, keep=None) -> list[dict]:
     out = []
     with io.TextIOWrapper(buf, encoding="utf-8", errors="replace", newline="") as f:
         for row in csv.DictReader(f, delimiter="\t"):
+            if seen is not None:
+                seen.add((row.get("Event Type") or "").strip())
             if keep is not None:
                 row = keep(row)
                 if row is None:
@@ -146,11 +148,15 @@ def _receipt_row(row: dict) -> dict | None:
     return {k: row.get(k) for k in _LEDGER_COLS}
 
 
-async def _ledger(c, start: datetime, now: datetime, keep=None) -> list[dict]:
+async def _ledger(c, start: datetime, now: datetime, keep=None, need: set | None = None) -> list[dict]:
     """Inventory ledger rows from start to now. Ledger reports made in the last 24 hours (by this Hub or by Claude's
     nightly run) are reused when together they cover the range; only the gaps get new 90-day reports, because
-    Amazon allows very few new ledger reports per hour. `keep` slims rows (default: Receipts only)."""
-    keep = keep or _receipt_row
+    Amazon allows very few new ledger reports per hour. `keep` slims rows (default: Receipts only).
+    `need` = event types the caller reads (default: Receipts). A reused report missing any of them is skipped: some
+    ledger reports are requested for one event type only (e.g. Adjustments) and the report list doesn't say so.
+    Each kept dict row gets "_doc" = which report it came from, so callers can tell overlap repeats from real repeats."""
+    if keep is None:
+        keep, need = _receipt_row, need or {"Receipts"}
     since = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     have, p = [], {"reportTypes": "GET_LEDGER_DETAIL_VIEW_DATA", "processingStatuses": "DONE", "createdSince": since, "pageSize": 100}
     for _ in range(5):
@@ -162,20 +168,38 @@ async def _ledger(c, start: datetime, now: datetime, keep=None) -> list[dict]:
         if not j.get("nextToken"):
             break
         p = {"nextToken": j["nextToken"]}
-    rows, cur, stop = [], start, now - timedelta(days=1)
-    for _ in range(12):
+    rows, cur, stop, n = [], start, now - timedelta(days=1), 0
+    bad: set = set()
+
+    def tag(rs):
+        for r in rs:
+            if isinstance(r, dict):
+                r["_doc"] = n
+        return rs
+
+    for _ in range(24):
         if cur >= stop:
             break
-        cands = [h for h in have if h[0] <= cur + timedelta(days=1) and h[1] > cur + timedelta(days=1)]
-        if cands:
-            a, b, doc = max(cands, key=lambda h: h[1])
-            rows += await _download(c, doc, keep)
-            cur = b
-        else:
-            nxt = min([h[0] for h in have if h[0] > cur] or [now])
-            end = min(cur + timedelta(days=89), nxt + timedelta(days=1), now - timedelta(hours=1))
-            rows += await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", cur, end, keep)
-            cur = end
+        cands = sorted((h for h in have if h[2] not in bad and h[0] <= cur + timedelta(days=1) and h[1] > cur + timedelta(days=1)),
+                       key=lambda h: -h[1].timestamp())
+        got = False
+        for a, b, doc in cands:
+            seen: set = set()
+            rs = await _download(c, doc, keep, seen)
+            if need and not need <= seen:
+                bad.add(doc)   # a report filtered to other event types
+                continue
+            n += 1
+            rows += tag(rs)
+            cur, got = b, True
+            break
+        if got:
+            continue
+        nxt = min([h[0] for h in have if h[0] > cur and h[2] not in bad] or [now])
+        end = min(cur + timedelta(days=89), nxt + timedelta(days=1), now - timedelta(hours=1))
+        n += 1
+        rows += tag(await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", cur, end, keep))
+        cur = end
     return rows
 
 
