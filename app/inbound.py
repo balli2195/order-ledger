@@ -148,7 +148,7 @@ def _receipt_row(row: dict) -> dict | None:
     return {k: row.get(k) for k in _LEDGER_COLS}
 
 
-_FILTERED_DOCS: set = set()   # ledger report documents found to hold only some event types (not re-downloaded)
+_DOC_TYPES: dict = {}   # ledger report document -> event types it holds (a filtered one isn't re-downloaded)
 
 
 async def _ledger(c, start: datetime, now: datetime, keep=None, need: set | None = None) -> list[dict]:
@@ -172,7 +172,7 @@ async def _ledger(c, start: datetime, now: datetime, keep=None, need: set | None
             break
         p = {"nextToken": j["nextToken"]}
     rows, cur, stop, n = [], start, now - timedelta(days=1), 0
-    bad = _FILTERED_DOCS
+    bad: set = {d for d, ts in _DOC_TYPES.items() if need and not need <= ts}
 
     def tag(rs):
         for r in rs:
@@ -189,6 +189,7 @@ async def _ledger(c, start: datetime, now: datetime, keep=None, need: set | None
         for a, b, doc in cands:
             seen: set = set()
             rs = await _download(c, doc, keep, seen)
+            _DOC_TYPES[doc] = seen
             if need and not need <= seen:
                 bad.add(doc)   # a report filtered to other event types
                 continue
