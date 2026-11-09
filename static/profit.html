@@ -37,7 +37,7 @@
   .chart { width: 100%; height: 220px; display: block; }
   .chart .bar.pos { fill: var(--ok); } .chart .bar.neg { fill: var(--bad); }
   .chart .bar:hover { opacity: .75; }
-  .chart .axis { stroke: var(--line); } .chart text { fill: var(--muted); font-size: 10px; font-family: var(--sans); }
+  .chart .axis { stroke: var(--muted); stroke-opacity: .5; } .chart .grid { stroke: var(--line); stroke-dasharray: 2 3; } .chart text { fill: var(--muted); font-size: 10px; font-family: var(--sans); }
   .tip { font-size: 12.5px; color: var(--muted); min-height: 18px; margin-top: 4px; }
   .cov { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
   .cov b { color: var(--ink); font-weight: 600; }
@@ -202,14 +202,26 @@
     });
   }
 
+  // Round-number scale (Nick, Nov 8 2026): the smallest step from this list that gives at most 10 gridlines,
+  // e.g. $2,500 or $5,000 for months, $250 or $500 for days.
+  const STEPS = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+  function scale(vals) {
+    const hi = Math.max(0, ...vals), lo = Math.min(0, ...vals);
+    let step = STEPS[STEPS.length - 1];
+    for (const st of STEPS) { if (Math.ceil(hi / st) - Math.floor(lo / st) <= 10) { step = st; break; } }
+    const top = Math.max(step, Math.ceil(hi / step) * step), bot = Math.floor(lo / step) * step;
+    const ticks = []; for (let v = bot; v <= top + 1e-6; v += step) ticks.push(v);
+    return { top, bot, ticks };
+  }
+  const tick$ = (v) => (v < 0 ? '-' : '') + '$' + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 }) + 'k' : Math.abs(v).toLocaleString('en-US'));
+
   function chart(days) {
     const svg = $('#chart'); const W = svg.clientWidth || 500, H = 220, padL = 46, padB = 22, padT = 8;
-    const vals = days.map((x) => x.profit); const mx = Math.max(0, ...vals), mn = Math.min(0, ...vals);
+    const sc = scale(days.map((x) => x.profit)); const mx = sc.top, mn = sc.bot;
     const span = (mx - mn) || 1; const y = (v) => padT + (mx - v) / span * (H - padT - padB);
     const bw = (W - padL - 6) / Math.max(days.length, 1);
-    const ticks = [mx, (mx + mn) / 2, mn].filter((v, i, a) => a.indexOf(v) === i);
-    let s = `<line class="axis" x1="${padL}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>`;
-    s += ticks.map((v) => `<text x="${padL - 6}" y="${y(v) + 3}" text-anchor="end">${m0(v)}</text>`).join('');
+    let s = sc.ticks.map((v) => `<line class="${v === 0 ? 'axis' : 'grid'}" x1="${padL}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/>`).join('');
+    s += sc.ticks.map((v) => `<text x="${padL - 6}" y="${y(v) + 3}" text-anchor="end">${tick$(v)}</text>`).join('');
     days.forEach((x, i) => {
       const x0 = padL + i * bw + bw * .12, w = Math.max(1, bw * .76), y0 = y(Math.max(0, x.profit)), h = Math.max(1, Math.abs(y(x.profit) - y(0)));
       s += `<rect class="bar ${x.profit >= 0 ? 'pos' : 'neg'}" x="${x0}" y="${y0}" width="${w}" height="${h}" rx="1.5" data-i="${i}"><title>${esc(x.full)}: ${m0(x.profit)}</title></rect>`;
