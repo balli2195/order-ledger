@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -36,7 +37,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from . import db, sellable
+from . import bank, db, sellable
 
 log = logging.getLogger("ledger.profit")
 PT = ZoneInfo("America/Los_Angeles")
@@ -89,6 +90,7 @@ GROUPS = [
     ("expense", "Amazon Subscription Fees", ["Subscription fees"]),
     ("expense", "Amazon Advertising", ["Advertising"]),
     ("expense", "Other Amazon fees", ["Other fees"]),
+    ("opex", "Contractors", ["Ariane Armada (Wise)", "Leen Rodriguez (ACH)"]),
     ("other", "Cash back", ["Chase cash back", "Amex cash back"]),
 ]
 # Other income kinds a daily task loads from QuickBooks (profit_other.kind -> page line).
@@ -563,6 +565,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         days = await (await conn.execute(
             "SELECT count(*) n, min(pulled_at) oldest, max(pulled_at) newest FROM fin_days WHERE day BETWEEN %s AND %s", (a, b))).fetchone()
         span = (b - a).days + 1
+        contractor = await bank.contractor_rows(conn, a, b)
         other_rows = await (await conn.execute(
             "SELECT day, kind, amount, memo FROM profit_other WHERE day BETWEEN %s AND %s ORDER BY day", (a, b))).fetchall()
         cost_asof = await (await conn.execute("SELECT max(as_of) d, count(*) FILTER (WHERE as_of=(SELECT max(as_of) FROM sku_costs)) n FROM sku_costs")).fetchone()
@@ -658,11 +661,24 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
         dd["income"] += v
 
+    # Contractors (Nick, Nov 8 2026): Ariane's Wise payments and Leen's RealTime ACH payments out of Chase checking,
+    # from the Hub's bank transactions (QuickBooks feed rows; payee as QuickBooks' rules assign it), on the bank date.
+    contractor_pending = 0
+    for r in contractor:
+        v = r["amount"]
+        lines[r["line"]] = lines.get(r["line"], 0.0) + v
+        m = re.search(r"to (\d{4})\b", r["description"])
+        what = f"{r['day'].isoformat()}" + (f" · to account …{m.group(1)}" if m else "") + (" · waiting for review in QuickBooks" if r["pending"] else "")
+        detail[(r["line"], what, "USD")] = detail.get((r["line"], what, "USD"), 0.0) + v
+        dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
+        dd["fees"] += v
+        contractor_pending += 1 if r["pending"] else 0
+
     groups = []
-    tot = {"income": 0.0, "cogs": 0.0, "expense": 0.0, "other": 0.0}
+    tot = {"income": 0.0, "cogs": 0.0, "expense": 0.0, "opex": 0.0, "other": 0.0}
     for sec, name, ls in GROUPS:
         amt = sum(lines.get(x, 0.0) for x in ls)
-        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep", "Cash back"):
+        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep", "Cash back", "Contractors"):
             continue
         parts = []
         for x in ls:
@@ -672,7 +688,8 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         tot[sec] += amt
         groups.append({"section": sec, "name": name, "amount": round(amt, 2), "parts": parts})
     amazon_profit = tot["income"] + tot["cogs"] + tot["expense"]
-    profit = amazon_profit + tot["other"]
+    operating_profit = amazon_profit + tot["opex"]
+    profit = operating_profit + tot["other"]
     series = []
     d = a
     while d <= b:
@@ -684,6 +701,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         "start": a.isoformat(), "end": b.isoformat(), "us_only": us_only,
         "groups": groups,
         "totals": {"income": round(tot["income"], 2), "cogs": round(tot["cogs"], 2), "expense": round(tot["expense"], 2),
+                   "opex": round(tot["opex"], 2), "operating_profit": round(operating_profit, 2),
                    "other": round(tot["other"], 2), "amazon_profit": round(amazon_profit, 2), "profit": round(profit, 2), "sales": round(lines.get("Sales", 0.0), 2),
                    "margin": round(profit / tot["income"], 4) if tot["income"] else None},
         "daily": series,
@@ -695,6 +713,8 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                      "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "writeoff_through": wo_last,
                      "inbound_included": inbound, "inbound_units": sum(x[2] for x in mi), "inbound_synced": inbound_synced,
                      "prep_included": prep, "prep_units": prep_units, "prep_rate": prep_rate,
+                     "contractor_payments": len(contractor), "contractor_pending": contractor_pending,
+                     "contractor_through": max((r["day"] for r in contractor), default=None),
                      "other_loaded": other_loaded, "cashback": {k: round(lines.get(v, 0.0), 2) for k, v in OTHER_LINES.items()},
                      "other_currency": {k: round(v, 2) for k, v in other_cur.items()}},
         "status": {k: v for k, v in status.items()},

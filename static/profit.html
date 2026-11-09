@@ -142,15 +142,17 @@
     ].map(([k, v, sub, big]) => `<div class="stat ${big ? 'big' : ''}"><div class="k">${k}</div><div class="v ${big ? (T.profit >= 0 ? 'pos' : 'neg') : ''}">${v}</div><div class="sub">${esc(sub)}</div></div>`).join('');
 
     const rows = [];
-    const secName = { income: 'Income', cogs: 'Cost of goods sold', expense: 'Amazon expenses', other: 'Other income' };
-    const totName = { income: 'Total income', cogs: 'Total cost of goods sold', expense: 'Total Amazon expenses', other: 'Total other income' };
-    const secTot = { income: T.income, cogs: T.cogs, expense: T.expense, other: T.other || 0 };
+    const secName = { income: 'Income', cogs: 'Cost of goods sold', expense: 'Amazon expenses', opex: 'Business expenses', other: 'Other income' };
+    const totName = { income: 'Total income', cogs: 'Total cost of goods sold', expense: 'Total Amazon expenses', opex: 'Total business expenses', other: 'Total other income' };
+    const secTot = { income: T.income, cogs: T.cogs, expense: T.expense, opex: T.opex || 0, other: T.other || 0 };
+    const profRow = (label, v) => `<tr class="profit"><td>${label}</td><td class="n">${money(v)}</td><td class="p">${pctOf(v, T.sales)}</td></tr>`;
     let last = null;
     d.groups.forEach((g, gi) => {
       if (g.section !== last) {
         if (last) rows.push(`<tr class="tot"><td>${totName[last]}</td><td class="n">${money(secTot[last])}</td><td class="p">${pctOf(secTot[last], T.sales)}</td></tr>`);
         if (last === 'cogs') rows.push(`<tr class="tot"><td>Gross profit</td><td class="n">${money(T.income + T.cogs)}</td><td class="p">${pctOf(T.income + T.cogs, T.sales)}</td></tr>`);
-        if (last === 'expense' && g.section === 'other') rows.push(`<tr class="profit"><td>Amazon profit</td><td class="n">${money(T.amazon_profit)}</td><td class="p">${pctOf(T.amazon_profit, T.sales)}</td></tr>`);
+        if (last === 'expense') rows.push(profRow('Amazon profit', T.amazon_profit));
+        if (last === 'opex') rows.push(profRow('Operating profit', T.operating_profit));
         rows.push(`<tr class="sec"><td colspan="3">${secName[g.section]}</td></tr>`); last = g.section;
       }
       const open = st.open.has('g' + gi);
@@ -162,7 +164,7 @@
       });
     });
     if (last) rows.push(`<tr class="tot"><td>${totName[last]}</td><td class="n">${money(secTot[last])}</td><td class="p">${pctOf(secTot[last], T.sales)}</td></tr>`);
-    rows.push(`<tr class="profit"><td>${last === 'other' ? 'Profit' : 'Amazon profit'}</td><td class="n">${money(T.profit)}</td><td class="p">${pctOf(T.profit, T.sales)}</td></tr>`);
+    rows.push(profRow(last === 'expense' ? 'Amazon profit' : 'Profit', T.profit));
     $('#pl').innerHTML = rows.join('');
 
     chart(series(d.daily));
@@ -178,7 +180,8 @@
       <div style="margin-top:6px">Inventory written off: units Amazon lost (net of units found again) or damaged in its warehouses, from Amazon's inventory ledger${cov.writeoff_through ? ' (through ' + esc(LG.fmtDate(cov.writeoff_through)) + ')' : ''}, at InventoryLab cost${cov.writeoff_uncosted ? ` — <span class="warn">${num(cov.writeoff_uncosted)} units with no cost</span>` : ''}. ${cov.inbound_included ? `Missing inbound is included: <b>${num(cov.inbound_units)}</b> units from shipment plans that closed in this range, using the Reimbursements page's counts (Seller Central's where the Hub has them), dated the day the plan's last shipment closed.` : 'Missing inbound is switched off (tick “Missing inbound” to include it).'} Reimbursements for any of these units show as income when Amazon pays them.</div>
       <div style="margin-top:6px">${cov.prep_included ? `Prep: <b>${num(cov.prep_units)}</b> units sent to Amazon in this range × ${money(cov.prep_rate)}, on each shipment plan's date. It's an estimate standing in for your prep-center bills; switch it off once bank costs are on this page, or prep will count twice.` : 'Prep is switched off (tick “Prep” to include an estimate per unit sent to Amazon).'}</div>
       <div style="margin-top:6px">Cash back: Chase Premier statement credits and the Amex early-pay discount, as QuickBooks books them (Cash Back / Bank &amp; Credit Card Rewards), on the day each credit posted${cov.other_loaded ? `; loaded from QuickBooks ${new Date(cov.other_loaded).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ' <span class="warn">(not loaded yet)</span>'}. It arrives once a month per card, so a partial month may not have it yet.</div>
-      <div style="margin-top:6px">Not included yet: bank and card costs (prep-center bills, contractors, software).</div>`;
+      <div style="margin-top:6px">Contractors: Ariane's Wise payments and Leen's RealTime ACH payments out of Chase checking, on the bank date, from the Hub's stored bank transactions (QuickBooks names the payee)${cov.contractor_payments ? ` — ${num(cov.contractor_payments)} payments in this range${cov.contractor_pending ? `, ${num(cov.contractor_pending)} still waiting for review in QuickBooks` : ''}` : ''}.</div>
+      <div style="margin-top:6px">Not included yet: other bank and card costs (prep-center bills, payroll, software).</div>`;
     $('#meta').textContent = `${LG.fmtDate(d.start)} – ${LG.fmtDate(d.end)}`;
     if (cov.prep_rate != null) $('#prepRate').textContent = money(cov.prep_rate);
   }

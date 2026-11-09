@@ -107,8 +107,10 @@ async def save_qb(body: dict) -> dict:
                      (str(r.get("type") or "")[:60] or None), (str(r.get("state") or "posted")[:20])))
     async with db.pool.connection() as conn:
         async with conn.transaction():
-            await conn.execute("DELETE FROM bank_txns WHERE source='quickbooks' AND account = ANY(%s) AND day BETWEEN %s AND %s",
-                               (sorted(accts), a, b))
+            # upsert_only: add/refresh just these rows (e.g. one payee's history) without clearing the range
+            if not body.get("upsert_only"):
+                await conn.execute("DELETE FROM bank_txns WHERE source='quickbooks' AND account = ANY(%s) AND day BETWEEN %s AND %s",
+                                   (sorted(accts), a, b))
             async with conn.cursor() as cur:
                 await cur.executemany(
                     """INSERT INTO bank_txns (id, account, day, amount, description, source, qb_id, qb_account_id, category, payee,
@@ -118,6 +120,15 @@ async def save_qb(body: dict) -> dict:
                            qb_type=EXCLUDED.qb_type, qb_state=EXCLUDED.qb_state, loaded_at=now()""", keep)
             await conn.execute("INSERT INTO settings (key, value) VALUES ('bank_qb_loaded_at', %s) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
                                (json.dumps({"at": date.today().isoformat(), "start": a.isoformat(), "end": b.isoformat(), "rows": len(keep)}),))
+            # full_month: this POST carried every QuickBooks feed row for these accounts in start..end (history backfill)
+            if body.get("full_month"):
+                r = await (await conn.execute("SELECT value FROM settings WHERE key='bank_full_from'")).fetchone()
+                full = (r["value"] if r and isinstance(r["value"], dict) else json.loads(r["value"]) if r else {}) or {}
+                for acct in accts:
+                    if not full.get(acct) or a.isoformat() < full[acct]:
+                        full[acct] = a.isoformat()
+                await conn.execute("INSERT INTO settings (key, value) VALUES ('bank_full_from', %s) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                                   (json.dumps(full),))
     return {"saved": len(keep), "skipped": bad, "accounts": sorted(accts), "start": a.isoformat(), "end": b.isoformat()}
 
 
@@ -129,4 +140,26 @@ async def summary() -> dict:
         tx = await (await conn.execute(
             """SELECT account, source, count(*) n, min(day) first, max(day) last, round(sum(amount),2) net
                FROM bank_txns GROUP BY 1,2 ORDER BY 1,2""")).fetchall()
-    return {"statements": [dict(r) for r in st], "txns": [dict(r) for r in tx]}
+        r = await (await conn.execute("SELECT value FROM settings WHERE key='bank_full_from'")).fetchone()
+    full = (r["value"] if r and isinstance(r["value"], dict) else json.loads(r["value"]) if r else {}) or {}
+    return {"statements": [dict(x) for x in st], "txns": [dict(x) for x in tx],
+            "qb_full_from": full}   # first day from which every QuickBooks feed row is loaded, per account
+
+
+# Contractor payments on the Profit page (Nick, Nov 8 2026): (page line, QuickBooks payee, bank-text pattern).
+CONTRACTORS = [
+    ("Ariane Armada (Wise)", "Ariane Armada", r"wise.*ariane"),
+    ("Leen Rodriguez (ACH)", "Leen Rodriguez", r"(realtime|same-day ach|basic online) payroll payment"),
+]
+
+
+async def contractor_rows(conn, a: date, b: date) -> list[dict]:
+    out = []
+    for line, payee, pat in CONTRACTORS:
+        for r in await (await conn.execute(
+                """SELECT day, amount, description, qb_state FROM bank_best
+                   WHERE account='chase_5050' AND day BETWEEN %s AND %s AND (payee=%s OR description ~* %s)""",
+                (a, b, payee, pat))).fetchall():
+            out.append({"line": line, "day": r["day"], "amount": float(r["amount"]), "description": r["description"] or "",
+                        "pending": r["qb_state"] == "pending"})
+    return out
