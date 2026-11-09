@@ -394,3 +394,23 @@ async def get_lead_choices() -> dict:
     c["stores"] = [s["name"] for s in c["stores"]]
     c["brands"] = [b["name"] for b in c["brands"]]
     return c
+
+
+@mcp.tool()
+async def save_relist(
+    name: Annotated[str, Field(description="Short id for the list, letters/digits/dashes, e.g. sephora-spring-2026")],
+    label: Annotated[str, Field(description="Title shown on the page, e.g. 'Spring 2026 Sephora sale leads, re-priced Nov 9, 2026'")],
+    rows: Annotated[list[dict[str, Any]], Field(description="One per item: tier ('Ready'|'Check first'), asin, spring_asin, product, brand, sephora_url, sephora_price, spring_cost, buy_cost, amazon_price, price_src, fees, profit, roi (fraction), bb_avg90, sold_mo, fba_offers, bought_spring, notes")],
+    checked: Annotated[str | None, Field(description="YYYY-MM-DD the prices were checked")] = None,
+    assumptions: str | None = None,
+    notes: list[str] | None = None,
+) -> dict:
+    """Save (or replace) a re-priced lead list on the Hub's Sephora relist page. Owner only."""
+    from . import docs as hubdocs
+    actor = await _actor(need="owner", tab="relist")
+    data = {"label": label, "checked": checked, "assumptions": assumptions, "notes": notes or [], "rows": rows,
+            "saved_by": actor.label}
+    try:
+        return await hubdocs.put("relist/" + name, data)
+    except hubdocs.DocError as e:
+        raise o.LedgerError(str(e))

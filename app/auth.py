@@ -36,13 +36,14 @@ TABS = {
     "prepos": ("PrepOS", "/"),
     "inventory_health": ("Inventory health", "/inventory-health"),
     "brand_sellers": ("Sephora brands", "/brand-sellers"),
+    "relist": ("Sephora relist", "/relist"),
     "timeclock": ("Time clock", "/timeclock"),
     "tasks": ("Inbox", "/tasks"),
     "commissions": ("Commissions", "/commissions"),
     "reimbursements": ("Reimbursements", "/reimbursements"),
     "profit": ("Profit", "/profit"),
 }
-PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "brand_sellers", "tasks", "timeclock", "commissions", "reimbursements", "profit")   # tabs that are their own page, in menu order
+PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "brand_sellers", "relist", "tasks", "timeclock", "commissions", "reimbursements", "profit")   # tabs that are their own page, in menu order
 
 
 @dataclass

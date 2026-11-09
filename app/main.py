@@ -45,6 +45,7 @@ mcp_app = mcp.streamable_http_app()
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.open_pool()
+    await hubdocs.seed_missing(Path(__file__).resolve().parent / "seed")   # bundled docs, e.g. Sephora relist lists
     listener = asyncio.create_task(live.listener())
     syncer = asyncio.create_task(airtable_sync.loop())
     prepos_task = asyncio.create_task(prepos.nightly_loop())
@@ -173,6 +174,11 @@ async def tasks_page(request: Request):
 @app.get("/timeclock", include_in_schema=False)
 async def timeclock_page(request: Request):
     return await _page(request, "timeclock", "timeclock.html")
+
+
+@app.get("/relist", include_in_schema=False)
+async def relist_page(request: Request):
+    return await _page(request, "relist", "relist.html")
 
 
 @app.get("/reimbursements", include_in_schema=False)

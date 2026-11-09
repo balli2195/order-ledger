@@ -14,6 +14,7 @@ PREFIX_TAB = {
     "liquidation": "inventory_health", "liquidation_trend": "inventory_health", "liquidation_history": "inventory_health",
     "health_trend": "inventory_health", "doi": "inventory_health",
     "brand_sellers": "brand_sellers",
+    "relist": "relist",
 }
 PATH_RE = re.compile(r"^[A-Za-z0-9_\-.]{1,100}(/[A-Za-z0-9_\-.]{1,100}){1,4}$")
 
@@ -80,3 +81,15 @@ async def delete(path: str) -> bool:
         await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "doc", "op": "delete", "path": path}),))
         await conn.commit()
     return gone
+
+
+async def seed_missing(folder) -> None:
+    """Load bundled docs (app/seed/*.json: {"path", "data"}) that aren't in the database yet. Never overwrites."""
+    from pathlib import Path
+    for f in sorted(Path(folder).glob("*.json")):
+        try:
+            d = json.loads(f.read_text())
+            if await get(d["path"]) is None:
+                await put(d["path"], d["data"])
+        except Exception as e:   # a bad seed file must not stop the site starting
+            print("seed", f.name, "skipped:", e, flush=True)
