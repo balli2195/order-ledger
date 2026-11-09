@@ -479,8 +479,8 @@ def destroyed_rows(rows: list[dict], start: date) -> list[tuple]:
     """Units Amazon destroyed whose cost the Profit page never charged (Nick, Nov 9 2026: "if they were for sure
     destroyed by Amazon we should expense it"). [(day, sku, units)] for days >= start.
 
-    Each SKU's unsellable stock is tracked as first-in-first-out queues per disposition (DEFECTIVE, EXPIRED, ...), each
-    unit marked charged or not:
+    Each SKU's unsellable stock is tracked as queues per disposition (DEFECTIVE, EXPIRED, ...), units leaving taken from
+    that day's arrivals first, then oldest first; each unit marked charged or not:
     - customer returns arriving unsellable: charged (their cost was charged at the sale);
     - moved out of sellable (Q/E) into WAREHOUSE_DAMAGED: charged (the "Damaged in warehouse" line);
     - moved out of sellable into any other unsellable state: not charged;
@@ -494,16 +494,28 @@ def destroyed_rows(rows: list[dict], start: date) -> list[tuple]:
         by.setdefault(r["sku"], {}).setdefault(r["day"], []).append(r)
     out: dict = {}
     for sku, days in by.items():
-        q: dict = {}          # disposition -> list of charged flags (FIFO)
+        q: dict = {}          # disposition -> list of [charged flag, day added] (FIFO)
+        today = [None]
+
+        def add(disp, flags):
+            q.setdefault(disp, []).extend([f, today[0]] for f in flags)
 
         def pop(disp, n):
+            """Units leaving a state: ones that arrived the same day first (Amazon logs a unit's whole chain, e.g.
+            sellable -> warehouse-damaged -> defective -> destroyed, on one day), then the oldest."""
             lst = q.setdefault(disp, [])
-            got = lst[:n]
-            del lst[:n]
+            same = [i for i in range(len(lst) - 1, -1, -1) if lst[i][1] == today[0]][:n]
+            got = [lst[i][0] for i in same]
+            for i in sorted(same, reverse=True):
+                del lst[i]
+            rest = n - len(got)
+            got += [x[0] for x in lst[:rest]]
+            del lst[:rest]
             return got + [True] * (n - len(got))   # units from before the ledger window: assume charged
 
         for day in sorted(days):
             rs = days[day]
+            today[0] = day
             buf_s, buf_u = [], []
             for r in rs:   # 1. out of sellable
                 if r["disp"] == "SELLABLE" and r["qty"] < 0:
@@ -513,10 +525,10 @@ def destroyed_rows(rows: list[dict], start: date) -> list[tuple]:
                     n = r["qty"]
                     take = min(n, len(buf_s))
                     del buf_s[:take]
-                    q.setdefault("WAREHOUSE_DAMAGED", []).extend([True] * n)
+                    add("WAREHOUSE_DAMAGED", [True] * n)
             for r in rs:   # 3. customer returns arriving unsellable, found / transferred in
                 if r["disp"] != "SELLABLE" and r["qty"] > 0 and (r["event"] == "CustomerReturns" or r["reason"] in ("F", "N", "3")):
-                    q.setdefault(r["disp"], []).extend([True] * r["qty"])
+                    add(r["disp"], [True] * r["qty"])
             for r in rs:   # 4. moves out of an unsellable state to another state
                 if r["event"] == "Adjustments" and r["disp"] != "SELLABLE" and r["qty"] < 0 and r["reason"] in ("Q", "E"):
                     buf_u += pop(r["disp"], -r["qty"])
@@ -530,7 +542,7 @@ def destroyed_rows(rows: list[dict], start: date) -> list[tuple]:
                     got += buf_s[:rest]
                     del buf_s[:rest]
                     got += [True] * (n - len(got))
-                    q.setdefault(r["disp"], []).extend(got)
+                    add(r["disp"], got)
             for r in rs:   # 6. everything else that leaves an unsellable state
                 if r["disp"] == "SELLABLE" or r["qty"] >= 0:
                     continue
