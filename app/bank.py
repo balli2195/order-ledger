@@ -170,6 +170,7 @@ async def contractor_rows(conn, a: date, b: date) -> list[dict]:
 # (page line, vendor shown in the detail, bank-text pattern) — first match wins.
 RECURRING = [
     ("Business insurance", "The Hartford", r"hartford"),
+    ("Shipping & postage", "Pirate Ship", r"pirate ?ship"),   # Nick, Nov 8 2026
     ("Software & apps", "Seller Snap", r"seller ?snap"),
     ("Software & apps", "Keepa", r"keepa"),
     ("Software & apps", "Airtable", r"airtable"),

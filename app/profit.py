@@ -93,6 +93,7 @@ GROUPS = [
     ("opex", "Contractors", ["Ariane Armada (Wise)", "Leen Rodriguez (ACH)"]),
     ("opex", "Software & apps", ["Software & apps"]),
     ("opex", "Business insurance", ["Business insurance"]),
+    ("opex", "Shipping & postage", ["Shipping & postage"]),
     ("other", "Cash back", ["Chase cash back", "Amex cash back"]),
 ]
 # Other income kinds a daily task loads from QuickBooks (profit_other.kind -> page line).
@@ -691,7 +692,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
     for sec, name, ls in GROUPS:
         amt = sum(lines.get(x, 0.0) for x in ls)
         if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep", "Cash back", "Contractors",
-                                                "Software & apps", "Business insurance"):
+                                                "Software & apps", "Business insurance", "Shipping & postage"):
             continue
         parts = []
         for x in ls:
