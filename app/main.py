@@ -430,6 +430,24 @@ async def api_brand_sellers_sourced(request: Request, since: str = "2026-10-30")
     return {"since": d.isoformat(), "brands": [{"key": r["key"], "name": r["name"], "leads": r["leads"], "last": r["last"].isoformat()} for r in rows]}
 
 
+@app.get("/api/relist/current")
+async def api_relist_current(request: Request, since: str = "2026-10-30"):
+    """ASINs with a lead on or after `since` (any store), for the Sephora relist page's "In current sale" column."""
+    await auth.require(request, tab="relist")
+    try:
+        d = date.fromisoformat(since[:10])
+    except ValueError:
+        raise HTTPException(400, "since must be a date")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT upper(btrim(asin)) AS asin, count(*) AS leads, COALESCE(sum(qty_ordered), 0) AS ordered,
+                      max(COALESCE(lead_date, created_at::date)) AS last
+                 FROM leads WHERE asin IS NOT NULL AND btrim(asin) <> '' AND COALESCE(lead_date, created_at::date) >= %s
+                GROUP BY 1""", (d,))
+        rows = await cur.fetchall()
+    return {"since": d.isoformat(), "asins": {r["asin"]: {"leads": r["leads"], "ordered": int(r["ordered"]), "last": r["last"].isoformat()} for r in rows}}
+
+
 @app.get("/no-access", include_in_schema=False)
 async def no_access(request: Request):
     user = await auth.current_user(request)
