@@ -18,6 +18,12 @@ Product cost
   SKUs InventoryLab has no cost for fall back to the order ledger's average cost for the ASIN; anything left is
   counted as uncosted units on the page.
 - COGS is charged on units shipped only, like Link My Books (returns don't credit cost back).
+- Inventory written off (Nick, Nov 8 2026): units Amazon lost or damaged in its warehouses, from the inventory ledger
+  (GET_LEDGER_DETAIL_VIEW_DATA, Adjustments), at the same unit cost, on the ledger date. Lost = reason M on sellable
+  stock, less units found again (F); damaged = units moved into the WAREHOUSE_DAMAGED disposition (P); plus
+  unrecoverable (5). Missing inbound is NOT written off (Nick isn't sure those units were really missing). The
+  reimbursements for these units are income on the day Amazon pays them, so a loss and its reimbursement can fall
+  in different months.
 """
 from __future__ import annotations
 
@@ -73,6 +79,7 @@ GROUPS = [
     ("income", "Amazon FBA Inventory Reimbursement", ["Inventory reimbursements"]),
     ("income", "Other Amazon adjustments", ["Other adjustments"]),
     ("cogs", "Product cost", ["COGS"]),
+    ("cogs", "Inventory written off", ["Lost in warehouse (net of found)", "Damaged in warehouse", "Unrecoverable"]),
     ("cogs", "Amazon Inbound Shipping", ["Inbound shipping"]),
     ("expense", "Amazon Seller Fees & Charges", ["Referral fees", "Refund administration fee"]),
     ("expense", "Amazon FBA Warehousing & Fulfillment", ["FBA fulfillment fees", "Shipping & gift wrap chargebacks",
@@ -286,6 +293,61 @@ def _due(stamp, hours: float) -> bool:
     return datetime.now(timezone.utc) - datetime.fromisoformat(stamp) > timedelta(hours=hours)
 
 
+WO_KIND = {"lost": "Lost in warehouse (net of found)", "damaged": "Damaged in warehouse", "unrecoverable": "Unrecoverable"}
+
+
+def _adj_row(row: dict) -> dict | None:
+    """Inventory ledger Adjustments that are warehouse losses. units > 0 = written off, < 0 = found again."""
+    if (row.get("Event Type") or "").strip() != "Adjustments":
+        return None
+    rs, disp = (row.get("Reason") or "").strip(), (row.get("Disposition") or "").strip()
+    try:
+        q = int(row.get("Quantity") or 0)
+    except ValueError:
+        return None
+    if rs in ("M", "F") and disp == "SELLABLE":
+        kind, units = "lost", -q
+    elif rs == "P" and disp == "WAREHOUSE_DAMAGED":
+        kind, units = "damaged", q
+    elif rs == "5":
+        kind, units = "unrecoverable", -q
+    else:
+        return None
+    try:
+        m, d, y = (row.get("Date") or "").strip().strip('"').split("/")
+        day = date(int(y), int(m), int(d))
+    except ValueError:
+        return None
+    key = "|".join((row.get(k) or "").strip() for k in ("Date and Time", "MSKU", "FNSKU", "Reason", "Disposition", "Quantity", "Fulfillment Center", "Reference ID"))
+    return {"day": day, "sku": (row.get("MSKU") or "").strip(), "kind": kind, "units": units, "key": key}
+
+
+async def ledger_sync(start: date) -> dict:
+    """Write-off units from the inventory ledger, start..yesterday (reuses ledger reports the Reimbursements sync made)."""
+    from . import inbound
+    now = datetime.now(timezone.utc)
+    async with httpx.AsyncClient(timeout=120) as c:
+        rows = await inbound._ledger(c, datetime(start.year, start.month, start.day, tzinfo=timezone.utc), now, keep=_adj_row)
+    agg: dict = {}
+    seen: set = set()
+    for r in rows:
+        if r["day"] < start or not r["sku"] or r["key"] in seen:   # overlapping ledger reports repeat rows
+            continue
+        seen.add(r["key"])
+        k = (r["day"], r["sku"], r["kind"])
+        agg[k] = agg.get(k, 0) + r["units"]
+    last = max((k[0] for k in agg), default=None)
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM inv_writeoff WHERE day >= %s AND day <= %s", (start, last or start))
+            async with conn.cursor() as cur:
+                await cur.executemany("INSERT INTO inv_writeoff (day, sku, kind, units) VALUES (%s,%s,%s,%s)",
+                                      [(k[0], k[1], k[2], v) for k, v in agg.items() if v])
+    status["ledger"] = {"start": start.isoformat(), "last_day": last.isoformat() if last else None, "rows": len(agg),
+                        "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    return status["ledger"]
+
+
 async def step() -> str:
     """One unit of work. Returns what it did ('' = nothing to do)."""
     t = today_pt()
@@ -298,6 +360,14 @@ async def step() -> str:
     if _due(await _setting("profit_daily_at"), 20):
         for d in (t - timedelta(days=i) for i in range(3, 15)):
             await pull_day(d)
+        try:
+            if await _setting("profit_ledger_backfill"):
+                await ledger_sync(t - timedelta(days=60))
+            else:
+                await ledger_sync(date.fromisoformat(await _setting("profit_start", "2026-01-01")))
+                await _set("profit_ledger_backfill", True)
+        except Exception as e:   # the ledger report quota is small; try again next day
+            status["ledger_error"] = str(e)[:300]
         await _set("profit_daily_at", datetime.now(timezone.utc).isoformat())
         return "daily"
     miss = await missing_days(7)
@@ -366,11 +436,12 @@ async def save_costs(source: str, as_of: date, rows: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------- report
+UNITS_SHIPPED = """SELECT fu.day, fu.marketplace, fu.sku, fu.shipped FROM fin_units fu
+  WHERE fu.day BETWEEN %(a)s AND %(b)s AND fu.shipped > 0 AND (%(us)s = false OR fu.marketplace = 'Amazon.com')"""
+UNITS_WRITTEN_OFF = """SELECT w.day, w.kind AS marketplace, w.sku, w.units AS shipped FROM inv_writeoff w
+  WHERE w.day BETWEEN %(a)s AND %(b)s"""
 COGS_SQL = """
-WITH u AS (
-  SELECT fu.day, fu.marketplace, fu.sku, fu.shipped FROM fin_units fu
-  WHERE fu.day BETWEEN %(a)s AND %(b)s AND fu.shipped > 0 AND (%(us)s = false OR fu.marketplace = 'Amazon.com')
-), c AS (
+WITH u AS ({units}), c AS (
   SELECT u.*,
     COALESCE(
       (SELECT sc.cost FROM sku_costs sc WHERE sc.sku = u.sku AND sc.as_of <= u.day ORDER BY sc.as_of DESC LIMIT 1),
@@ -395,7 +466,9 @@ async def report(a: date, b: date, us_only: bool = False) -> dict:
         agg = await (await conn.execute(
             "SELECT day, currency, line, detail, amount FROM fin_agg WHERE day BETWEEN %s AND %s" + (" AND currency='USD'" if us_only else ""),
             (a, b))).fetchall()
-        cogs_rows = await (await conn.execute(COGS_SQL, {"a": a, "b": b, "us": us_only})).fetchall()
+        cogs_rows = await (await conn.execute(COGS_SQL.format(units=UNITS_SHIPPED), {"a": a, "b": b, "us": us_only})).fetchall()
+        wo_rows = await (await conn.execute(COGS_SQL.format(units=UNITS_WRITTEN_OFF), {"a": a, "b": b, "us": us_only})).fetchall()
+        wo_last = (await (await conn.execute("SELECT max(day) d FROM inv_writeoff")).fetchone())["d"]
         days = await (await conn.execute(
             "SELECT count(*) n, min(pulled_at) oldest, max(pulled_at) newest FROM fin_days WHERE day BETWEEN %s AND %s", (a, b))).fetchone()
         span = (b - a).days + 1
@@ -455,11 +528,26 @@ async def report(a: date, b: date, us_only: bool = False) -> dict:
         dd["cogs"] -= q * float(c)
     lines["COGS"] = cogs
 
+    wo_units = wo_uncosted = 0
+    for r in wo_rows:
+        q = int(r["shipped"])
+        c = r["il_cost"] if r["il_cost"] is not None else r["ledger_cost"]
+        ln = WO_KIND[r["marketplace"]]
+        wo_units += q
+        if c is None:
+            wo_uncosted += q
+            continue
+        v = -q * float(c)
+        lines[ln] = lines.get(ln, 0.0) + v
+        detail[(ln, r["sku"] + (f" · {r['asin']}" if r["asin"] else ""), "USD")] = detail.get((ln, r["sku"] + (f" · {r['asin']}" if r["asin"] else ""), "USD"), 0.0) + v
+        dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
+        dd["cogs"] += v
+
     groups = []
     tot = {"income": 0.0, "cogs": 0.0, "expense": 0.0}
     for sec, name, ls in GROUPS:
         amt = sum(lines.get(x, 0.0) for x in ls)
-        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees"):
+        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off"):
             continue
         parts = []
         for x in ls:
@@ -488,6 +576,7 @@ async def report(a: date, b: date, us_only: bool = False) -> dict:
                      "uncosted_units": units - costed_il - costed_ledger,
                      "uncosted": sorted(uncosted.values(), key=lambda z: -z["units"])[:30],
                      "cost_snapshot": cost_asof["d"], "cost_snapshot_skus": cost_asof["n"],
+                     "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "writeoff_through": wo_last,
                      "other_currency": {k: round(v, 2) for k, v in other_cur.items()}},
         "status": {k: v for k, v in status.items()},
     }

@@ -250,6 +250,27 @@ async def engine_profit_repull(request: Request, body: dict = Body(...)):
     return {"started": True, "start": a.isoformat(), "end": b.isoformat()}
 
 
+@app.post("/api/engine/profit/ledger")
+async def engine_profit_ledger(request: Request, body: dict = Body(default={})):
+    """Re-read inventory write-offs (lost / damaged in warehouse) from Amazon's inventory ledger from {start} (background)."""
+    auth.require_engine_key(request)
+    try:
+        start = date.fromisoformat(str(body.get("start") or (profit.today_pt() - timedelta(days=60)).isoformat()))
+    except ValueError:
+        raise HTTPException(400, "start looks like 2026-01-01")
+    t = _profit_run.get("ledger")
+    if t and not t.done():
+        return {"running": True}
+    async def run():
+        try:
+            async with profit._lock:
+                _profit_run["ledger_result"] = await profit.ledger_sync(start)
+        except Exception as e:
+            _profit_run["ledger_result"] = {"error": str(e)[:300]}
+    _profit_run["ledger"] = asyncio.create_task(run())
+    return {"started": True, "start": start.isoformat()}
+
+
 @app.get("/api/engine/profit/status")
 async def engine_profit_status(request: Request):
     auth.require_engine_key(request)
@@ -257,7 +278,9 @@ async def engine_profit_status(request: Request):
         d = await (await conn.execute("SELECT count(*) n, min(day) first, max(day) last, max(pulled_at) newest FROM fin_days")).fetchone()
         c = await (await conn.execute("SELECT source, as_of, count(*) n FROM sku_costs GROUP BY 1,2 ORDER BY 2 DESC LIMIT 20")).fetchall()
     t = _profit_run.get("t")
-    return profit_json({"loop": profit.status, "days": d, "costs": c, "repull": {"running": bool(t and not t.done()), "result": _profit_run.get("result")}})
+    lt = _profit_run.get("ledger")
+    return profit_json({"loop": profit.status, "days": d, "costs": c, "repull": {"running": bool(t and not t.done()), "result": _profit_run.get("result")},
+                        "ledger": {"running": bool(lt and not lt.done()), "result": _profit_run.get("ledger_result")}})
 
 
 @app.get("/api/reimbursements")

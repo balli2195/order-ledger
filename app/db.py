@@ -696,6 +696,10 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS sku_costs_sku_asof ON sku_costs (sku, as_of);
     CREATE TABLE IF NOT EXISTS sku_asin (sku text PRIMARY KEY, asin text NOT NULL);
     CREATE TABLE IF NOT EXISTS fx_rates (day date NOT NULL, currency text NOT NULL, usd numeric(14,8) NOT NULL, PRIMARY KEY (day, currency));
+    """,    # 49: Profit page — inventory written off (lost / damaged in Amazon warehouses) from the inventory ledger (Nick, Nov 8 2026)
+    """
+    CREATE TABLE IF NOT EXISTS inv_writeoff (day date NOT NULL, sku text NOT NULL, kind text NOT NULL, units int NOT NULL);
+    CREATE INDEX IF NOT EXISTS inv_writeoff_day ON inv_writeoff (day);
     """,
 ]
 

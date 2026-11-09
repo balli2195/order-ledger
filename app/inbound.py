@@ -146,10 +146,11 @@ def _receipt_row(row: dict) -> dict | None:
     return {k: row.get(k) for k in _LEDGER_COLS}
 
 
-async def _ledger(c, start: datetime, now: datetime) -> list[dict]:
+async def _ledger(c, start: datetime, now: datetime, keep=None) -> list[dict]:
     """Inventory ledger rows from start to now. Ledger reports made in the last 24 hours (by this Hub or by Claude's
     nightly run) are reused when together they cover the range; only the gaps get new 90-day reports, because
-    Amazon allows very few new ledger reports per hour."""
+    Amazon allows very few new ledger reports per hour. `keep` slims rows (default: Receipts only)."""
+    keep = keep or _receipt_row
     since = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     have, p = [], {"reportTypes": "GET_LEDGER_DETAIL_VIEW_DATA", "processingStatuses": "DONE", "createdSince": since, "pageSize": 100}
     for _ in range(5):
@@ -168,12 +169,12 @@ async def _ledger(c, start: datetime, now: datetime) -> list[dict]:
         cands = [h for h in have if h[0] <= cur + timedelta(days=1) and h[1] > cur + timedelta(days=1)]
         if cands:
             a, b, doc = max(cands, key=lambda h: h[1])
-            rows += await _download(c, doc, _receipt_row)
+            rows += await _download(c, doc, keep)
             cur = b
         else:
             nxt = min([h[0] for h in have if h[0] > cur] or [now])
             end = min(cur + timedelta(days=89), nxt + timedelta(days=1), now - timedelta(hours=1))
-            rows += await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", cur, end, _receipt_row)
+            rows += await _report(c, "GET_LEDGER_DETAIL_VIEW_DATA", cur, end, keep)
             cur = end
     return rows
 
