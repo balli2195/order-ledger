@@ -723,6 +723,12 @@ MIGRATIONS: list[str] = [
       SELECT t.* FROM bank_txns t
       WHERE t.source = 'statement'
          OR NOT EXISTS (SELECT 1 FROM bank_statements s WHERE s.account = t.account AND t.day BETWEEN s.opened AND s.closed);
+    """,    # 52: inventory ledger rows that move units into, between and out of unsellable states, kept so the Profit page can
+            # tell units Amazon destroyed that were never charged (Nick, Nov 9 2026)
+    """
+    CREATE TABLE IF NOT EXISTS inv_ledger (day date NOT NULL, sku text NOT NULL, event text NOT NULL, reason text NOT NULL,
+        disp text NOT NULL, qty int NOT NULL, ref text NOT NULL DEFAULT '');
+    CREATE INDEX IF NOT EXISTS inv_ledger_day ON inv_ledger (day);
     """,
 ]
 

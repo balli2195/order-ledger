@@ -318,7 +318,8 @@ def _due(stamp, hours: float) -> bool:
 
 
 WO_KIND = {"lost": "Lost in warehouse (net of found)", "damaged": "Damaged in warehouse", "unrecoverable": "Unrecoverable",
-           "disposed": "Destroyed by Amazon", "inbound": "Missing inbound", "returned": "Restocked customer returns"}
+           "disposed": "Destroyed by Amazon", "destroyed": "Destroyed by Amazon", "inbound": "Missing inbound",
+           "returned": "Restocked customer returns"}
 
 
 async def missing_inbound(a: date, b: date) -> list[tuple]:
@@ -439,14 +440,125 @@ async def disposal_sync() -> dict:
     return status["disposals"]
 
 
+def _pool_row(row: dict) -> dict | None:
+    """Ledger rows that move units into, between or out of unsellable states (for destroyed_rows): every Adjustments,
+    CustomerReturns and VendorReturns row on an unsellable disposition, plus moves out of / back into SELLABLE (Q/E
+    out, P in)."""
+    ev = (row.get("Event Type") or "").strip()
+    if ev not in ("Adjustments", "CustomerReturns", "VendorReturns"):
+        return None
+    rs, disp = (row.get("Reason") or "").strip(), (row.get("Disposition") or "").strip()
+    try:
+        q = int(row.get("Quantity") or 0)
+    except ValueError:
+        return None
+    if not q or not disp:
+        return None
+    if disp == "SELLABLE" and not (ev == "Adjustments" and ((rs in ("Q", "E") and q < 0) or (rs == "P" and q > 0))):
+        return None
+    try:
+        m, d, y = (row.get("Date") or "").strip().strip('"').split("/")
+        day = date(int(y), int(m), int(d))
+    except ValueError:
+        return None
+    return {"day": day, "sku": (row.get("MSKU") or "").strip(), "event": ev, "reason": rs, "disp": disp, "qty": q,
+            "ref": (row.get("Reference ID") or "").strip()}
+
+
+def _ledger_keep(row: dict) -> dict | None:
+    """Both views of a ledger row: write-off units (_adj_row) and unsellable-state moves (_pool_row)."""
+    wo, pool = _adj_row(row), _pool_row(row)
+    if wo is None and pool is None:
+        return None
+    key = "|".join((row.get(k) or "").strip() for k in ("Event Type", "Date and Time", "MSKU", "FNSKU", "Reason", "Disposition",
+                                                         "Quantity", "Fulfillment Center", "Reference ID"))
+    return {"wo": wo, "pool": pool, "key": key}
+
+
+def destroyed_rows(rows: list[dict], start: date) -> list[tuple]:
+    """Units Amazon destroyed whose cost the Profit page never charged (Nick, Nov 9 2026: "if they were for sure
+    destroyed by Amazon we should expense it"). [(day, sku, units)] for days >= start.
+
+    Each SKU's unsellable stock is tracked as first-in-first-out queues per disposition (DEFECTIVE, EXPIRED, ...), each
+    unit marked charged or not:
+    - customer returns arriving unsellable: charged (their cost was charged at the sale);
+    - moved out of sellable (Q/E) into WAREHOUSE_DAMAGED: charged (the "Damaged in warehouse" line);
+    - moved out of sellable into any other unsellable state: not charged;
+    - moved between unsellable states: keep their mark; found (F), transferred in (N) or anything unexplained: charged.
+    Destroyed = reason D (destroyed) on any unsellable state, and reason O on DEFECTIVE (Amazon's authenticity
+    disposals: sellable -> defective -> O, matching its "FBA Inventory has been disposed" emails). Only units not
+    charged are counted. Disposal orders (recalls) leave as VendorReturns and are counted by disposal_sync instead;
+    removals and lost units just leave the queues. Units sent to Nick are not written off here."""
+    by: dict = {}
+    for r in rows:
+        by.setdefault(r["sku"], {}).setdefault(r["day"], []).append(r)
+    out: dict = {}
+    for sku, days in by.items():
+        q: dict = {}          # disposition -> list of charged flags (FIFO)
+
+        def pop(disp, n):
+            lst = q.setdefault(disp, [])
+            got = lst[:n]
+            del lst[:n]
+            return got + [True] * (n - len(got))   # units from before the ledger window: assume charged
+
+        for day in sorted(days):
+            rs = days[day]
+            buf_s, buf_u = [], []
+            for r in rs:   # 1. out of sellable
+                if r["disp"] == "SELLABLE" and r["qty"] < 0:
+                    buf_s += [False] * -r["qty"]
+            for r in rs:   # 2. into warehouse-damaged (charged by the damaged line)
+                if r["event"] == "Adjustments" and r["reason"] == "P" and r["disp"] == "WAREHOUSE_DAMAGED" and r["qty"] > 0:
+                    n = r["qty"]
+                    take = min(n, len(buf_s))
+                    del buf_s[:take]
+                    q.setdefault("WAREHOUSE_DAMAGED", []).extend([True] * n)
+            for r in rs:   # 3. customer returns arriving unsellable, found / transferred in
+                if r["disp"] != "SELLABLE" and r["qty"] > 0 and (r["event"] == "CustomerReturns" or r["reason"] in ("F", "N", "3")):
+                    q.setdefault(r["disp"], []).extend([True] * r["qty"])
+            for r in rs:   # 4. moves out of an unsellable state to another state
+                if r["event"] == "Adjustments" and r["disp"] != "SELLABLE" and r["qty"] < 0 and r["reason"] in ("Q", "E"):
+                    buf_u += pop(r["disp"], -r["qty"])
+            for r in rs:   # 5. other moves into unsellable states
+                if (r["event"] == "Adjustments" and r["reason"] == "P" and r["qty"] > 0
+                        and r["disp"] not in ("SELLABLE", "WAREHOUSE_DAMAGED")):
+                    n = r["qty"]
+                    got = buf_u[:n]
+                    del buf_u[:n]
+                    rest = n - len(got)
+                    got += buf_s[:rest]
+                    del buf_s[:rest]
+                    got += [True] * (n - len(got))
+                    q.setdefault(r["disp"], []).extend(got)
+            for r in rs:   # 6. everything else that leaves an unsellable state
+                if r["disp"] == "SELLABLE" or r["qty"] >= 0:
+                    continue
+                if r["event"] == "Adjustments" and r["reason"] in ("Q", "E"):
+                    continue   # handled in 4
+                got = pop(r["disp"], -r["qty"])
+                destroyed = r["event"] == "Adjustments" and (r["reason"] == "D" or (r["reason"] == "O" and r["disp"] == "DEFECTIVE"))
+                if destroyed and day >= start:
+                    n = sum(1 for g in got if not g)
+                    if n:
+                        out[(day, sku)] = out.get((day, sku), 0) + n
+    return [(d, s, n) for (d, s), n in out.items()]
+
+
+POOL_BACK_DAYS = 180   # ledger history kept before profit_start, so units already unsellable on Jan 1 have a known origin
+
+
 async def ledger_sync(start: date) -> dict:
-    """Write-off units from the inventory ledger, start..yesterday (reuses ledger reports the Reimbursements sync made)."""
+    """Write-off units from the inventory ledger, start..yesterday (reuses ledger reports the Reimbursements sync made),
+    plus the unsellable-state rows (inv_ledger) and, from all of those, units Amazon destroyed that were never charged."""
     from . import inbound
     now = datetime.now(timezone.utc)
+    pstart = date.fromisoformat(await _setting("profit_start", "2026-01-01"))
     async with httpx.AsyncClient(timeout=120) as c:
-        rows = await inbound._ledger(c, datetime(start.year, start.month, start.day, tzinfo=timezone.utc), now, keep=_adj_row,
-                                     need={"Adjustments", "CustomerReturns"})
+        rows = await inbound._ledger(c, datetime(start.year, start.month, start.day, tzinfo=timezone.utc), now, keep=_ledger_keep,
+                                     need={"Adjustments", "CustomerReturns", "VendorReturns"})
     agg: dict = {}
+    pool: list = []
     seen: set = set()
     occ: dict = {}
     for r in rows:
@@ -454,20 +566,36 @@ async def ledger_sync(start: date) -> dict:
         # SKU at one FC on one day): number each row's occurrence within its report, and skip only repeats of that.
         n = occ[(r.get("_doc"), r["key"])] = occ.get((r.get("_doc"), r["key"]), 0) + 1
         k2 = (r["key"], n)
-        if r["day"] < start or not r["sku"] or k2 in seen:
+        if k2 in seen:
             continue
         seen.add(k2)
-        k = (r["day"], r["sku"], r["kind"])
-        agg[k] = agg.get(k, 0) + r["units"]
-    last = max((k[0] for k in agg), default=None)
+        w, p = r["wo"], r["pool"]
+        if w and w["sku"] and w["day"] >= max(start, pstart):
+            k = (w["day"], w["sku"], w["kind"])
+            agg[k] = agg.get(k, 0) + w["units"]
+        if p and p["sku"] and p["day"] >= start:
+            pool.append(p)
+    last = max([k[0] for k in agg] + [p["day"] for p in pool], default=None)
     async with db.pool.connection() as conn:
         async with conn.transaction():
-            await conn.execute("DELETE FROM inv_writeoff WHERE day >= %s AND day <= %s AND kind <> 'disposed'", (start, last or start))
+            await conn.execute("DELETE FROM inv_writeoff WHERE day >= %s AND day <= %s AND kind NOT IN ('disposed', 'destroyed')",
+                               (start, last or start))
+            await conn.execute("DELETE FROM inv_ledger WHERE day >= %s AND day <= %s", (start, last or start))
             async with conn.cursor() as cur:
                 await cur.executemany("INSERT INTO inv_writeoff (day, sku, kind, units) VALUES (%s,%s,%s,%s)",
                                       [(k[0], k[1], k[2], v) for k, v in agg.items() if v])
+                await cur.executemany("INSERT INTO inv_ledger (day, sku, event, reason, disp, qty, ref) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                                      [(p["day"], p["sku"], p["event"], p["reason"], p["disp"], p["qty"], p["ref"]) for p in pool])
+            allrows = [dict(r) for r in await (await conn.execute(
+                "SELECT day, sku, event, reason, disp, qty FROM inv_ledger ORDER BY day")).fetchall()]
+            first = min((r["day"] for r in allrows), default=None)
+            dest = destroyed_rows(allrows, pstart)
+            await conn.execute("DELETE FROM inv_writeoff WHERE kind = 'destroyed'")
+            async with conn.cursor() as cur:
+                await cur.executemany("INSERT INTO inv_writeoff (day, sku, kind, units) VALUES (%s,%s,'destroyed',%s)", dest)
     status["ledger"] = {"start": start.isoformat(), "last_day": last.isoformat() if last else None, "rows": len(agg),
-                        "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+                        "pool_rows": len(pool), "pool_from": first.isoformat() if first else None,
+                        "destroyed_units": sum(x[2] for x in dest), "at": time.strftime("%Y-%m-%d %H:%M:%S")}
     return status["ledger"]
 
 
@@ -487,7 +615,7 @@ async def step() -> str:
             if await _setting("profit_ledger_backfill"):
                 await ledger_sync(t - timedelta(days=60))
             else:
-                await ledger_sync(date.fromisoformat(await _setting("profit_start", "2026-01-01")))
+                await ledger_sync(date.fromisoformat(await _setting("profit_start", "2026-01-01")) - timedelta(days=POOL_BACK_DAYS))
                 await _set("profit_ledger_backfill", True)
         except Exception as e:   # the ledger report quota is small; try again next day
             status["ledger_error"] = str(e)[:300]
