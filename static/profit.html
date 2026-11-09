@@ -79,7 +79,7 @@
   <div class="pf-grid" id="body">
     <div class="card"><h3>Profit &amp; loss · Amazon</h3><table class="pl" id="pl"></table></div>
     <div>
-      <div class="card"><h3>Profit by day</h3><svg class="chart" id="chart" role="img" aria-label="Profit by day"></svg><div class="tip" id="tip">Hover a bar for that day.</div></div>
+      <div class="card"><h3 id="chartTitle">Profit by day</h3><svg class="chart" id="chart" role="img" aria-label="Profit by day"></svg><div class="tip" id="tip">Hover a bar for that day.</div></div>
       <div class="card" style="margin-top:16px"><h3>About these numbers</h3><div class="cov" id="cov"></div></div>
     </div>
   </div>
@@ -160,7 +160,7 @@
     rows.push(`<tr class="profit"><td>Amazon profit</td><td class="n">${money(T.profit)}</td><td class="p">${pctOf(T.profit, T.sales)}</td></tr>`);
     $('#pl').innerHTML = rows.join('');
 
-    chart(d.daily);
+    chart(series(d.daily));
 
     const cs = cov.cost_snapshot ? LG.fmtDate(cov.cost_snapshot) : 'none yet';
     const unc = cov.uncosted_units;
@@ -175,6 +175,27 @@
     $('#meta').textContent = `${LG.fmtDate(d.start)} – ${LG.fmtDate(d.end)}`;
   }
 
+  // Ranges longer than two months (e.g. "This year") are shown by month (Nick, Nov 8 2026).
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function series(daily) {
+    const monthly = daily.length > 62;
+    $('#chartTitle').textContent = monthly ? 'Profit by month' : 'Profit by day';
+    $('#chart').setAttribute('aria-label', monthly ? 'Profit by month' : 'Profit by day');
+    $('#tip').textContent = monthly ? 'Hover a bar for that month.' : 'Hover a bar for that day.';
+    if (!monthly) return daily.map((x) => ({ ...x, label: LG.fmtDate(x.day).replace(/, \d{4}$/, ''), full: LG.fmtDate(x.day) }));
+    const by = new Map();
+    daily.forEach((x) => {
+      const k = x.day.slice(0, 7);
+      const m = by.get(k) || { day: k, profit: 0, sales: 0, units: 0, n: 0 };
+      m.profit += x.profit; m.sales += x.sales; m.units += x.units; m.n += 1; by.set(k, m);
+    });
+    return [...by.values()].map((m) => {
+      const [y, mo] = m.day.split('-').map(Number);
+      const partial = m.n < new Date(y, mo, 0).getDate();
+      return { ...m, label: MON[mo - 1], full: `${MON[mo - 1]} ${y}${partial ? ` (${m.n} days)` : ''}` };
+    });
+  }
+
   function chart(days) {
     const svg = $('#chart'); const W = svg.clientWidth || 500, H = 220, padL = 46, padB = 22, padT = 8;
     const vals = days.map((x) => x.profit); const mx = Math.max(0, ...vals), mn = Math.min(0, ...vals);
@@ -185,13 +206,13 @@
     s += ticks.map((v) => `<text x="${padL - 6}" y="${y(v) + 3}" text-anchor="end">${m0(v)}</text>`).join('');
     days.forEach((x, i) => {
       const x0 = padL + i * bw + bw * .12, w = Math.max(1, bw * .76), y0 = y(Math.max(0, x.profit)), h = Math.max(1, Math.abs(y(x.profit) - y(0)));
-      s += `<rect class="bar ${x.profit >= 0 ? 'pos' : 'neg'}" x="${x0}" y="${y0}" width="${w}" height="${h}" rx="1.5" data-i="${i}"><title>${x.day}: ${m0(x.profit)}</title></rect>`;
+      s += `<rect class="bar ${x.profit >= 0 ? 'pos' : 'neg'}" x="${x0}" y="${y0}" width="${w}" height="${h}" rx="1.5" data-i="${i}"><title>${esc(x.full)}: ${m0(x.profit)}</title></rect>`;
     });
-    const every = Math.ceil(days.length / 8);
-    days.forEach((x, i) => { if (i % every === 0) s += `<text x="${padL + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${LG.fmtDate(x.day).replace(/, \d{4}$/, '')}</text>`; });
+    const every = days.length <= 14 ? 1 : Math.ceil(days.length / 8);
+    days.forEach((x, i) => { if (i % every === 0) s += `<text x="${padL + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(x.label)}</text>`; });
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = s;
     svg.onmousemove = (e) => { const r = e.target.closest('rect'); if (!r) return; const x = days[+r.dataset.i];
-      $('#tip').textContent = `${LG.fmtDate(x.day)} · profit ${money(x.profit)} · sales ${money(x.sales)} · ${num(x.units)} units`; };
+      $('#tip').textContent = `${x.full} · profit ${money(x.profit)} · sales ${money(x.sales)} · ${num(x.units)} units`; };
   }
 
   $('#pl').addEventListener('click', (e) => {
@@ -202,7 +223,7 @@
   const custom = () => { if ($('#from').value && $('#to').value) setRange(new Date($('#from').value + 'T12:00:00Z'), new Date($('#to').value + 'T12:00:00Z'), null); };
   $('#from').addEventListener('change', custom); $('#to').addEventListener('change', custom);
   $('#usOnly').addEventListener('change', () => { st.us = $('#usOnly').checked; try { localStorage.setItem('pf_us', st.us ? '1' : '0'); } catch { /* ignore */ } load(); });
-  window.addEventListener('resize', () => st.data && chart(st.data.daily));
+  window.addEventListener('resize', () => st.data && chart(series(st.data.daily)));
 
   LG.header().then(() => { const [a, b] = preset('mtd'); setRange(a, b, 'mtd'); }).catch(fail);
 })();
