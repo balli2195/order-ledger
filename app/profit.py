@@ -82,7 +82,7 @@ GROUPS = [
     ("cogs", "Product cost", ["COGS"]),
     ("cogs", "Inventory written off", ["Lost in warehouse (net of found)", "Damaged in warehouse", "Unrecoverable", "Missing inbound"]),
     ("cogs", "Amazon Inbound Shipping", ["Inbound shipping"]),
-    ("cogs", "Prep", ["Prep (per unit sent to Amazon)"]),
+    ("cogs", "Prep", ["Prep center bills"]),
     ("expense", "Amazon Seller Fees & Charges", ["Referral fees", "Refund administration fee"]),
     ("expense", "Amazon FBA Warehousing & Fulfillment", ["FBA fulfillment fees", "Shipping & gift wrap chargebacks",
                                                          "Removal & disposal fees", "Returns processing fees"]),
@@ -100,6 +100,8 @@ GROUPS = [
     ("other", "Cash back", ["Chase cash back", "Amex cash back"]),
 ]
 # Other income kinds a daily task loads from QuickBooks (profit_other.kind -> page line).
+# Bank-side lines that count as cost of goods sold (the rest of bank.RECURRING is business expenses).
+COGS_BANK_LINES = {"Prep center bills"}
 OTHER_LINES = {"chase_cashback": "Chase cash back", "amex_cashback": "Amex cash back"}
 
 
@@ -543,6 +545,7 @@ FROM c
 
 
 async def report(a: date, b: date, us_only: bool = False, inbound: bool = False, prep: bool = False) -> dict:
+    # prep: ignored since Nov 8 2026 — prep is the real prep-center bills from the bank side now (no estimate, no toggle)
     async with db.pool.connection() as conn:
         fx = {}
         for r in await (await conn.execute("SELECT day, currency, usd FROM fx_rates WHERE day BETWEEN %s AND %s ORDER BY day",
@@ -560,14 +563,6 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                 "a": a, "b": b, "us": us_only, "d": [x[0] for x in mi], "s": [x[1] for x in mi], "q": [x[2] for x in mi]})).fetchall())
         inbound_synced = await _setting("inbound_synced_at")
         other_loaded = await _setting("profit_other_loaded_at")
-        prep_rate = float(await _setting("profit_prep_per_unit", 0.75) or 0)
-        # Prep (Nick, Nov 8 2026): a flat rate per unit sent to Amazon, on the shipment plan's date (units the API says
-        # were shipped, in every shipment that left the prep center). Optional on the page.
-        prep_rows = await (await conn.execute(
-            """SELECT COALESCE(s.plan_created, s.first_receipt) AS day, sum(i.shipped) AS units
-               FROM inbound_shipments s JOIN inbound_items i ON i.shipment_id = s.shipment_id
-               WHERE s.status = ANY(%s) AND COALESCE(s.plan_created, s.first_receipt) BETWEEN %s AND %s GROUP BY 1""",
-            (["SHIPPED", "IN_TRANSIT", "DELIVERED", "CHECKED_IN", "RECEIVING", "CLOSED"], a, b))).fetchall() if prep else []
         days = await (await conn.execute(
             "SELECT count(*) n, min(pulled_at) oldest, max(pulled_at) newest FROM fin_days WHERE day BETWEEN %s AND %s", (a, b))).fetchone()
         span = (b - a).days + 1
@@ -646,15 +641,6 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
         dd["cogs"] += v
 
-    prep_units = 0
-    for r in prep_rows:
-        u = int(r["units"] or 0)
-        prep_units += u
-        v = -u * prep_rate
-        lines["Prep (per unit sent to Amazon)"] = lines.get("Prep (per unit sent to Amazon)", 0.0) + v
-        dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
-        dd["cogs"] += v
-
     # Card cash back (Nick, Nov 8 2026): QuickBooks' Cash Back / Bank & Credit Card Rewards postings from the Chase
     # Premier statement credits and the Amex early-pay discount, on the day they posted (as QuickBooks books them).
     for r in other_rows:
@@ -688,7 +674,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         lines[r["line"]] = lines.get(r["line"], 0.0) + v
         detail[(r["line"], r["vendor"], "USD")] = detail.get((r["line"], r["vendor"], "USD"), 0.0) + v
         dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
-        dd["fees"] += v
+        dd["cogs" if r["line"] in COGS_BANK_LINES else "fees"] += v
 
     groups = []
     tot = {"income": 0.0, "cogs": 0.0, "expense": 0.0, "opex": 0.0, "other": 0.0}
@@ -730,7 +716,6 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                      "cost_snapshot": cost_asof["d"], "cost_snapshot_skus": cost_asof["n"],
                      "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "writeoff_through": wo_last,
                      "inbound_included": inbound, "inbound_units": sum(x[2] for x in mi), "inbound_synced": inbound_synced,
-                     "prep_included": prep, "prep_units": prep_units, "prep_rate": prep_rate,
                      "recurring_payments": len(recurring),
                      "bank_through": await bank.coverage(),
                      "contractor_payments": len(contractor), "contractor_pending": contractor_pending,

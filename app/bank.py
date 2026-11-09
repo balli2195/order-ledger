@@ -172,6 +172,9 @@ async def contractor_rows(conn, a: date, b: date) -> list[dict]:
 RECURRING = [
     ("Business insurance", "The Hartford", r"hartford"),
     ("Shipping & postage", "Pirate Ship", r"pirate ?ship"),   # Nick, Nov 8 2026
+    # Prep center (Nick, Nov 8 2026: replaces the $0.75/unit estimate) — cost of goods sold on the page
+    ("Prep center bills", "Rayven", r"rayven ?capital ?one"),
+    ("Prep center bills", "Network Prep", r"network prep"),
     # Nick, Nov 8 2026: bookkeeper, registered agent, memberships, bank & card fees
     ("Accounting (Tall Oak)", "Tall Oak Advisors", r"tall oak"),
     ("Registered agent", "Prime Corporate Services", r"prime corporate"),
