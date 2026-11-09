@@ -1,0 +1,4 @@
+# Working data (Sephora/Keepa/SP-API pulls, caches, summaries) never goes in git; the Hub table is the source of truth.
+.data/
+*.csv
+__pycache__/

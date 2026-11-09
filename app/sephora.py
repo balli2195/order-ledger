@@ -129,7 +129,9 @@ def clean_catalog_row(r: dict) -> dict:
             out[k] = _int(v, k)
         elif k in CAT_BOOL:
             b = _bool(v)
-            out[k] = True if (k == "active" and b is None) else b
+            if k == "active" and b is None:
+                continue   # leave active as it is
+            out[k] = b
         elif k in CAT_ENUM:
             s = _txt(v)
             if s is not None:
@@ -192,14 +194,14 @@ async def upsert_catalog(rows: list) -> dict:
                 ([c["asin"] for c in clean], [c["product_id"] for c in clean]))
             existing = (await cur.fetchone())["n"]
             for cols, grp in groups.items():
+                # New pairs default to active (table default). An update leaves active alone unless it is sent, so a
+                # price refresh never revives a pair that was deactivated (Nov 9, 2026).
                 ins_cols = list(cols)
-                if "active" not in ins_cols:   # a pair the job sends again is active again
-                    ins_cols.append("active")
                 vals = ", ".join("%s::jsonb" if c == "extra" else "%s" for c in ins_cols)
                 upd = [f"{c}=EXCLUDED.{c}" for c in ins_cols if c not in ("asin", "product_id")]
                 sql = (f"INSERT INTO sephora_catalog ({', '.join(ins_cols)}) VALUES ({vals}) "
                        f"ON CONFLICT (asin, product_id) DO UPDATE SET {', '.join(upd + ['updated_at=now()'])}")
-                params = [[g[c] for c in cols] + ([True] if "active" not in cols else []) for g in grp]
+                params = [[g[c] for c in cols] for g in grp]
                 async with conn.cursor() as cur:
                     await cur.executemany(sql, params)
             await _audit(conn, ENGINE, "upsert", "sephora", None, None, None,

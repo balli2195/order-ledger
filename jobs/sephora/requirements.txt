@@ -1,0 +1,2 @@
+# jobs/sephora: Python 3.10+ standard library only, plus the curl binary (Sephora calls).
+# Nothing to pip install. This file is NOT used by the Render build (that is the repo-root requirements.txt).

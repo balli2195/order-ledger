@@ -1,0 +1,1626 @@
+{
+ "_doc": "Brand config. slug = file name. sephora_queries = keyword searches unioned on Sephora; sephora_names = accepted Sephora brandName values (case-insensitive); keepa_brands = Amazon brand-field variants for the Keepa product finder; strip = extra words removed from titles before matching. Weekly: brands here that are not yet in the Hub catalog get a full catalog build (add a brand by copying an entry). promo.savings_event_pct = Nick's discount during a site-wide Sephora Savings Event, as a fraction of the list price (Nov 2026: 25% per Nick); brand banners like '30% off ALL Sephora Collection' use the higher of the two.",
+ "promo": {
+  "savings_event_pct": 0.25,
+  "note": "Nick (Nov 2026): Sephora sale lead costs are 25% below the price shown on Sephora. event_exclude_brands: brands the Savings Event fine print excludes (the terms are in a modal the API doesn't return; fill in when known).",
+  "event_exclude_brands": []
+ },
+ "exclude_brands": [
+  "Aramore",
+  "BIOptimizers",
+  "Ciele",
+  "Dieux",
+  "Glo Skin",
+  "Kavu",
+  "Kosas",
+  "Mango People",
+  "Messy by Alli Webb",
+  "Najeau",
+  "PYUNKANG YUL",
+  "Soft Services",
+  "Tarte",
+  "Vacation",
+  "Verso"
+ ],
+ "brands": [
+  {
+   "name": "rhode",
+   "slug": "rhode",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "rhode",
+    "rhode skin"
+   ],
+   "sephora_names": [
+    "rhode"
+   ],
+   "keepa_brands": [
+    "rhode",
+    "Rhode Skin",
+    "rhode by Hailey Bieber"
+   ],
+   "strip": [
+    "hailey",
+    "bieber",
+    "by"
+   ]
+  },
+  {
+   "name": "Glow Recipe",
+   "slug": "glow_recipe",
+   "sephora_brand_pages": [
+    "glow-recipe"
+   ],
+   "sephora_queries": [
+    "glow recipe"
+   ],
+   "sephora_names": [
+    "Glow Recipe"
+   ],
+   "keepa_brands": [
+    "Glow Recipe"
+   ]
+  },
+  {
+   "name": "CHANEL",
+   "slug": "chanel",
+   "sephora_brand_pages": [
+    "chanel"
+   ],
+   "sephora_queries": [
+    "chanel",
+    "chanel makeup",
+    "chanel fragrance",
+    "chanel skincare",
+    "chanel beauty",
+    "chanel perfume",
+    "chanel lipstick",
+    "chanel foundation",
+    "chanel mascara",
+    "chanel nail"
+   ],
+   "sephora_names": [
+    "CHANEL"
+   ],
+   "keepa_brands": [
+    "CHANEL",
+    "Chanel Beauty",
+    "Chanel Parfums"
+   ]
+  },
+  {
+   "name": "Benefit Cosmetics",
+   "slug": "benefit_cosmetics",
+   "sephora_brand_pages": [
+    "benefit-cosmetics"
+   ],
+   "sephora_queries": [
+    "benefit cosmetics",
+    "benefit",
+    "benefit brow",
+    "benefit mascara",
+    "benefit blush",
+    "benefit porefessional"
+   ],
+   "sephora_names": [
+    "Benefit Cosmetics",
+    "Benefit"
+   ],
+   "keepa_brands": [
+    "Benefit Cosmetics",
+    "Benefit",
+    "benefit cosmetics"
+   ],
+   "strip": [
+    "benefit",
+    "cosmetics"
+   ]
+  },
+  {
+   "name": "Glossier",
+   "slug": "glossier",
+   "sephora_brand_pages": [
+    "glossier"
+   ],
+   "sephora_queries": [
+    "glossier"
+   ],
+   "sephora_names": [
+    "Glossier"
+   ],
+   "keepa_brands": [
+    "Glossier"
+   ]
+  },
+  {
+   "name": "KAYALI",
+   "slug": "kayali",
+   "sephora_brand_pages": [
+    "kayali"
+   ],
+   "sephora_queries": [
+    "kayali"
+   ],
+   "sephora_names": [
+    "KAYALI"
+   ],
+   "keepa_brands": [
+    "KAYALI",
+    "Kayali Fragrances"
+   ]
+  },
+  {
+   "name": "MERIT",
+   "slug": "merit",
+   "sephora_brand_pages": [
+    "merit"
+   ],
+   "sephora_queries": [
+    "merit",
+    "merit beauty"
+   ],
+   "sephora_names": [
+    "MERIT"
+   ],
+   "keepa_brands": [
+    "MERIT",
+    "Merit Beauty"
+   ]
+  },
+  {
+   "name": "MAC Cosmetics",
+   "slug": "mac_cosmetics",
+   "sephora_brand_pages": [
+    "mac-cosmetics"
+   ],
+   "sephora_queries": [
+    "mac cosmetics",
+    "mac",
+    "mac lipstick",
+    "mac foundation",
+    "mac eyeshadow",
+    "mac powder",
+    "mac lip"
+   ],
+   "sephora_names": [
+    "MAC Cosmetics",
+    "MAC"
+   ],
+   "keepa_brands": [
+    "MAC",
+    "M.A.C",
+    "MAC Cosmetics",
+    "M.A.C.",
+    "M·A·C"
+   ],
+   "strip": [
+    "mac",
+    "m.a.c",
+    "cosmetics"
+   ]
+  },
+  {
+   "name": "DIOR",
+   "slug": "dior",
+   "sephora_brand_pages": [
+    "dior"
+   ],
+   "sephora_queries": [
+    "dior",
+    "dior makeup",
+    "dior fragrance",
+    "dior skincare",
+    "dior perfume",
+    "dior lip",
+    "dior sauvage",
+    "miss dior",
+    "dior foundation"
+   ],
+   "sephora_names": [
+    "DIOR"
+   ],
+   "keepa_brands": [
+    "DIOR",
+    "Christian Dior",
+    "Dior Beauty",
+    "Dior Parfums"
+   ],
+   "strip": [
+    "christian"
+   ]
+  },
+  {
+   "name": "Crown Affair",
+   "slug": "crown_affair",
+   "sephora_brand_pages": [
+    "crown-affair"
+   ],
+   "sephora_queries": [
+    "crown affair"
+   ],
+   "sephora_names": [
+    "Crown Affair"
+   ],
+   "keepa_brands": [
+    "Crown Affair"
+   ]
+  },
+  {
+   "name": "BondiBoost",
+   "slug": "bondiboost",
+   "sephora_brand_pages": [
+    "bondi-boost"
+   ],
+   "sephora_queries": [
+    "bondiboost",
+    "bondi boost"
+   ],
+   "sephora_names": [
+    "BondiBoost"
+   ],
+   "keepa_brands": [
+    "BondiBoost",
+    "Bondi Boost"
+   ],
+   "strip": [
+    "bondi",
+    "boost"
+   ]
+  },
+  {
+   "name": "Ole Henriksen",
+   "slug": "ole_henriksen",
+   "sephora_brand_pages": [
+    "ole-henriksen"
+   ],
+   "sephora_queries": [
+    "ole henriksen",
+    "olehenriksen"
+   ],
+   "sephora_names": [
+    "OLEHENRIKSEN",
+    "Ole Henriksen"
+   ],
+   "keepa_brands": [
+    "OLEHENRIKSEN",
+    "Ole Henriksen",
+    "OLE HENRIKSEN"
+   ],
+   "strip": [
+    "ole",
+    "henriksen",
+    "olehenriksen"
+   ]
+  },
+  {
+   "name": "Rare Beauty",
+   "slug": "rare_beauty",
+   "sephora_brand_pages": [
+    "rare-beauty-by-selena-gomez"
+   ],
+   "sephora_queries": [
+    "rare beauty",
+    "rare beauty selena gomez"
+   ],
+   "sephora_names": [
+    "Rare Beauty by Selena Gomez",
+    "Rare Beauty"
+   ],
+   "keepa_brands": [
+    "Rare Beauty",
+    "Rare Beauty by Selena Gomez"
+   ],
+   "strip": [
+    "rare",
+    "selena",
+    "gomez"
+   ]
+  },
+  {
+   "name": "SEPHORA COLLECTION",
+   "slug": "sephora_collection",
+   "sephora_brand_pages": [
+    "sephora-collection"
+   ],
+   "sephora_queries": [
+    "sephora collection",
+    "sephora collection makeup",
+    "sephora collection skincare",
+    "sephora collection brush",
+    "sephora collection mask",
+    "sephora collection lip",
+    "sephora collection nail"
+   ],
+   "sephora_names": [
+    "SEPHORA COLLECTION"
+   ],
+   "keepa_brands": [
+    "SEPHORA COLLECTION",
+    "Sephora",
+    "Sephora Collection"
+   ],
+   "strip": [
+    "sephora",
+    "collection"
+   ]
+  },
+  {
+   "name": "HUDA BEAUTY",
+   "slug": "huda_beauty",
+   "sephora_brand_pages": [
+    "huda-beauty"
+   ],
+   "sephora_queries": [
+    "huda beauty",
+    "huda beauty lip",
+    "huda beauty eyeshadow",
+    "huda beauty foundation"
+   ],
+   "sephora_names": [
+    "HUDA BEAUTY"
+   ],
+   "keepa_brands": [
+    "HUDA BEAUTY",
+    "Huda Beauty",
+    "Huda",
+    "HUDABEAUTY"
+   ],
+   "strip": [
+    "huda"
+   ],
+   "keepa_title": "huda beauty"
+  },
+  {
+   "name": "Fenty Beauty by Rihanna",
+   "slug": "fenty_beauty",
+   "sephora_brand_pages": [
+    "fenty-beauty-rihanna"
+   ],
+   "sephora_queries": [
+    "fenty beauty",
+    "fenty skin",
+    "fenty",
+    "fenty beauty lip",
+    "fenty foundation"
+   ],
+   "sephora_names": [
+    "Fenty Beauty by Rihanna",
+    "Fenty Skin",
+    "Fenty Beauty",
+    "Fenty Hair"
+   ],
+   "keepa_brands": [
+    "FENTY BEAUTY BY RIHANNA",
+    "Fenty Beauty",
+    "Fenty Skin",
+    "FENTY BEAUTY",
+    "Fenty Hair"
+   ],
+   "strip": [
+    "fenty",
+    "rihanna"
+   ]
+  },
+  {
+   "name": "ONE/SIZE by Patrick Starrr",
+   "slug": "one_size",
+   "sephora_brand_pages": [
+    "one-size-by-patrick-starrr"
+   ],
+   "sephora_queries": [
+    "one/size",
+    "one size patrick starrr",
+    "onesize"
+   ],
+   "sephora_names": [
+    "ONE/SIZE by Patrick Starrr",
+    "ONE/SIZE"
+   ],
+   "keepa_brands": [
+    "ONE/SIZE",
+    "ONE/SIZE by Patrick Starrr",
+    "ONE SIZE",
+    "ONE/SIZE BEAUTY",
+    "ONESIZE"
+   ],
+   "strip": [
+    "one",
+    "size",
+    "patrick",
+    "starrr"
+   ]
+  },
+  {
+   "name": "Farmacy",
+   "slug": "farmacy",
+   "sephora_brand_pages": [
+    "farmacy"
+   ],
+   "sephora_queries": [
+    "farmacy"
+   ],
+   "sephora_names": [
+    "Farmacy"
+   ],
+   "keepa_brands": [
+    "Farmacy",
+    "Farmacy Beauty"
+   ]
+  },
+  {
+   "name": "Haus Labs",
+   "slug": "haus_labs",
+   "sephora_brand_pages": [
+    "haus-labs-by-lady-gaga"
+   ],
+   "sephora_queries": [
+    "haus labs",
+    "haus labs by lady gaga"
+   ],
+   "sephora_names": [
+    "HAUS LABS BY LADY GAGA",
+    "Haus Labs"
+   ],
+   "keepa_brands": [
+    "HAUS LABS BY LADY GAGA",
+    "Haus Labs",
+    "HAUS LABORATORIES"
+   ],
+   "strip": [
+    "haus",
+    "labs",
+    "lady",
+    "gaga"
+   ]
+  },
+  {
+   "name": "Gisou",
+   "slug": "gisou",
+   "sephora_brand_pages": [
+    "gisou"
+   ],
+   "sephora_queries": [
+    "gisou"
+   ],
+   "sephora_names": [
+    "Gisou"
+   ],
+   "keepa_brands": [
+    "Gisou"
+   ]
+  },
+  {
+   "name": "REFY",
+   "slug": "refy",
+   "sephora_brand_pages": [
+    "refy-beauty"
+   ],
+   "sephora_queries": [
+    "refy"
+   ],
+   "sephora_names": [
+    "REFY"
+   ],
+   "keepa_brands": [
+    "REFY",
+    "Refy Beauty"
+   ]
+  },
+  {
+   "name": "fresh",
+   "slug": "fresh",
+   "sephora_brand_pages": [
+    "fresh"
+   ],
+   "sephora_queries": [
+    "fresh skincare",
+    "fresh",
+    "fresh sugar lip",
+    "fresh soy cleanser",
+    "fresh rose",
+    "fresh black tea",
+    "fresh kombucha",
+    "fresh lotus",
+    "fresh umbrian clay"
+   ],
+   "sephora_names": [
+    "fresh"
+   ],
+   "keepa_brands": [
+    "Fresh",
+    "fresh"
+   ]
+  },
+  {
+   "name": "MAKEUP BY MARIO",
+   "slug": "makeup_by_mario",
+   "sephora_brand_pages": [
+    "makeup-by-mario"
+   ],
+   "sephora_queries": [
+    "makeup by mario"
+   ],
+   "sephora_names": [
+    "MAKEUP BY MARIO"
+   ],
+   "keepa_brands": [
+    "MAKEUP BY MARIO",
+    "Makeup By Mario"
+   ],
+   "strip": [
+    "mario"
+   ],
+   "keepa_title": "makeup by mario"
+  },
+  {
+   "name": "Skylar",
+   "slug": "skylar",
+   "sephora_brand_pages": [
+    "skylar"
+   ],
+   "sephora_queries": [
+    "skylar",
+    "skylar perfume"
+   ],
+   "sephora_names": [
+    "Skylar",
+    "SKYLAR"
+   ],
+   "keepa_brands": [
+    "Skylar",
+    "Skylar Body"
+   ]
+  },
+  {
+   "name": "Westman Atelier",
+   "slug": "westman_atelier",
+   "sephora_brand_pages": [
+    "westman-atelier"
+   ],
+   "sephora_queries": [
+    "westman atelier"
+   ],
+   "sephora_names": [
+    "Westman Atelier"
+   ],
+   "keepa_brands": [
+    "Westman Atelier",
+    "WESTMAN ATELIER"
+   ],
+   "strip": [
+    "westman",
+    "atelier"
+   ]
+  },
+  {
+   "name": "PATRICK TA",
+   "slug": "patrick_ta",
+   "sephora_brand_pages": [
+    "patrick-ta"
+   ],
+   "sephora_queries": [
+    "patrick ta"
+   ],
+   "sephora_names": [
+    "PATRICK TA"
+   ],
+   "keepa_brands": [
+    "PATRICK TA",
+    "Patrick Ta Beauty"
+   ],
+   "strip": [
+    "patrick",
+    "ta"
+   ]
+  },
+  {
+   "name": "NATASHA DENONA",
+   "slug": "natasha_denona",
+   "sephora_brand_pages": [
+    "natasha-denona"
+   ],
+   "sephora_queries": [
+    "natasha denona"
+   ],
+   "sephora_names": [
+    "NATASHA DENONA"
+   ],
+   "keepa_brands": [
+    "NATASHA DENONA",
+    "Natasha Denona Makeup"
+   ],
+   "strip": [
+    "natasha",
+    "denona"
+   ]
+  },
+  {
+   "name": "Danessa Myricks Beauty",
+   "slug": "danessa_myricks",
+   "sephora_brand_pages": [
+    "danessa-myricks-beauty"
+   ],
+   "sephora_queries": [
+    "danessa myricks",
+    "danessa myricks beauty"
+   ],
+   "sephora_names": [
+    "Danessa Myricks Beauty",
+    "Danessa Myricks"
+   ],
+   "keepa_brands": [
+    "Danessa Myricks Beauty",
+    "Danessa Myricks",
+    "DANESSA MYRICKS BEAUTY"
+   ],
+   "strip": [
+    "danessa",
+    "myricks"
+   ]
+  },
+  {
+   "name": "Charlotte Tilbury",
+   "slug": "charlotte_tilbury",
+   "sephora_brand_pages": [
+    "charlotte-tilbury"
+   ],
+   "sephora_queries": [
+    "charlotte tilbury"
+   ],
+   "sephora_names": [
+    "Charlotte Tilbury"
+   ],
+   "keepa_brands": [
+    "Charlotte Tilbury",
+    "CHARLOTTE TILBURY"
+   ],
+   "lead_brands": [
+    "CHARLOTTE TILBURY"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "INNBEAUTY PROJECT",
+   "slug": "innbeauty_project",
+   "sephora_brand_pages": [
+    "innbeauty-project"
+   ],
+   "sephora_queries": [
+    "innbeauty project"
+   ],
+   "sephora_names": [
+    "INNBEAUTY PROJECT"
+   ],
+   "keepa_brands": [
+    "INNBEAUTY PROJECT",
+    "iNNBEAUTY"
+   ],
+   "lead_brands": [
+    "iNNBEAUTY"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "U Beauty",
+   "slug": "u_beauty",
+   "sephora_brand_pages": [
+    "u-beauty"
+   ],
+   "sephora_queries": [
+    "u beauty"
+   ],
+   "sephora_names": [
+    "U Beauty"
+   ],
+   "keepa_brands": [
+    "U Beauty"
+   ],
+   "lead_brands": [
+    "U Beauty"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Sarah Creal",
+   "slug": "sarah_creal",
+   "sephora_brand_pages": [
+    "sarah-creal"
+   ],
+   "sephora_queries": [
+    "sarah creal"
+   ],
+   "sephora_names": [
+    "Sarah Creal"
+   ],
+   "keepa_brands": [
+    "Sarah Creal"
+   ],
+   "lead_brands": [
+    "Sarah Creal"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Henry Rose",
+   "slug": "henry_rose",
+   "sephora_brand_pages": [
+    "henry-rose"
+   ],
+   "sephora_queries": [
+    "henry rose"
+   ],
+   "sephora_names": [
+    "Henry Rose"
+   ],
+   "keepa_brands": [
+    "Henry Rose"
+   ],
+   "lead_brands": [
+    "Henry Rose"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "NEST New York",
+   "slug": "nest_new_york",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "nest new york"
+   ],
+   "sephora_names": [
+    "NEST New York"
+   ],
+   "keepa_brands": [
+    "NEST New York",
+    "Nest"
+   ],
+   "lead_brands": [
+    "Nest"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Act+Acre",
+   "slug": "act_acre",
+   "sephora_brand_pages": [
+    "act-acre"
+   ],
+   "sephora_queries": [
+    "act+acre"
+   ],
+   "sephora_names": [
+    "Act+Acre"
+   ],
+   "keepa_brands": [
+    "Act+Acre",
+    "ACT+ ACRE"
+   ],
+   "lead_brands": [
+    "ACT+ ACRE"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "PATTERN by Tracee Ellis Ross",
+   "slug": "pattern_by_tracee_ellis_ross",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "pattern by tracee ellis ross"
+   ],
+   "sephora_names": [
+    "PATTERN by Tracee Ellis Ross"
+   ],
+   "keepa_brands": [
+    "PATTERN by Tracee Ellis Ross"
+   ],
+   "lead_brands": [
+    "PATTERN by Tracee Ellis Ross"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "LAWLESS",
+   "slug": "lawless",
+   "sephora_brand_pages": [
+    "lawless"
+   ],
+   "sephora_queries": [
+    "lawless"
+   ],
+   "sephora_names": [
+    "LAWLESS"
+   ],
+   "keepa_brands": [
+    "LAWLESS",
+    "Lawless"
+   ],
+   "lead_brands": [
+    "Lawless"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "LYS Beauty",
+   "slug": "lys_beauty",
+   "sephora_brand_pages": [
+    "lys-beauty"
+   ],
+   "sephora_queries": [
+    "lys beauty"
+   ],
+   "sephora_names": [
+    "LYS Beauty"
+   ],
+   "keepa_brands": [
+    "LYS Beauty",
+    "Lys Beauty"
+   ],
+   "lead_brands": [
+    "Lys Beauty"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Dr. Dennis Gross Skincare",
+   "slug": "dr_dennis_gross_skincare",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "dr. dennis gross skincare"
+   ],
+   "sephora_names": [
+    "Dr. Dennis Gross Skincare"
+   ],
+   "keepa_brands": [
+    "Dr. Dennis Gross Skincare",
+    "Dr. Denese"
+   ],
+   "lead_brands": [
+    "Dr. Denese"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "JVN",
+   "slug": "jvn",
+   "sephora_brand_pages": [
+    "jvn"
+   ],
+   "sephora_queries": [
+    "jvn"
+   ],
+   "sephora_names": [
+    "JVN"
+   ],
+   "keepa_brands": [
+    "JVN"
+   ],
+   "lead_brands": [
+    "JVN"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Laura Mercier",
+   "slug": "laura_mercier",
+   "sephora_brand_pages": [
+    "laura-mercier"
+   ],
+   "sephora_queries": [
+    "laura mercier"
+   ],
+   "sephora_names": [
+    "Laura Mercier"
+   ],
+   "keepa_brands": [
+    "Laura Mercier",
+    "Laura Mecier"
+   ],
+   "lead_brands": [
+    "Laura Mecier"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Briogeo",
+   "slug": "briogeo",
+   "sephora_brand_pages": [
+    "briogeo"
+   ],
+   "sephora_queries": [
+    "briogeo"
+   ],
+   "sephora_names": [
+    "Briogeo"
+   ],
+   "keepa_brands": [
+    "Briogeo"
+   ],
+   "lead_brands": [
+    "Briogeo"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "MAKE UP FOR EVER",
+   "slug": "make_up_for_ever",
+   "sephora_brand_pages": [
+    "make-up-for-ever"
+   ],
+   "sephora_queries": [
+    "make up for ever"
+   ],
+   "sephora_names": [
+    "MAKE UP FOR EVER"
+   ],
+   "keepa_brands": [
+    "MAKE UP FOR EVER"
+   ],
+   "lead_brands": [
+    "MAKE UP FOR EVER"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "By Rosie Jane",
+   "slug": "by_rosie_jane",
+   "sephora_brand_pages": [
+    "by-rosie-jane"
+   ],
+   "sephora_queries": [
+    "by rosie jane"
+   ],
+   "sephora_names": [
+    "By Rosie Jane"
+   ],
+   "keepa_brands": [
+    "By Rosie Jane"
+   ],
+   "lead_brands": [
+    "By Rosie Jane"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Dr. Idriss",
+   "slug": "dr_idriss",
+   "sephora_brand_pages": [
+    "dr-idriss"
+   ],
+   "sephora_queries": [
+    "dr. idriss"
+   ],
+   "sephora_names": [
+    "Dr. Idriss"
+   ],
+   "keepa_brands": [
+    "Dr. Idriss"
+   ],
+   "lead_brands": [
+    "Dr. Idriss"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Glamnetic",
+   "slug": "glamnetic",
+   "sephora_brand_pages": [
+    "glamnetic"
+   ],
+   "sephora_queries": [
+    "glamnetic"
+   ],
+   "sephora_names": [
+    "Glamnetic"
+   ],
+   "keepa_brands": [
+    "Glamnetic"
+   ],
+   "lead_brands": [
+    "Glamnetic"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Peter Thomas Roth",
+   "slug": "peter_thomas_roth",
+   "sephora_brand_pages": [
+    "peter-thomas-roth"
+   ],
+   "sephora_queries": [
+    "peter thomas roth"
+   ],
+   "sephora_names": [
+    "Peter Thomas Roth"
+   ],
+   "keepa_brands": [
+    "Peter Thomas Roth"
+   ],
+   "lead_brands": [
+    "Peter Thomas Roth"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Curlsmith",
+   "slug": "curlsmith",
+   "sephora_brand_pages": [
+    "curlsmith"
+   ],
+   "sephora_queries": [
+    "curlsmith"
+   ],
+   "sephora_names": [
+    "Curlsmith"
+   ],
+   "keepa_brands": [
+    "Curlsmith"
+   ],
+   "lead_brands": [
+    "Curlsmith"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "DedCool",
+   "slug": "dedcool",
+   "sephora_brand_pages": [
+    "dedcool"
+   ],
+   "sephora_queries": [
+    "dedcool"
+   ],
+   "sephora_names": [
+    "DedCool"
+   ],
+   "keepa_brands": [
+    "DedCool"
+   ],
+   "lead_brands": [
+    "DedCool"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Iris&Romeo",
+   "slug": "iris_romeo",
+   "sephora_brand_pages": [
+    "iris-romeo"
+   ],
+   "sephora_queries": [
+    "iris&romeo"
+   ],
+   "sephora_names": [
+    "Iris&Romeo"
+   ],
+   "keepa_brands": [
+    "Iris&Romeo"
+   ],
+   "lead_brands": [
+    "Iris&Romeo"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Maison Margiela",
+   "slug": "maison_margiela",
+   "sephora_brand_pages": [
+    "maison-margiela"
+   ],
+   "sephora_queries": [
+    "maison margiela"
+   ],
+   "sephora_names": [
+    "Maison Margiela"
+   ],
+   "keepa_brands": [
+    "Maison Margiela"
+   ],
+   "lead_brands": [
+    "Maison Margiela"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "The 7 Virtues",
+   "slug": "the_7_virtues",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "the 7 virtues"
+   ],
+   "sephora_names": [
+    "The 7 Virtues"
+   ],
+   "keepa_brands": [
+    "The 7 Virtues"
+   ],
+   "lead_brands": [
+    "The 7 Virtues"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Lilly Lashes",
+   "slug": "lilly_lashes",
+   "sephora_brand_pages": [
+    "lilly-lashes"
+   ],
+   "sephora_queries": [
+    "lilly lashes"
+   ],
+   "sephora_names": [
+    "Lilly Lashes"
+   ],
+   "keepa_brands": [
+    "Lilly Lashes"
+   ],
+   "lead_brands": [
+    "Lilly Lashes",
+    "House of Lashes"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "MILK MAKEUP",
+   "slug": "milk_makeup",
+   "sephora_brand_pages": [
+    "milk-makeup"
+   ],
+   "sephora_queries": [
+    "milk makeup"
+   ],
+   "sephora_names": [
+    "MILK MAKEUP"
+   ],
+   "keepa_brands": [
+    "MILK MAKEUP",
+    "Milk Makeup"
+   ],
+   "lead_brands": [
+    "Milk Makeup"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "BROWN GIRL Jane",
+   "slug": "brown_girl_jane",
+   "sephora_brand_pages": [
+    "brown-girl-jane"
+   ],
+   "sephora_queries": [
+    "brown girl jane"
+   ],
+   "sephora_names": [
+    "BROWN GIRL Jane"
+   ],
+   "keepa_brands": [
+    "BROWN GIRL Jane",
+    "Brown Girl Jane"
+   ],
+   "lead_brands": [
+    "Brown Girl Jane"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Givenchy",
+   "slug": "givenchy",
+   "sephora_brand_pages": [
+    "givenchy"
+   ],
+   "sephora_queries": [
+    "givenchy"
+   ],
+   "sephora_names": [
+    "Givenchy"
+   ],
+   "keepa_brands": [
+    "Givenchy"
+   ],
+   "lead_brands": [
+    "Givenchy"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Velour Lashes",
+   "slug": "velour_lashes",
+   "sephora_brand_pages": [
+    "velour-lashes"
+   ],
+   "sephora_queries": [
+    "velour lashes"
+   ],
+   "sephora_names": [
+    "Velour Lashes"
+   ],
+   "keepa_brands": [
+    "Velour Lashes",
+    "Velour"
+   ],
+   "lead_brands": [
+    "Velour"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "ALPYN",
+   "slug": "alpyn",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "alpyn"
+   ],
+   "sephora_names": [
+    "ALPYN"
+   ],
+   "keepa_brands": [
+    "ALPYN",
+    "Alpyn"
+   ],
+   "lead_brands": [
+    "Alpyn"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Shani Darden Skin Care",
+   "slug": "shani_darden_skin_care",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "shani darden skin care"
+   ],
+   "sephora_names": [
+    "Shani Darden Skin Care"
+   ],
+   "keepa_brands": [
+    "Shani Darden Skin Care",
+    "SHANI DARDEN"
+   ],
+   "lead_brands": [
+    "SHANI DARDEN"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Fable & Mane",
+   "slug": "fable_mane",
+   "sephora_brand_pages": [
+    "fable-mane"
+   ],
+   "sephora_queries": [
+    "fable & mane"
+   ],
+   "sephora_names": [
+    "Fable & Mane"
+   ],
+   "keepa_brands": [
+    "Fable & Mane"
+   ],
+   "lead_brands": [
+    "Fable & Mane"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "JOSIE MARAN",
+   "slug": "josie_maran",
+   "sephora_brand_pages": [
+    "josie-maran"
+   ],
+   "sephora_queries": [
+    "josie maran"
+   ],
+   "sephora_names": [
+    "JOSIE MARAN"
+   ],
+   "keepa_brands": [
+    "JOSIE MARAN",
+    "Josie Maran"
+   ],
+   "lead_brands": [
+    "Josie Maran"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Peace Out",
+   "slug": "peace_out",
+   "sephora_brand_pages": [
+    "peace-out"
+   ],
+   "sephora_queries": [
+    "peace out"
+   ],
+   "sephora_names": [
+    "Peace Out"
+   ],
+   "keepa_brands": [
+    "Peace Out",
+    "PEACE OUT"
+   ],
+   "lead_brands": [
+    "PEACE OUT"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "NARS",
+   "slug": "nars",
+   "sephora_brand_pages": [
+    "nars"
+   ],
+   "sephora_queries": [
+    "nars"
+   ],
+   "sephora_names": [
+    "NARS"
+   ],
+   "keepa_brands": [
+    "NARS"
+   ],
+   "lead_brands": [
+    "NARS"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Nécessaire",
+   "slug": "n_cessaire",
+   "sephora_brand_pages": [],
+   "sephora_queries": [
+    "nécessaire"
+   ],
+   "sephora_names": [
+    "Nécessaire"
+   ],
+   "keepa_brands": [
+    "Nécessaire"
+   ],
+   "lead_brands": [
+    "Nécessaire"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "ILIA",
+   "slug": "ilia",
+   "sephora_brand_pages": [
+    "ilia"
+   ],
+   "sephora_queries": [
+    "ilia"
+   ],
+   "sephora_names": [
+    "ILIA"
+   ],
+   "keepa_brands": [
+    "ILIA"
+   ],
+   "lead_brands": [
+    "ILIA"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "The INKEY List",
+   "slug": "the_inkey_list",
+   "sephora_brand_pages": [
+    "the-inkey-list"
+   ],
+   "sephora_queries": [
+    "the inkey list"
+   ],
+   "sephora_names": [
+    "The INKEY List"
+   ],
+   "keepa_brands": [
+    "The INKEY List"
+   ],
+   "lead_brands": [
+    "The INKEY List"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Skinfix",
+   "slug": "skinfix",
+   "sephora_brand_pages": [
+    "skinfix"
+   ],
+   "sephora_queries": [
+    "skinfix"
+   ],
+   "sephora_names": [
+    "Skinfix"
+   ],
+   "keepa_brands": [
+    "Skinfix"
+   ],
+   "lead_brands": [
+    "Skinfix"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Maison Louis Marie",
+   "slug": "maison_louis_marie",
+   "sephora_brand_pages": [
+    "maison-louis-marie"
+   ],
+   "sephora_queries": [
+    "maison louis marie"
+   ],
+   "sephora_names": [
+    "Maison Louis Marie"
+   ],
+   "keepa_brands": [
+    "Maison Louis Marie"
+   ],
+   "lead_brands": [
+    "Maison Louis Marie"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Valentino",
+   "slug": "valentino",
+   "sephora_brand_pages": [
+    "valentino"
+   ],
+   "sephora_queries": [
+    "valentino"
+   ],
+   "sephora_names": [
+    "Valentino"
+   ],
+   "keepa_brands": [
+    "Valentino"
+   ],
+   "lead_brands": [
+    "Valentino"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Bobbi Brown",
+   "slug": "bobbi_brown",
+   "sephora_brand_pages": [
+    "bobbi-brown"
+   ],
+   "sephora_queries": [
+    "bobbi brown"
+   ],
+   "sephora_names": [
+    "Bobbi Brown"
+   ],
+   "keepa_brands": [
+    "Bobbi Brown"
+   ],
+   "lead_brands": [
+    "Bobbi Brown"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Melt Cosmetics",
+   "slug": "melt_cosmetics",
+   "sephora_brand_pages": [
+    "melt-cosmetics"
+   ],
+   "sephora_queries": [
+    "melt cosmetics"
+   ],
+   "sephora_names": [
+    "Melt Cosmetics"
+   ],
+   "keepa_brands": [
+    "Melt Cosmetics"
+   ],
+   "lead_brands": [
+    "Melt Cosmetics"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Kaja",
+   "slug": "kaja",
+   "sephora_brand_pages": [
+    "kaja"
+   ],
+   "sephora_queries": [
+    "kaja"
+   ],
+   "sephora_names": [
+    "Kaja"
+   ],
+   "keepa_brands": [
+    "Kaja"
+   ],
+   "lead_brands": [
+    "Kaja"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Luna Daily",
+   "slug": "luna_daily",
+   "sephora_brand_pages": [
+    "luna-daily"
+   ],
+   "sephora_queries": [
+    "luna daily"
+   ],
+   "sephora_names": [
+    "Luna Daily"
+   ],
+   "keepa_brands": [
+    "Luna Daily"
+   ],
+   "lead_brands": [
+    "Luna Daily"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "caliray",
+   "slug": "caliray",
+   "sephora_brand_pages": [
+    "caliray"
+   ],
+   "sephora_queries": [
+    "caliray"
+   ],
+   "sephora_names": [
+    "caliray"
+   ],
+   "keepa_brands": [
+    "caliray"
+   ],
+   "lead_brands": [
+    "caliray"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "Dolce Glow",
+   "slug": "dolce_glow",
+   "sephora_brand_pages": [
+    "dolce-glow"
+   ],
+   "sephora_queries": [
+    "dolce glow"
+   ],
+   "sephora_names": [
+    "Dolce Glow"
+   ],
+   "keepa_brands": [
+    "Dolce Glow",
+    "DOLCE GLOW"
+   ],
+   "lead_brands": [
+    "DOLCE GLOW"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  },
+  {
+   "name": "NIOD",
+   "slug": "niod",
+   "sephora_brand_pages": [
+    "niod"
+   ],
+   "sephora_queries": [
+    "niod"
+   ],
+   "sephora_names": [
+    "NIOD"
+   ],
+   "keepa_brands": [
+    "NIOD",
+    "Niod"
+   ],
+   "lead_brands": [
+    "Niod"
+   ],
+   "added": "2026-11-09 from Nick's Sephora leads"
+  }
+ ]
+}
