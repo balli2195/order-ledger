@@ -307,6 +307,7 @@ async def engine_profit_ledger(request: Request, body: dict = Body(default={})):
         try:
             async with profit._lock:
                 _profit_run["ledger_result"] = await profit.ledger_sync(start)
+                _profit_run["ledger_result"]["disposals"] = await profit.disposal_sync()
         except Exception as e:
             _profit_run["ledger_result"] = {"error": str(e)[:300]}
     _profit_run["ledger"] = asyncio.create_task(run())

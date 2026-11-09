@@ -21,7 +21,8 @@ Product cost
 - Inventory written off (Nick, Nov 8 2026): units Amazon lost or damaged in its warehouses, from the inventory ledger
   (GET_LEDGER_DETAIL_VIEW_DATA, Adjustments), at the same unit cost, on the ledger date. Lost = reason M on sellable
   stock, less units found again (F); damaged = units moved into the WAREHOUSE_DAMAGED disposition (P); plus
-  unrecoverable (5). Missing inbound is NOT written off (Nick isn't sure those units were really missing). The
+  unrecoverable (5); plus units Amazon destroyed (disposal orders, e.g. recalls), from the removal order report,
+  on the order's last update. Missing inbound is NOT written off (Nick isn't sure those units were really missing). The
   reimbursements for these units are income on the day Amazon pays them, so a loss and its reimbursement can fall
   in different months.
 """
@@ -80,7 +81,8 @@ GROUPS = [
     ("income", "Amazon FBA Inventory Reimbursement", ["Inventory reimbursements"]),
     ("income", "Other Amazon adjustments", ["Other adjustments"]),
     ("cogs", "Product cost", ["COGS"]),
-    ("cogs", "Inventory written off", ["Lost in warehouse (net of found)", "Damaged in warehouse", "Unrecoverable", "Missing inbound"]),
+    ("cogs", "Inventory written off", ["Lost in warehouse (net of found)", "Damaged in warehouse", "Unrecoverable", "Destroyed by Amazon",
+                                      "Missing inbound"]),
     ("cogs", "Amazon Inbound Shipping", ["Inbound shipping"]),
     ("cogs", "Prep", ["Prep center bills"]),
     ("expense", "Amazon Seller Fees & Charges", ["Referral fees", "Refund administration fee"]),
@@ -314,7 +316,7 @@ def _due(stamp, hours: float) -> bool:
 
 
 WO_KIND = {"lost": "Lost in warehouse (net of found)", "damaged": "Damaged in warehouse", "unrecoverable": "Unrecoverable",
-           "inbound": "Missing inbound"}
+           "disposed": "Destroyed by Amazon", "inbound": "Missing inbound"}
 
 
 async def missing_inbound(a: date, b: date) -> list[tuple]:
@@ -384,6 +386,49 @@ def _adj_row(row: dict) -> dict | None:
     return {"day": day, "sku": (row.get("MSKU") or "").strip(), "kind": kind, "units": units, "key": key}
 
 
+def _disposal_row(row: dict) -> dict | None:
+    """Removal order detail rows that are disposals (Amazon destroyed the units: recalls, stranded or seller-requested
+    disposal). Dated the order's last update, when the disposed count was last added to."""
+    if (row.get("order-type") or "").strip() != "Disposal":
+        return None
+    try:
+        q = int(row.get("disposed-quantity") or 0)
+        day = date.fromisoformat((row.get("last-updated-date") or "")[:10])
+    except ValueError:
+        return None
+    sku = (row.get("sku") or "").strip()
+    if q <= 0 or not sku:
+        return None
+    return {"day": day, "sku": sku, "units": q, "order": (row.get("order-id") or "").strip()}
+
+
+async def disposal_sync() -> dict:
+    """Units Amazon destroyed (Nick, Nov 8 2026), from GET_FBA_FULFILLMENT_REMOVAL_ORDER_DETAIL_DATA: every disposal
+    order requested since 90 days before profit_start, replacing all 'disposed' write-off rows. Removals shipped to
+    Nick (114 Lakeside Dr) are not written off here."""
+    from . import inbound
+    start = date.fromisoformat(await _setting("profit_start", "2026-01-01")) - timedelta(days=90)
+    async with httpx.AsyncClient(timeout=120) as c:
+        rows = await inbound._report(c, "GET_FBA_FULFILLMENT_REMOVAL_ORDER_DETAIL_DATA",
+                                     datetime(start.year, start.month, start.day, tzinfo=timezone.utc), keep=_disposal_row)
+    agg: dict = {}
+    seen: set = set()
+    for r in rows:
+        k = (r["order"], r["sku"])
+        if k in seen:
+            continue
+        seen.add(k)
+        agg[(r["day"], r["sku"])] = agg.get((r["day"], r["sku"]), 0) + r["units"]
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM inv_writeoff WHERE kind = 'disposed'")
+            async with conn.cursor() as cur:
+                await cur.executemany("INSERT INTO inv_writeoff (day, sku, kind, units) VALUES (%s,%s,'disposed',%s)",
+                                      [(d, sku, v) for (d, sku), v in agg.items()])
+    status["disposals"] = {"rows": len(agg), "units": sum(agg.values()), "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    return status["disposals"]
+
+
 async def ledger_sync(start: date) -> dict:
     """Write-off units from the inventory ledger, start..yesterday (reuses ledger reports the Reimbursements sync made)."""
     from . import inbound
@@ -401,7 +446,7 @@ async def ledger_sync(start: date) -> dict:
     last = max((k[0] for k in agg), default=None)
     async with db.pool.connection() as conn:
         async with conn.transaction():
-            await conn.execute("DELETE FROM inv_writeoff WHERE day >= %s AND day <= %s", (start, last or start))
+            await conn.execute("DELETE FROM inv_writeoff WHERE day >= %s AND day <= %s AND kind <> 'disposed'", (start, last or start))
             async with conn.cursor() as cur:
                 await cur.executemany("INSERT INTO inv_writeoff (day, sku, kind, units) VALUES (%s,%s,%s,%s)",
                                       [(k[0], k[1], k[2], v) for k, v in agg.items() if v])
@@ -430,6 +475,10 @@ async def step() -> str:
                 await _set("profit_ledger_backfill", True)
         except Exception as e:   # the ledger report quota is small; try again next day
             status["ledger_error"] = str(e)[:300]
+        try:
+            await disposal_sync()
+        except Exception as e:
+            status["disposal_error"] = str(e)[:300]
         await _set("profit_daily_at", datetime.now(timezone.utc).isoformat())
         return "daily"
     miss = await missing_days(7)
