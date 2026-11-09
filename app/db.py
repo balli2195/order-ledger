@@ -729,6 +729,85 @@ MIGRATIONS: list[str] = [
     CREATE TABLE IF NOT EXISTS inv_ledger (day date NOT NULL, sku text NOT NULL, event text NOT NULL, reason text NOT NULL,
         disp text NOT NULL, qty int NOT NULL, ref text NOT NULL DEFAULT '');
     CREATE INDEX IF NOT EXISTS inv_ledger_day ON inv_ledger (day);
+    """,    # 53: Sephora leads tab (Nov 2026; app/sephora.py): the Amazon ASIN <-> Sephora product catalog, the daily review
+            #     queue of buy candidates the scheduled job finds, and a log of the job's runs (with the sale-watch result).
+            #     match_ok / size_confirmed are Nick's answers and are never overwritten by the job.
+    """
+    CREATE TABLE IF NOT EXISTS sephora_catalog (
+        asin           text NOT NULL,
+        product_id     text NOT NULL,
+        sku_id         text,
+        brand          text,
+        sephora_name   text,
+        sephora_url    text,
+        price_lo       numeric(12,2),
+        price_hi       numeric(12,2),
+        sale_price     numeric(12,2),
+        on_sale        boolean DEFAULT false,
+        needs_size     boolean DEFAULT false,
+        size_guess     text,
+        size_confirmed text CHECK (size_confirmed IN ('lo', 'hi')),
+        confidence     text,
+        match_reason   text,
+        sellable       text,
+        shade          text,
+        amazon_title   text,
+        buybox         numeric(12,2),
+        fba_low        numeric(12,2),
+        bb_avg90       numeric(12,2),
+        referral_pct   numeric,
+        fba_fee        numeric(12,2),
+        monthly_sold   integer,
+        offers_fba     integer,
+        amazon_on      boolean,
+        roi_now        numeric,
+        roi_avg90      numeric,
+        watch_price    numeric(12,2),
+        match_ok       boolean,
+        marked_by      text,
+        marked_at      timestamptz,
+        active         boolean NOT NULL DEFAULT true,
+        extra          jsonb NOT NULL DEFAULT '{}',
+        created_at     timestamptz NOT NULL DEFAULT now(),
+        updated_at     timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (asin, product_id)
+    );
+    CREATE INDEX IF NOT EXISTS sephora_catalog_brand_idx ON sephora_catalog (lower(brand));
+    CREATE INDEX IF NOT EXISTS sephora_catalog_pid_idx ON sephora_catalog (product_id);
+    CREATE TABLE IF NOT EXISTS sephora_candidates (
+        id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        asin                text NOT NULL,
+        product_id          text NOT NULL,
+        found_on            date NOT NULL,
+        reason              text NOT NULL,
+        cost                numeric(12,2),
+        price_basis         text,
+        buybox              numeric(12,2),
+        roi_now             numeric,
+        lead_score_band     integer,
+        lead_score_pred_roi numeric,
+        lead_score_notes    text,
+        note                text,
+        status              text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'approved', 'rejected', 'expired')),
+        reject_reason       text,
+        decided_by          text,
+        decided_at          timestamptz,
+        lead_id             uuid REFERENCES leads(id) ON DELETE SET NULL,
+        created_at          timestamptz NOT NULL DEFAULT now(),
+        updated_at          timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (asin, found_on)
+    );
+    CREATE INDEX IF NOT EXISTS sephora_candidates_status_idx ON sephora_candidates (status, found_on DESC);
+    CREATE INDEX IF NOT EXISTS sephora_candidates_key_idx ON sephora_candidates (asin, product_id);
+    CREATE TABLE IF NOT EXISTS sephora_runs (
+        id           bigserial PRIMARY KEY,
+        kind         text NOT NULL,
+        at           timestamptz NOT NULL DEFAULT now(),
+        counts       jsonb NOT NULL DEFAULT '{}',
+        sale_checked boolean NOT NULL DEFAULT false,
+        sale         jsonb
+    );
+    CREATE INDEX IF NOT EXISTS sephora_runs_kind_idx ON sephora_runs (kind, at DESC);
     """,
 ]
 

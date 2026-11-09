@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sephora leads · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .sl-title { margin: 22px 0 2px; font-size: 18px; font-weight: 600; }
+  .sl-sub { margin: 0; color: var(--muted); font-size: 13px; }
+  .sl-sale { margin-top: 12px; padding: 10px 14px; border-radius: 9px; font-size: 13.5px;
+    border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--line)); background: color-mix(in srgb, var(--ok) 10%, var(--panel)); }
+  .sl-sale b.code { font-family: var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; }
+  .sl-stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .sl-stats .stat { min-width: 120px; }
+  .sl-day { margin: 22px 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .sl-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; transition: opacity .3s; }
+  .sl-card.busy { opacity: .5; pointer-events: none; }
+  .sl-brand { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); }
+  .sl-name { font-weight: 600; }
+  .sl-shade { color: var(--muted); }
+  .sl-amz { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .sl-figs { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; font-size: 13px; }
+  .sl-figs .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; display: block; }
+  .sl-figs .v { font-variant-numeric: tabular-nums; font-weight: 500; }
+  .sl-figs .v.big { font-size: 16px; font-weight: 600; }
+  .sl-figs .v.good { color: var(--ok); } .sl-figs .v.badv { color: var(--bad); }
+  .sl-strike { text-decoration: line-through; color: var(--muted); font-weight: 400; margin-right: 4px; }
+  .sl-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .sl-tag { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 99px; background: var(--line-2); color: var(--ink); white-space: nowrap; }
+  .sl-tag.warn { background: var(--warn-soft); color: var(--bad); font-weight: 600; }
+  .sl-tag.good { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); font-weight: 600; }
+  .sl-tag.reason { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .sl-links { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; margin-top: 8px; }
+  .sl-note { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .sl-acts { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 150px; }
+  .sl-acts .btn { white-space: nowrap; }
+  .sl-size { display: flex; gap: 4px; }
+  .sl-size .btn { flex: 1; padding: 4px 6px; font-size: 12.5px; }
+  .sl-size .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .sl-rej { display: flex; gap: 4px; }
+  .sl-rej input { min-width: 0; padding: 4px 7px; font-size: 13px; }
+  .sl-done { grid-column: 1 / -1; font-size: 13px; }
+  .sl-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .sl-seg button { border: 0; background: transparent; padding: 6px 14px; font-size: 13.5px; cursor: pointer; color: var(--ink); }
+  .sl-seg button.on { background: var(--accent); color: var(--accent-ink); }
+  .sl-filters select { width: auto; padding: 5px 7px; }
+  .sl-brands { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; }
+  .sl-brands button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 1px 9px; font-size: 12px; cursor: pointer; color: var(--ink); }
+  .sl-brands button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .sl-brands button .n { color: var(--muted); margin-left: 3px; font-variant-numeric: tabular-nums; }
+  #catTable td { vertical-align: top; font-size: 13px; }
+  #catTable tbody tr { cursor: default; }
+  #catTable .prod { min-width: 220px; max-width: 320px; white-space: normal; }
+  #catTable .mk { white-space: nowrap; }
+  #catTable .mk .btn { padding: 2px 7px; font-size: 12px; }
+  #catTable .mk .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .sl-more { margin: 12px 0; text-align: center; }
+  @media (max-width: 760px) {
+    .sl-card { grid-template-columns: 1fr; }
+    .sl-acts { flex-direction: row; flex-wrap: wrap; min-width: 0; }
+    .sl-acts > * { flex: 1 1 140px; }
+    .sl-stats .stat { min-width: 0; flex: 1 1 40%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/relist" data-tab="relist">Sephora relist</a><a href="/sephora-leads" data-tab="sephora_leads" class="on">Sephora leads</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+
+  <h2 class="sl-title">Sephora leads <span class="live-dot" id="live" title="Live updates"></span></h2>
+  <p class="sl-sub" id="runs">Loading…</p>
+  <div id="sale" class="sl-sale hidden"></div>
+  <div class="sl-stats" id="stats"></div>
+
+  <div class="toolbar">
+    <div class="sl-seg" id="viewSeg"><button data-v="queue" class="on">To review</button><button data-v="decided">Decided</button><button data-v="catalog">Catalog</button></div>
+    <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search brand, product, shade or ASIN…" autocomplete="off"></div>
+    <span class="muted" id="count" style="font-size:13px"></span>
+  </div>
+
+  <section id="queueView">
+    <div id="queue"></div>
+    <div id="queueEmpty" class="empty hidden">Nothing to review right now.</div>
+  </section>
+
+  <section id="catalogView" hidden>
+    <div class="toolbar sl-filters" style="margin-top:0">
+      <select id="fConf"><option value="">Any confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+      <select id="fSell"><option value="">Any sellable status</option><option value="open">Open</option><option value="approval_required">Approval required</option><option value="restricted">Restricted</option></select>
+      <select id="fSize"><option value="">Any size</option><option value="open">Needs size, not set</option><option value="1">Needs size</option></select>
+      <select id="fMatch"><option value="">Any match</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match</option></select>
+      <select id="fActive"><option value="1">Active</option><option value="0">Inactive</option><option value="all">Active + inactive</option></select>
+    </div>
+    <div class="sl-brands" id="brands"></div>
+    <div class="table-wrap"><table id="catTable">
+      <thead><tr><th>Brand</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th class="num">Buy Box</th><th class="num">ROI now</th><th class="num">ROI 90d</th><th class="num">Sold/mo</th><th>Flags</th><th>Match</th><th>Size</th></tr></thead>
+      <tbody id="catRows"></tbody></table>
+      <div id="catEmpty" class="empty hidden">No catalog rows match.</div>
+    </div>
+    <div class="sl-more"><button id="catMore" class="btn small" hidden>Show more</button></div>
+  </section>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/bonus.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(async () => {
+  const { $, $$, esc, num, money, pct, fmtDate, api, toast, fail } = LG;
+  const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', ov: null, size: {}, rejecting: null };
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
+  const safeUrl = (u) => u && /^https?:\/\//i.test(u) ? u : null;
+  const link = (u, t) => safeUrl(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : '';
+  const amzUrl = (a) => `https://www.amazon.com/dp/${encodeURIComponent(a)}`;
+  const keepaUrl = (a) => `https://keepa.com/#!product/1-${encodeURIComponent(a)}`;
+  const REASON = { price_watch: 'Price drop', sale: 'Sale', new_product: 'New product' };
+  const SELL = { open: 'Open', approval_required: 'Approval required', restricted: 'Restricted' };
+  const SIZE = { lo: 'Mini / smaller', hi: 'Full size' };
+  const when = (iso) => iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const roiCls = (v) => v == null ? '' : v >= 0.3 ? 'good' : v < 0.15 ? 'badv' : '';
+  const editor = () => LG.can('editor') && !LG.st.me?.viewed_by;
+
+  // ---------------------------------------------------------------- header: runs, sale, counts
+  function renderOverview() {
+    const o = S.ov; if (!o) return;
+    const runs = (o.runs || []).map((r) => {
+      const c = r.counts || {}; const bits = Object.entries(c).slice(0, 4).map(([k, v]) => `${num(v)} ${k.replace(/_/g, ' ')}`);
+      return `${esc(r.kind)} run ${esc(when(r.at))}${bits.length ? ` (${esc(bits.join(', '))})` : ''}`;
+    });
+    $('#runs').textContent = runs.length ? 'Last checked: ' + runs.join(' · ') : 'The Sephora job hasn\'t run yet.';
+    const s = o.sale;
+    $('#sale').classList.toggle('hidden', !s);
+    if (s) $('#sale').innerHTML = `<b>Sephora sale on:</b> ${esc(s.text || '')}${s.code ? ` · code <b class="code">${esc(s.code)}</b>` : ''}${s.ends ? ` · ends ${esc(fmtDate(s.ends))}` : ''} <span class="muted">(checked ${esc(when(s.checked_at))})</span>`;
+    const c = o.catalog || {}, k = o.candidates || {};
+    const stat = (label, v, title = '') => `<div class="stat" title="${esc(title)}"><div class="k">${esc(label)}</div><div class="v">${num(v ?? 0)}</div></div>`;
+    $('#stats').innerHTML = stat('To review', k.new) + stat('Approved', k.approved) + stat('Rejected', k.rejected) +
+      stat('Catalog pairs', c.active, `${num(c.total)} total, ${num(c.brands)} brands`) + stat('Matches to check', c.unchecked, 'Active pairs nobody has marked yet') +
+      stat('Sizes to set', c.size_open, 'Pairs where Sephora sells two sizes and the right one isn\'t confirmed');
+  }
+
+  // ---------------------------------------------------------------- queue
+  function matches(c, q) {
+    return !q || [c.brand, c.sephora_name, c.shade, c.asin, c.amazon_title, c.product_id].some((v) => String(v || '').toLowerCase().includes(q));
+  }
+  function warnings(c) {
+    const w = [];
+    const sz = c.size_confirmed || S.size[c.id];
+    if (c.needs_size && !sz) w.push(['warn', 'Needs size']);
+    if (c.needs_size && sz) w.push(['', 'Size: ' + SIZE[sz]]);
+    if (c.sellable === 'approval_required') w.push(['warn', 'Approval required']);
+    if (c.sellable === 'restricted') w.push(['warn', 'Restricted']);
+    if (c.amazon_on) w.push(['warn', 'Amazon on listing']);
+    if (c.confidence === 'low') w.push(['warn', 'Low-confidence match']);
+    if (c.catalog_active === false) w.push(['warn', 'Catalog row inactive']);
+    return w;
+  }
+  function card(c) {
+    const sz = c.size_confirmed || S.size[c.id] || '';
+    const tags = [['reason', REASON[c.reason] || c.reason], [c.confidence === 'high' ? 'good' : '', `${c.confidence || '?'} confidence`],
+      ...(c.sellable === 'open' ? [['good', 'Open to sell']] : c.sellable ? [] : [['', 'Sellable ?']]), ...warnings(c)];   // not open: shown as a warning below
+    if (c.match_ok === true) tags.push(['good', 'Match OK']);
+    const list = c.price_lo != null && c.price_hi != null && Number(c.price_lo) !== Number(c.price_hi)
+      ? `${money(c.price_lo)}–${money(c.price_hi)}` : money(c.price_hi ?? c.price_lo);
+    const salePart = c.on_sale && c.sale_price != null ? `<span class="sl-strike">${list}</span>${money(c.sale_price)}` : list;
+    const decided = c.status !== 'new';
+    let acts = '';
+    if (!decided && editor()) {
+      const size = c.needs_size ? `<div class="sl-size" title="Sephora sells two sizes; which one matches the Amazon listing?">
+          <button class="btn small ${sz === 'lo' ? 'on' : ''}" data-size="lo" data-id="${esc(c.id)}">Mini / smaller size</button>
+          <button class="btn small ${sz === 'hi' ? 'on' : ''}" data-size="hi" data-id="${esc(c.id)}">Full size</button></div>` : '';
+      const rej = S.rejecting === c.id
+        ? `<div class="sl-rej"><input id="rejReason" placeholder="Reason (optional)" maxlength="300"><button class="btn small danger" data-act="reject-go" data-id="${esc(c.id)}">Reject</button></div>`
+        : `<button class="btn small" data-act="reject" data-id="${esc(c.id)}">Reject</button>`;
+      acts = `<div class="sl-acts">${size}
+        <button class="btn primary small" data-act="approve" data-id="${esc(c.id)}" ${c.needs_size && !sz ? 'disabled title="Pick the size first"' : ''}>Approve → lead</button>
+        ${rej}
+        <button class="btn small ghost danger" data-act="wrong" data-id="${esc(c.id)}" title="This Sephora product isn't the Amazon listing; it won't be suggested again">Wrong match</button></div>`;
+    }
+    const done = decided ? `<div class="sl-done">${c.status === 'approved'
+      ? `<span class="sl-tag good">Approved</span> by ${esc(c.decided_by || '')} ${esc(when(c.decided_at))}${c.lead_id ? ` · <a href="/leads#lead=${esc(c.lead_id)}">open lead</a>` : ''}${c.lead_qty_ordered != null ? ` · ordered ${num(c.lead_qty_ordered)}` : ''}`
+      : `<span class="sl-tag ${c.status === 'rejected' ? 'warn' : ''}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span>${c.decided_by ? ` by ${esc(c.decided_by)} ${esc(when(c.decided_at))}` : ''}${c.reject_reason ? ` · ${esc(c.reject_reason)}` : ''}`}</div>` : '';
+    return `<div class="sl-card" data-card="${esc(c.id)}"><div>
+      <div class="sl-brand">${esc(c.brand || '—')}</div>
+      <div><span class="sl-name">${esc(c.sephora_name || c.product_id)}</span>${c.shade ? ` <span class="sl-shade">· ${esc(c.shade)}</span>` : ''}</div>
+      ${c.amazon_title ? `<div class="sl-amz">Amazon: ${esc(c.amazon_title)}</div>` : ''}
+      <div class="sl-figs">
+        <div><span class="k">Cost</span><span class="v big">${money(c.cost)}</span></div>
+        <div><span class="k">Sephora price</span><span class="v">${salePart}</span></div>
+        <div><span class="k">Buy Box</span><span class="v">${money(c.buybox)}</span></div>
+        <div><span class="k">ROI now</span><span class="v big ${roiCls(c.roi_now)}">${pct(c.roi_now)}</span></div>
+        <div><span class="k">Lead Score</span><span class="v">${c.lead_score_band != null ? `<span class="band b${esc(c.lead_score_band)}">${esc(c.lead_score_band)}</span> ${pct(c.lead_score_pred_roi)}` : '—'}</span></div>
+        <div><span class="k">90d BB avg</span><span class="v">${money(c.bb_avg90)}</span></div>
+        <div><span class="k">Sold/mo</span><span class="v">${num(c.monthly_sold)}</span></div>
+        <div><span class="k">FBA offers</span><span class="v">${num(c.offers_fba)}</span></div>
+      </div>
+      <div class="sl-tags">${tags.map(([cls, t]) => `<span class="sl-tag ${cls}">${esc(t)}</span>`).join('')}</div>
+      ${c.note || c.price_basis ? `<div class="sl-note">${esc([c.price_basis, c.note].filter(Boolean).join(' · '))}</div>` : ''}
+      ${c.lead_score_notes ? `<details class="sl-note"><summary>Lead Score notes</summary><div style="white-space:pre-wrap">${esc(c.lead_score_notes)}</div></details>` : ''}
+      <div class="sl-links">${link(c.sephora_url, 'Sephora')}<a href="${amzUrl(c.asin)}" target="_blank" rel="noopener" class="mono">${esc(c.asin)}</a><a href="${keepaUrl(c.asin)}" target="_blank" rel="noopener">Keepa</a></div>
+    </div>${acts}${done}</div>`;
+  }
+  function renderQueue() {
+    const q = $('#q').value.trim().toLowerCase();
+    const src = S.view === 'decided' ? S.decided : S.cands;
+    const rows = src.filter((c) => matches(c, q));
+    const days = {};
+    rows.forEach((c) => { (days[c.found_on] = days[c.found_on] || []).push(c); });
+    const keys = Object.keys(days).sort().reverse();
+    $('#queue').innerHTML = keys.map((d) => `<div class="sl-day">${esc(fmtDate(d))} · ${days[d].length}</div>${days[d].map(card).join('')}`).join('');
+    $('#queueEmpty').classList.toggle('hidden', rows.length > 0);
+    $('#queueEmpty').textContent = S.view === 'decided' ? 'No decisions in the last 30 days.' : 'Nothing to review right now.';
+    $('#count').textContent = `${rows.length} ${S.view === 'decided' ? 'decided (last 30 days)' : 'to review'}`;
+    $('#rejReason')?.focus();
+  }
+
+  // ---------------------------------------------------------------- catalog
+  function renderCatalog() {
+    const rows = S.cat.rows;
+    $('#brands').innerHTML = `<button data-brand="" class="${S.brand ? '' : 'on'}">All brands</button>` + S.cat.brands.map((b) =>
+      `<button data-brand="${esc(b.brand || '')}" class="${S.brand && S.brand.toLowerCase() === String(b.brand || '').toLowerCase() ? 'on' : ''}" title="${num(b.unchecked)} not checked · ${num(b.ok)} OK · ${num(b.wrong)} wrong">${esc(b.brand || '(none)')}<span class="n">${num(b.n)}</span></button>`).join('');
+    const ed = editor();
+    const mk = (r, v, label, cls = '') => `<button class="btn small ${cls} ${r.match_ok === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="match" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${label}</button>`;
+    const sz = (r, v) => `<button class="btn small ${r.size_confirmed === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="size" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${v === 'lo' ? 'Mini' : 'Full'}</button>`;
+    $('#catRows').innerHTML = rows.map((r) => {
+      const flags = [];
+      if (r.confidence) flags.push([r.confidence === 'low' ? 'warn' : r.confidence === 'high' ? 'good' : '', r.confidence]);
+      if (r.sellable && r.sellable !== 'open') flags.push(['warn', SELL[r.sellable]]);
+      if (r.amazon_on) flags.push(['warn', 'Amazon on']);
+      if (r.on_sale) flags.push(['reason', 'On sale']);
+      if (!r.active) flags.push(['', 'Inactive']);
+      if (r.open_candidates) flags.push(['reason', `${r.open_candidates} to review`]);
+      const list = r.price_lo != null && r.price_hi != null && Number(r.price_lo) !== Number(r.price_hi) ? `${money(r.price_lo)}–${money(r.price_hi)}` : money(r.price_hi ?? r.price_lo);
+      return `<tr>
+        <td>${esc(r.brand || '')}</td>
+        <td class="prod">${link(r.sephora_url, r.sephora_name || r.product_id) || esc(r.sephora_name || r.product_id)}${r.shade ? ` <span class="muted">· ${esc(r.shade)}</span>` : ''}
+          ${r.amazon_title ? `<div class="muted" style="font-size:12px">${esc(r.amazon_title)}</div>` : ''}
+          ${r.match_reason ? `<div class="muted" style="font-size:11.5px">${esc(r.match_reason)}</div>` : ''}</td>
+        <td><a href="${amzUrl(r.asin)}" target="_blank" rel="noopener" class="mono">${esc(r.asin)}</a><br><a href="${keepaUrl(r.asin)}" target="_blank" rel="noopener" style="font-size:12px">Keepa</a></td>
+        <td class="num">${r.on_sale && r.sale_price != null ? `<span class="sl-strike">${list}</span>${money(r.sale_price)}` : list}</td>
+        <td class="num">${money(r.buybox)}</td>
+        <td class="num">${pct(r.roi_now)}</td>
+        <td class="num">${pct(r.roi_avg90)}</td>
+        <td class="num">${num(r.monthly_sold)}</td>
+        <td><div class="sl-tags" style="margin:0">${flags.map(([c, t]) => `<span class="sl-tag ${c}">${esc(t)}</span>`).join('')}</div></td>
+        <td class="mk">${mk(r, true, 'OK')} ${mk(r, false, 'Wrong', 'danger')}${r.marked_by ? `<div class="muted" style="font-size:11px">${esc(r.marked_by)}</div>` : ''}</td>
+        <td class="mk">${r.needs_size ? `${sz(r, 'lo')} ${sz(r, 'hi')}${!r.size_confirmed && r.size_guess && r.size_guess !== 'unknown' ? `<div class="muted" style="font-size:11px">guess: ${r.size_guess === 'lo' ? 'mini' : 'full'}</div>` : ''}` : '<span class="muted">—</span>'}</td></tr>`;
+    }).join('');
+    $('#catEmpty').classList.toggle('hidden', rows.length > 0);
+    $('#catMore').hidden = rows.length >= S.cat.total;
+    $('#count').textContent = `${num(S.cat.total)} pair${S.cat.total === 1 ? '' : 's'}${rows.length < S.cat.total ? ` (showing ${num(rows.length)})` : ''}`;
+  }
+  function catParams(offset = 0) {
+    const p = new URLSearchParams({ limit: 300, offset });
+    const q = $('#q').value.trim(); if (q) p.set('q', q);
+    if (S.brand) p.set('brand', S.brand);
+    [['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    return p;
+  }
+  async function loadCatalog(more = false) {
+    const r = await api('GET', '/api/sephora/catalog?' + catParams(more ? S.cat.rows.length : 0));
+    S.cat = { rows: more ? S.cat.rows.concat(r.rows) : r.rows, total: r.total, brands: r.brands };
+    renderCatalog();
+  }
+
+  // ---------------------------------------------------------------- loading
+  async function loadOverview() { S.ov = await api('GET', '/api/sephora/overview'); renderOverview(); }
+  async function loadQueue() {
+    S.cands = (await api('GET', '/api/sephora/candidates?status=new')).candidates || [];
+    if (S.view === 'decided') {
+      const since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+      S.decided = (await api('GET', `/api/sephora/candidates?status=approved,rejected,expired&since=${since}`)).candidates || [];
+    }
+  }
+  async function refresh() {
+    try {
+      await loadOverview();
+      if (S.view === 'catalog') await loadCatalog(); else { await loadQueue(); renderQueue(); }
+    } catch (e) { fail(e); }
+  }
+  function setView(v) {
+    S.view = v; store.set('sephView', v);
+    $$('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+    $('#queueView').hidden = v === 'catalog'; $('#catalogView').hidden = v !== 'catalog';
+    $('#q').placeholder = v === 'catalog' ? 'Search brand, product, shade, ASIN or product id…' : 'Search brand, product, shade or ASIN…';
+    refresh();
+  }
+
+  // ---------------------------------------------------------------- actions
+  const find = (id) => S.cands.find((c) => c.id === id);
+  async function act(id, fn, okMsg) {
+    const el = $(`[data-card="${CSS.escape(id)}"]`); el?.classList.add('busy');
+    try { const r = await fn(); if (okMsg) toast(typeof okMsg === 'function' ? okMsg(r) : okMsg); S.rejecting = null; await refresh(); }
+    catch (e) { fail(e); el?.classList.remove('busy'); }
+  }
+  $('#queue').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    const id = b.dataset.id;
+    if (b.dataset.size) {   // remember on the page; saved with Approve (or straight away for the catalog)
+      const c = find(id); if (!c) return;
+      S.size[id] = b.dataset.size; c.size_confirmed = null;
+      try { await api('POST', '/api/sephora/catalog/mark', { asin: c.asin, product_id: c.product_id, size_confirmed: b.dataset.size }); c.size_confirmed = b.dataset.size; } catch (err) { fail(err); }
+      renderQueue(); return;
+    }
+    const a = b.dataset.act;
+    if (a === 'approve') {
+      const c = find(id); const size = c && c.needs_size ? (c.size_confirmed || S.size[id]) : undefined;
+      return act(id, () => api('POST', `/api/sephora/candidates/${encodeURIComponent(id)}/approve`, size ? { size } : {}),
+        (r) => `Lead added for ${r.asin} at ${money(r.cost)}${r.promo_code ? ` (code ${r.promo_code})` : ''}${r.cost_note ? ' — ' + r.cost_note : ''}`);
+    }
+    if (a === 'reject') { S.rejecting = id; renderQueue(); return; }
+    if (a === 'reject-go') return act(id, () => api('POST', `/api/sephora/candidates/${encodeURIComponent(id)}/reject`, { reason: $('#rejReason')?.value || '' }), 'Rejected');
+    if (a === 'wrong') {
+      if (!confirm('Mark this as a wrong match? This Sephora product won\'t be suggested for this ASIN again.')) return;
+      return act(id, () => api('POST', `/api/sephora/candidates/${encodeURIComponent(id)}/reject`, { wrong_match: true }), 'Marked wrong match and rejected');
+    }
+  });
+  $('#queue').addEventListener('keydown', (e) => {
+    if (e.target.id === 'rejReason' && e.key === 'Enter') $('[data-act="reject-go"]')?.click();
+    if (e.target.id === 'rejReason' && e.key === 'Escape') { S.rejecting = null; renderQueue(); }
+  });
+  $('#catRows').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-mark]'); if (!b || b.disabled) return;
+    const r = S.cat.rows.find((x) => x.asin === b.dataset.asin && x.product_id === b.dataset.pid); if (!r) return;
+    const body = { asin: r.asin, product_id: r.product_id };
+    if (b.dataset.mark === 'match') {
+      const v = b.dataset.v === 'true';
+      body.match_ok = r.match_ok === v ? null : v;   // clicking the chosen answer again clears it
+      if (body.match_ok === false && r.open_candidates && !confirm('Mark as a wrong match? Its open candidates are rejected too.')) return;
+    } else body.size_confirmed = r.size_confirmed === b.dataset.v ? null : b.dataset.v;
+    try { await api('POST', '/api/sephora/catalog/mark', body); Object.assign(r, body); renderCatalog(); loadOverview().catch(() => {}); } catch (err) { fail(err); }
+  });
+  $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
+  ['#fConf', '#fSell', '#fSize', '#fMatch', '#fActive'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  $('#catMore').addEventListener('click', () => loadCatalog(true).catch(fail));
+  let qt; $('#q').addEventListener('input', () => { if (S.view === 'catalog') { clearTimeout(qt); qt = setTimeout(() => loadCatalog().catch(fail), 300); } else renderQueue(); });
+  $('#viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });
+
+  try {
+    await LG.header();
+    const v = store.get('sephView');
+    setView(['queue', 'decided', 'catalog'].includes(v) ? v : 'queue');
+    let t; LG.live((m) => {
+      if (m.t === 'sephora' || (!m.t && m.op === 'reload')) {
+        if (S.rejecting || document.activeElement?.id === 'rejReason') return;   // don't wipe a half-typed reason
+        clearTimeout(t); t = setTimeout(refresh, 800);
+      }
+    });
+  } catch (e) { fail(e); }
+})();
+</script>
+</body>
+</html>

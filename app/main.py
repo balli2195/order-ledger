@@ -31,6 +31,7 @@ from . import orders as o
 from . import commissions as comm
 from . import order_bonus
 from . import inbound
+from . import sephora
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -179,6 +180,11 @@ async def timeclock_page(request: Request):
 @app.get("/relist", include_in_schema=False)
 async def relist_page(request: Request):
     return await _page(request, "relist", "relist.html")
+
+
+@app.get("/sephora-leads", include_in_schema=False)
+async def sephora_leads_page(request: Request):
+    return await _page(request, "sephora_leads", "sephora-leads.html")
 
 
 @app.get("/reimbursements", include_in_schema=False)
@@ -698,7 +704,7 @@ async def api_activity(request: Request, limit: int = 100, order_id: str | None 
 
 
 ENTITY_TAB = {"order": "orders", "item": "orders", "batch": "orders", "lead": "leads", "lead_set": "leads", "task": "tasks", "store": "stores", "brand": "stores",
-              "prepos": "prepos"}   # anything else (settings, users) is owner-only
+              "prepos": "prepos", "sephora": "sephora_leads"}   # anything else (settings, users) is owner-only
 
 # ---------------------------------------------------------------- leads API
 
@@ -934,7 +940,7 @@ async def api_set_can_source(kind: str, name: str, request: Request, body: dict 
 async def api_events(request: Request):
     user = await auth.require(request)
     q = live.subscribe()
-    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock", "task": "tasks", "inbound": "reimbursements"}
+    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock", "task": "tasks", "inbound": "reimbursements", "sephora": "sephora_leads"}
 
     def allowed(payload: str) -> bool:
         try:
@@ -1320,6 +1326,100 @@ async def engine_leads(request: Request, since: str | None = None, asin: str | N
 async def engine_leads_update(request: Request, body: dict = Body(...)):
     auth.require_engine_key(request)
     return await L.engine_update(body.get("updates"))
+
+
+# ---------------------------------------------------------------- Sephora leads (app/sephora.py; Nov 2026)
+
+@app.get("/api/sephora/overview")
+async def api_sephora_overview(request: Request):
+    await auth.require(request, tab="sephora_leads")
+    return await sephora.overview()
+
+
+@app.get("/api/sephora/candidates")
+async def api_sephora_candidates(request: Request, status: str = "new", since: str | None = None, limit: int = 1000):
+    await auth.require(request, tab="sephora_leads")
+    return await sephora.list_candidates(status, since, limit)
+
+
+@app.get("/api/sephora/catalog")
+async def api_sephora_catalog(request: Request, limit: int = 300, offset: int = 0):
+    await auth.require(request, tab="sephora_leads")
+    f = {k: request.query_params.get(k) for k in ("q", "brand", "confidence", "sellable", "needs_size", "match", "active")
+         if request.query_params.get(k) not in (None, "")}
+    return await sephora.page_catalog(f, limit, offset)
+
+
+@app.post("/api/sephora/candidates/{cid}/approve")
+async def api_sephora_approve(cid: str, request: Request, body: dict = Body(default={})):
+    """Make a lead from the candidate (same path as the Leads page). {size: 'lo'|'hi'} first for needs-size rows."""
+    user = await auth.require(request, "editor", tab=("sephora_leads",))
+    if not user.can_tab("leads"):
+        raise HTTPException(403, "Approving makes a lead, so it needs the Leads tab too; ask the owner")
+    return await sephora.approve(web_actor(user), cid, body.get("size"))
+
+
+@app.post("/api/sephora/candidates/{cid}/reject")
+async def api_sephora_reject(cid: str, request: Request, body: dict = Body(default={})):
+    """{reason?, wrong_match?: true} — wrong_match also marks the catalog pair match_ok=false."""
+    user = await auth.require(request, "editor", tab="sephora_leads")
+    return await sephora.reject(web_actor(user), cid, body.get("reason"), bool(body.get("wrong_match")))
+
+
+@app.post("/api/sephora/catalog/mark")
+async def api_sephora_mark(request: Request, body: dict = Body(...)):
+    """{asin, product_id, match_ok?: true|false|null, size_confirmed?: 'lo'|'hi'|null}"""
+    user = await auth.require(request, "editor", tab="sephora_leads")
+    return await sephora.mark_catalog(web_actor(user), body.get("asin"), body.get("product_id"),
+                                      {k: body[k] for k in ("match_ok", "size_confirmed") if k in body})
+
+
+@app.post("/api/engine/sephora/catalog")
+async def engine_sephora_catalog(request: Request, body: dict = Body(...)):
+    """Upsert catalog pairs: {rows: [{asin, product_id, ...}]} (up to 1000). Never touches match_ok / size_confirmed."""
+    auth.require_engine_key(request)
+    return await sephora.upsert_catalog(body.get("rows"))
+
+
+@app.post("/api/engine/sephora/catalog/deactivate")
+async def engine_sephora_deactivate(request: Request, body: dict = Body(...)):
+    """{keys: [{asin, product_id}]} -> active=false (their open candidates expire)."""
+    auth.require_engine_key(request)
+    return await sephora.deactivate_catalog(body.get("keys"))
+
+
+@app.get("/api/engine/sephora/catalog")
+async def engine_sephora_catalog_get(request: Request, brand: str | None = None, active: str | None = None,
+                                     asin: str | None = None, limit: int = 1000, offset: int = 0):
+    auth.require_engine_key(request)
+    return await sephora.engine_catalog(brand, active, limit, offset, asin)
+
+
+@app.post("/api/engine/sephora/candidates")
+async def engine_sephora_candidates(request: Request, body: dict = Body(...)):
+    """The day's candidates: {rows: [{asin, product_id, found_on, reason, cost, ...}]}, upserted by (asin, found_on)."""
+    auth.require_engine_key(request)
+    return await sephora.upsert_candidates(body.get("rows"))
+
+
+@app.get("/api/engine/sephora/candidates")
+async def engine_sephora_candidates_get(request: Request, status: str | None = None, since: str | None = None,
+                                        asin: str | None = None, limit: int = 2000):
+    auth.require_engine_key(request)
+    return await sephora.list_candidates(status, since, limit, asin)
+
+
+@app.post("/api/engine/sephora/run")
+async def engine_sephora_run(request: Request, body: dict = Body(...)):
+    """{kind: 'catalog'|'daily'|..., counts: {...}, sale: {text, code, ends} | null}. Leave sale out if it wasn't checked."""
+    auth.require_engine_key(request)
+    return await sephora.record_run(body)
+
+
+@app.get("/api/engine/sephora/feedback")
+async def engine_sephora_feedback(request: Request, since: str | None = None):
+    auth.require_engine_key(request)
+    return await sephora.feedback(since)
 
 
 # ---------------------------------------------------------------- admin key API (setup, import)

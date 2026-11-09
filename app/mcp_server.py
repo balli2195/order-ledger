@@ -38,7 +38,11 @@ The VA commission (bonus_rate, 1.2%) is earned on the actual spend of leads the 
 leads someone else added don't count even if he sourced that product before (see get_lead_choices; Commissions page).
 Stores and brands have a can_source flag. While leads mode is "mirror", leads are copied from Airtable every minute
 (this site never writes to Airtable); leads added or edited here stay here and edited fields aren't overwritten by
-the copy. After the owner's cutover ("home") the copy stops."""
+the copy. After the owner's cutover ("home") the copy stops.
+
+Sephora leads tab: a daily job matches Amazon ASINs to Sephora products (sephora_catalog) and queues buy candidates
+(sephora_candidates: status new/approved/rejected/expired). Read them with list_sephora_candidates / search_sephora_catalog;
+Nick approves (which creates a lead), rejects or marks wrong matches on the Hub page."""
 
 mcp = FastMCP(
     "Myrddin Hub",
@@ -249,7 +253,10 @@ async def run_sql(sql: Annotated[str, Field(description="One read-only SELECT/WI
     lead_score_band, lead_score_roi, lead_score_notes, claude_buy_qty, claude_buy_note, replen, extra jsonb,
     expected_spend, actual_spend, left_to_buy, created_at, updated_at), stores(name, can_source),
     brands(name, can_source), audit_log(at, user_id, source, action, entity, entity_id, order_id, before, after),
-    users(id, email, name, role), settings(key, value). Use unnest(stores) to group by store. Max 500 rows, 15s."""
+    users(id, email, name, role), settings(key, value), sephora_catalog(asin, product_id, brand, sephora_name, sephora_url,
+    price_lo, price_hi, sale_price, needs_size, size_confirmed, confidence, sellable, buybox, roi_now, match_ok, active, ...),
+    sephora_candidates(id, asin, product_id, found_on, reason, cost, roi_now, status, lead_id, decided_at),
+    sephora_runs(kind, at, counts, sale). Use unnest(stores) to group by store. Max 500 rows, 15s."""
     await _actor(tab="_all")
     return await o.run_readonly_sql(sql)
 
@@ -414,3 +421,39 @@ async def save_relist(
         return await hubdocs.put("relist/" + name, data)
     except hubdocs.DocError as e:
         raise o.LedgerError(str(e))
+
+
+# ---------------------------------------------------------------- Sephora leads (app/sephora.py; Nov 2026)
+
+@mcp.tool()
+async def list_sephora_candidates(
+    status: Annotated[str, Field(description="new (to review), approved, rejected, expired, a comma list, or all")] = "new",
+    since: Annotated[str | None, Field(description="YYYY-MM-DD: found on or after")] = None,
+    asin: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Sephora buy candidates from the daily job (Sephora leads tab), newest first, with their catalog match
+    (brand, Sephora name/URL, shade, prices, confidence, sellable, needs_size) and, once approved, the lead made from it.
+    Approve / reject them on the Hub's Sephora leads page."""
+    from . import sephora
+    await _actor(tab="sephora_leads")
+    r = await sephora.list_candidates(status, since, min(max(limit, 1), 500), asin)
+    r["overview"] = await sephora.overview()
+    return r
+
+
+@mcp.tool()
+async def search_sephora_catalog(
+    query: Annotated[str | None, Field(description="Text across ASIN, Sephora name, Amazon title, brand, shade, product id")] = None,
+    brand: str | None = None,
+    match: Annotated[Literal["ok", "wrong", "unchecked"] | None, Field(description="Nick's match check")] = None,
+    needs_size_open: Annotated[bool, Field(description="Only pairs that need a size Nick hasn't confirmed")] = False,
+    include_inactive: bool = False,
+    limit: int = 100,
+) -> dict:
+    """The Amazon ASIN <-> Sephora product catalog behind the Sephora leads tab, with per-brand counts."""
+    from . import sephora
+    await _actor(tab="sephora_leads")
+    f = {"q": query, "brand": brand, "match": match, "needs_size": "open" if needs_size_open else None,
+         "active": "all" if include_inactive else "1"}
+    return await sephora.page_catalog({k: v for k, v in f.items() if v}, min(max(limit, 1), 500), 0)

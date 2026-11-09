@@ -531,6 +531,13 @@
     }
     if (c.entity === 'tc_person') return c.action === 'import' ? `imported ${esc(c.after?.name)}'s timesheet (${c.after?.entries} entries)` : c.action === 'create' ? `added ${esc(c.after?.name)} to the time clock` : 'changed a time-clock person';
     if (c.entity === 'tc_adjustment') return `${c.action === 'delete' ? 'removed' : 'added'} time-clock pay line ${esc((c.after || c.before)?.label || '')} ${money((c.after || c.before)?.amount)}`;
+    if (c.entity === 'sephora') {   // Sephora leads tab (Nov 2026)
+      const a = c.after || {};
+      if (c.action === 'approve') return `approved Sephora candidate <span class="mono">${esc(a.asin || '')}</span> as a lead`;
+      if (c.action === 'reject') return `rejected Sephora candidate <span class="mono">${esc(a.asin || '')}</span>${a.wrong_match ? ' (wrong match)' : a.reason ? ` (${esc(a.reason)})` : ''}`;
+      if (c.action === 'mark') return `marked Sephora match <span class="mono">${esc(a.asin || '')}</span>: ${'match_ok' in a ? (a.match_ok === true ? 'match OK' : a.match_ok === false ? 'wrong match' : 'match unchecked') : ''}${'size_confirmed' in a ? ` size ${a.size_confirmed === 'hi' ? 'full' : a.size_confirmed === 'lo' ? 'mini/smaller' : 'cleared'}` : ''}`;
+      return a.candidates != null ? `loaded ${a.candidates} Sephora candidates (${a.inserted} new)` : `loaded ${a.catalog_rows ?? ''} Sephora catalog rows`;
+    }
     if (c.entity === 'store' || c.entity === 'brand') return `marked ${c.entity} ${esc(c.after?.name || '')} as ${c.after?.can_source ? 'OK to source' : "can't source"}`;
     let what;
     if (c.entity === 'lead') {
