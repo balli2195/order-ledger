@@ -21,7 +21,8 @@ from . import db
 
 # QuickBooks account id -> Hub account key (QuickBooks names the closed Capital One card "8039"; its statements say 1999).
 QB_ACCOUNTS = {
-    "175": "chase_2598", "302": "chase_2826", "303": "chase_6304", "1150040004": "chase_8038", "369": "chase_2706",
+    # …2826 and …6304 are employee cards on the …2598 account: their charges are on the …2598 statement.
+    "175": "chase_2598", "302": "chase_2598", "303": "chase_2598", "1150040004": "chase_8038", "369": "chase_2706",
     "177": "amex_1000", "176": "amex_1004", "149": "chase_5050", "157": "chase_859", "367": "capone_1999",
     "180": "capone_6382", "364": "paypal_usd", "384": "paypal_deposit", "151": "paypal_bank", "315": "paypal_mastercard",
     "371": "huntington_1948", "372": "huntington_loan", "296": "liveoak_6922", "297": "liveoak_5967",
@@ -171,6 +172,15 @@ async def contractor_rows(conn, a: date, b: date) -> list[dict]:
 RECURRING = [
     ("Business insurance", "The Hartford", r"hartford"),
     ("Shipping & postage", "Pirate Ship", r"pirate ?ship"),   # Nick, Nov 8 2026
+    # Nick, Nov 8 2026: bookkeeper, registered agent, memberships, bank & card fees
+    ("Accounting (Tall Oak)", "Tall Oak Advisors", r"tall oak"),
+    ("Registered agent", "Prime Corporate Services", r"prime corporate"),
+    ("Memberships", "Experian credit report", r"experian"),
+    ("Memberships", "Costco", r"costco \*?annual renewal"),
+    ("Memberships", "Amazon Business Prime", r"b2b prime"),
+    ("Memberships", "Amex Plum annual fee", r"^annual fee$|renewal membership fee"),
+    ("Bank & card fees", "Chase checking fees", r"rtp/same day|standard ach pmnts|chase service fee"),
+    ("Bank & card fees", "Card late fees", r"^late fee"),
     ("Software & apps", "Seller Snap", r"seller ?snap"),
     ("Software & apps", "Keepa", r"keepa"),
     ("Software & apps", "Airtable", r"airtable"),
