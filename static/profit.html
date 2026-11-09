@@ -73,6 +73,7 @@
       <button class="chip" data-p="lm">Last month</button><button class="chip" data-p="ytd">This year</button>
     </div>
     <div class="pf-range"><input type="date" id="from" aria-label="From"><span class="muted">–</span><input type="date" id="to" aria-label="To"></div>
+    <label class="pf-toggle" title="A flat prep cost for every unit sent to Amazon, on the shipment plan's date"><input type="checkbox" id="prepOn"> Prep <span id="prepRate">$0.75</span>/unit</label>
     <label class="pf-toggle" title="Expense units missing from closed inbound shipments (Reimbursements page numbers), on the day the shipment plan closed"><input type="checkbox" id="inbOn"> Missing inbound</label>
     <label class="pf-toggle" title="Leave out Amazon.com.mx and Amazon.ca, to compare with QuickBooks' (US) accounts"><input type="checkbox" id="usOnly"> US only</label>
   </div>
@@ -107,8 +108,9 @@
     if (p === 'lm') { const a = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - 1, 1, 12)); const b = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 0, 12)); return [a, b]; }
     if (p === 'ytd') return [new Date(Date.UTC(t.getUTCFullYear(), 0, 1, 12)), t];
   }
-  const st = { a: null, b: null, us: false, inb: true, data: null, open: new Set() };
-  try { st.us = localStorage.getItem('pf_us') === '1'; st.inb = localStorage.getItem('pf_inb') !== '0'; } catch { /* storage off */ }
+  const st = { a: null, b: null, us: false, inb: true, prep: true, data: null, open: new Set() };
+  try { st.us = localStorage.getItem('pf_us') === '1'; st.inb = localStorage.getItem('pf_inb') !== '0'; st.prep = localStorage.getItem('pf_prep') !== '0'; } catch { /* storage off */ }
+  $('#prepOn').checked = st.prep;
   $('#usOnly').checked = st.us;
   $('#inbOn').checked = st.inb;
 
@@ -121,7 +123,7 @@
   async function load() {
     $('#body').classList.add('loading');
     try {
-      st.data = await api('GET', `/api/profit?start=${st.a}&end=${st.b}&us=${st.us ? 1 : 0}&inbound=${st.inb ? 1 : 0}`);
+      st.data = await api('GET', `/api/profit?start=${st.a}&end=${st.b}&us=${st.us ? 1 : 0}&inbound=${st.inb ? 1 : 0}&prep=${st.prep ? 1 : 0}`);
       render();
     } catch (e) { fail(e); } finally { $('#body').classList.remove('loading'); }
   }
@@ -173,8 +175,10 @@
       ${unc ? `<ul class="unc">${cov.uncosted.slice(0, 8).map((u) => `<li>${esc(u.sku)}${u.asin ? ` · <a href="https://www.amazon.com/dp/${esc(u.asin)}" target="_blank" rel="noopener">${esc(u.asin)}</a>` : ''} — ${num(u.units)} units</li>`).join('')}</ul>` : ''}
       ${fx && !d.us_only ? `<div style="margin-top:6px">Includes Amazon Mexico/Canada activity (${esc(fx)}) converted at the day's ECB rate. Tick “US only” to compare with QuickBooks' US accounts.</div>` : ''}
       <div style="margin-top:6px">Inventory written off: units Amazon lost (net of units found again) or damaged in its warehouses, from Amazon's inventory ledger${cov.writeoff_through ? ' (through ' + esc(LG.fmtDate(cov.writeoff_through)) + ')' : ''}, at InventoryLab cost${cov.writeoff_uncosted ? ` — <span class="warn">${num(cov.writeoff_uncosted)} units with no cost</span>` : ''}. ${cov.inbound_included ? `Missing inbound is included: <b>${num(cov.inbound_units)}</b> units from shipment plans that closed in this range, using the Reimbursements page's counts (Seller Central's where the Hub has them), dated the day the plan's last shipment closed.` : 'Missing inbound is switched off (tick “Missing inbound” to include it).'} Reimbursements for any of these units show as income when Amazon pays them.</div>
-      <div style="margin-top:6px">Not included yet: bank and card costs (prep center, contractors, software, cash back).</div>`;
+      <div style="margin-top:6px">${cov.prep_included ? `Prep: <b>${num(cov.prep_units)}</b> units sent to Amazon in this range × ${money(cov.prep_rate)}, on each shipment plan's date. It's an estimate standing in for your prep-center bills; switch it off once bank costs are on this page, or prep will count twice.` : 'Prep is switched off (tick “Prep” to include an estimate per unit sent to Amazon).'}</div>
+      <div style="margin-top:6px">Not included yet: bank and card costs (prep-center bills, contractors, software, cash back).</div>`;
     $('#meta').textContent = `${LG.fmtDate(d.start)} – ${LG.fmtDate(d.end)}`;
+    if (cov.prep_rate != null) $('#prepRate').textContent = money(cov.prep_rate);
   }
 
   // Ranges longer than two months (e.g. "This year") are shown by month (Nick, Nov 8 2026).
@@ -224,6 +228,7 @@
   $('#presets').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; const [a, b] = preset(c.dataset.p); setRange(a, b, c.dataset.p); });
   const custom = () => { if ($('#from').value && $('#to').value) setRange(new Date($('#from').value + 'T12:00:00Z'), new Date($('#to').value + 'T12:00:00Z'), null); };
   $('#from').addEventListener('change', custom); $('#to').addEventListener('change', custom);
+  $('#prepOn').addEventListener('change', () => { st.prep = $('#prepOn').checked; try { localStorage.setItem('pf_prep', st.prep ? '1' : '0'); } catch { /* ignore */ } load(); });
   $('#inbOn').addEventListener('change', () => { st.inb = $('#inbOn').checked; try { localStorage.setItem('pf_inb', st.inb ? '1' : '0'); } catch { /* ignore */ } load(); });
   $('#usOnly').addEventListener('change', () => { st.us = $('#usOnly').checked; try { localStorage.setItem('pf_us', st.us ? '1' : '0'); } catch { /* ignore */ } load(); });
   window.addEventListener('resize', () => st.data && chart(series(st.data.daily)));
