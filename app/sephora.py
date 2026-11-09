@@ -17,6 +17,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
+
 from . import db
 from . import leads as L
 from .orders import Actor, LedgerError, _audit, jsonable
@@ -628,3 +630,36 @@ async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match:
     if wrong_match:
         out.update(await mark_catalog(actor, c["asin"], c["product_id"], {"match_ok": False}))
     return out
+
+
+_score_lock = asyncio.Lock()
+
+
+async def score_rows(rows: list) -> dict:
+    """Lead Score /preview for up to 25 candidate rows, sequentially. Read-only: nothing is written anywhere."""
+    if not L.LEAD_SCORE_URL or not L.LEAD_SCORE_KEY:
+        raise LedgerError("Lead Score server isn't configured")
+    if not isinstance(rows, list) or len(rows) > 25:
+        raise LedgerError("rows must be a list of at most 25")
+    out = []
+    async with _score_lock:
+        async with httpx.AsyncClient(timeout=180) as c:
+            for r in rows:
+                asin = str(r.get("asin") or "").strip().upper()
+                if not ASIN_RE.match(asin) or not r.get("cost") or not r.get("url"):
+                    out.append({"asin": asin, "ok": False, "why": "needs asin, cost and url"})
+                    continue
+                params = {"asin": asin, "cost": str(r["cost"]), "url": str(r["url"]),
+                          "date": str(r.get("date") or datetime.now(CENTRAL).date().isoformat())}
+                try:
+                    resp = await c.get(f"{L.LEAD_SCORE_URL}/preview", params=params, headers={"X-Key": L.LEAD_SCORE_KEY})
+                    s = resp.json()
+                except Exception as e:
+                    out.append({"asin": asin, "ok": False, "why": str(e)[:200]})
+                    continue
+                if not s.get("ok"):
+                    out.append({"asin": asin, "ok": False, "why": s.get("why") or s.get("error") or "not scored"})
+                    continue
+                out.append({"asin": asin, "ok": True, "band": s.get("band"), "pred_roi": s.get("pred_roi"),
+                            "notes": s.get("notes")})
+    return {"rows": out}

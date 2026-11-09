@@ -1416,6 +1416,14 @@ async def engine_sephora_run(request: Request, body: dict = Body(...)):
     return await sephora.record_run(body)
 
 
+@app.post("/api/engine/sephora/score")
+async def engine_sephora_score(request: Request, body: dict = Body(...)):
+    """{rows: [{asin, cost, url, date?}]} (max 25). Lead Score /preview one at a time, no lead_id (so no Buy QTY is queued).
+    Keeps the Lead Score key on the server and the load on it to one request at a time."""
+    auth.require_engine_key(request)
+    return await sephora.score_rows(body.get("rows") or [])
+
+
 @app.get("/api/engine/sephora/feedback")
 async def engine_sephora_feedback(request: Request, since: str | None = None):
     auth.require_engine_key(request)
