@@ -700,6 +700,12 @@ MIGRATIONS: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS inv_writeoff (day date NOT NULL, sku text NOT NULL, kind text NOT NULL, units int NOT NULL);
     CREATE INDEX IF NOT EXISTS inv_writeoff_day ON inv_writeoff (day);
+    """,    # 50: Profit page — other income from QuickBooks (Chase / Amex card cash back), loaded by a daily task (Nick, Nov 8 2026)
+    """
+    CREATE TABLE IF NOT EXISTS profit_other (
+        id text PRIMARY KEY, day date NOT NULL, kind text NOT NULL, amount numeric(12,2) NOT NULL,
+        memo text, source text NOT NULL, loaded_at timestamptz NOT NULL DEFAULT now());
+    CREATE INDEX IF NOT EXISTS profit_other_day ON profit_other (day);
     """,
 ]
 

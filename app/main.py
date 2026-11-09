@@ -230,6 +230,19 @@ async def engine_profit_costs(request: Request, body: dict = Body(...)):
     return await profit.save_costs(src, as_of, body.get("rows") or [])
 
 
+@app.post("/api/engine/profit/other")
+async def engine_profit_other(request: Request, body: dict = Body(...)):
+    """Other income from QuickBooks (card cash back): {source, start, end, rows: [{id, day, kind, amount, memo}]}.
+    Replaces that source's rows dated start..end."""
+    auth.require_engine_key(request)
+    try:
+        a, b = date.fromisoformat(str(body.get("start"))), date.fromisoformat(str(body.get("end")))
+    except ValueError:
+        raise HTTPException(400, "start/end look like 2026-11-08")
+    src = str(body.get("source") or "quickbooks")[:40]
+    return await profit.save_other(src, a, b, body.get("rows") or [])
+
+
 _profit_run: dict = {}
 
 

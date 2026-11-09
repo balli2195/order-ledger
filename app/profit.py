@@ -89,7 +89,10 @@ GROUPS = [
     ("expense", "Amazon Subscription Fees", ["Subscription fees"]),
     ("expense", "Amazon Advertising", ["Advertising"]),
     ("expense", "Other Amazon fees", ["Other fees"]),
+    ("other", "Cash back", ["Chase cash back", "Amex cash back"]),
 ]
+# Other income kinds a daily task loads from QuickBooks (profit_other.kind -> page line).
+OTHER_LINES = {"chase_cashback": "Chase cash back", "amex_cashback": "Amex cash back"}
 
 
 def line_for(ev: str, kind: str, label: str, reason: str) -> str | None:
@@ -478,6 +481,35 @@ async def save_costs(source: str, as_of: date, rows: list[dict]) -> dict:
     return {"saved": len(keep), "skipped": len(rows or []) - len(keep), "as_of": as_of.isoformat(), "source": source}
 
 
+async def save_other(source: str, a: date, b: date, rows: list[dict]) -> dict:
+    """Other income (QuickBooks card cash back): rows [{id, day, kind, amount, memo}] replace source's rows dated a..b."""
+    keep, bad = [], 0
+    for r in rows or []:
+        try:
+            d = date.fromisoformat(str(r.get("day")))
+            amt = round(float(r.get("amount")), 2)
+        except (TypeError, ValueError):
+            bad += 1
+            continue
+        kind = str(r.get("kind") or "")
+        rid = str(r.get("id") or "").strip()
+        if kind not in OTHER_LINES or not rid or not (a <= d <= b):
+            bad += 1
+            continue
+        keep.append((f"{source}:{rid}", d, kind, amt, str(r.get("memo") or "")[:200], source))
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM profit_other WHERE source=%s AND day BETWEEN %s AND %s", (source, a, b))
+            async with conn.cursor() as cur:
+                await cur.executemany(
+                    """INSERT INTO profit_other (id, day, kind, amount, memo, source) VALUES (%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (id) DO UPDATE SET day=EXCLUDED.day, kind=EXCLUDED.kind, amount=EXCLUDED.amount,
+                       memo=EXCLUDED.memo, source=EXCLUDED.source, loaded_at=now()""", keep)
+    await _set("profit_other_loaded_at", datetime.now(timezone.utc).isoformat())
+    return {"saved": len(keep), "skipped": bad, "start": a.isoformat(), "end": b.isoformat(), "source": source,
+            "total": round(sum(x[3] for x in keep), 2)}
+
+
 # ---------------------------------------------------------------- report
 UNITS_SHIPPED = """SELECT fu.day, fu.marketplace, fu.sku, fu.shipped FROM fin_units fu
   WHERE fu.day BETWEEN %(a)s AND %(b)s AND fu.shipped > 0 AND (%(us)s = false OR fu.marketplace = 'Amazon.com')"""
@@ -519,6 +551,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
             wo_rows = list(wo_rows) + list(await (await conn.execute(COGS_SQL.format(units=UNITS_GIVEN), {
                 "a": a, "b": b, "us": us_only, "d": [x[0] for x in mi], "s": [x[1] for x in mi], "q": [x[2] for x in mi]})).fetchall())
         inbound_synced = await _setting("inbound_synced_at")
+        other_loaded = await _setting("profit_other_loaded_at")
         prep_rate = float(await _setting("profit_prep_per_unit", 0.75) or 0)
         # Prep (Nick, Nov 8 2026): a flat rate per unit sent to Amazon, on the shipment plan's date (units the API says
         # were shipped, in every shipment that left the prep center). Optional on the page.
@@ -530,6 +563,8 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         days = await (await conn.execute(
             "SELECT count(*) n, min(pulled_at) oldest, max(pulled_at) newest FROM fin_days WHERE day BETWEEN %s AND %s", (a, b))).fetchone()
         span = (b - a).days + 1
+        other_rows = await (await conn.execute(
+            "SELECT day, kind, amount, memo FROM profit_other WHERE day BETWEEN %s AND %s ORDER BY day", (a, b))).fetchall()
         cost_asof = await (await conn.execute("SELECT max(as_of) d, count(*) FILTER (WHERE as_of=(SELECT max(as_of) FROM sku_costs)) n FROM sku_costs")).fetchone()
 
     def rate(cur: str, d: date) -> float | None:
@@ -610,11 +645,24 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
         dd["cogs"] += v
 
+    # Card cash back (Nick, Nov 8 2026): QuickBooks' Cash Back / Bank & Credit Card Rewards postings from the Chase
+    # Premier statement credits and the Amex early-pay discount, on the day they posted (as QuickBooks books them).
+    for r in other_rows:
+        ln = OTHER_LINES.get(r["kind"])
+        if not ln:
+            continue
+        v = float(r["amount"])
+        lines[ln] = lines.get(ln, 0.0) + v
+        dk = (ln, f"{r['day'].isoformat()} · {r['memo'] or ''}".strip(" ·"), "USD")
+        detail[dk] = detail.get(dk, 0.0) + v
+        dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
+        dd["income"] += v
+
     groups = []
-    tot = {"income": 0.0, "cogs": 0.0, "expense": 0.0}
+    tot = {"income": 0.0, "cogs": 0.0, "expense": 0.0, "other": 0.0}
     for sec, name, ls in GROUPS:
         amt = sum(lines.get(x, 0.0) for x in ls)
-        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep"):
+        if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep", "Cash back"):
             continue
         parts = []
         for x in ls:
@@ -623,7 +671,8 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                           "detail": [{"what": d + ("" if cu == "USD" else f" ({cu})"), "amount": round(v, 2)} for d, cu, v in subs[:25]]})
         tot[sec] += amt
         groups.append({"section": sec, "name": name, "amount": round(amt, 2), "parts": parts})
-    profit = tot["income"] + tot["cogs"] + tot["expense"]
+    amazon_profit = tot["income"] + tot["cogs"] + tot["expense"]
+    profit = amazon_profit + tot["other"]
     series = []
     d = a
     while d <= b:
@@ -635,7 +684,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         "start": a.isoformat(), "end": b.isoformat(), "us_only": us_only,
         "groups": groups,
         "totals": {"income": round(tot["income"], 2), "cogs": round(tot["cogs"], 2), "expense": round(tot["expense"], 2),
-                   "profit": round(profit, 2), "sales": round(lines.get("Sales", 0.0), 2),
+                   "other": round(tot["other"], 2), "amazon_profit": round(amazon_profit, 2), "profit": round(profit, 2), "sales": round(lines.get("Sales", 0.0), 2),
                    "margin": round(profit / tot["income"], 4) if tot["income"] else None},
         "daily": series,
         "coverage": {"days_loaded": days["n"], "days": span, "oldest_pull": days["oldest"], "newest_pull": days["newest"],
@@ -646,6 +695,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                      "writeoff_units": wo_units, "writeoff_uncosted": wo_uncosted, "writeoff_through": wo_last,
                      "inbound_included": inbound, "inbound_units": sum(x[2] for x in mi), "inbound_synced": inbound_synced,
                      "prep_included": prep, "prep_units": prep_units, "prep_rate": prep_rate,
+                     "other_loaded": other_loaded, "cashback": {k: round(lines.get(v, 0.0), 2) for k, v in OTHER_LINES.items()},
                      "other_currency": {k: round(v, 2) for k, v in other_cur.items()}},
         "status": {k: v for k, v in status.items()},
     }
