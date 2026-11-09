@@ -68,10 +68,10 @@ def _day(v) -> date | None:
 
 
 async def _get(c, path, params):
-    for i in range(8):
+    for i in range(10):   # report documents allow about one call a minute after a burst of 15
         r = await c.get(sellable.SP + path, headers={"x-amz-access-token": await sellable._token(c)}, params=params)
         if r.status_code == 429:
-            await asyncio.sleep(2 * (i + 1))
+            await asyncio.sleep(min(60, 5 * (i + 1)))
             continue
         if r.status_code >= 400:
             raise RuntimeError(f"{path}: {r.status_code} {r.text[:200]}")
@@ -148,6 +148,9 @@ def _receipt_row(row: dict) -> dict | None:
     return {k: row.get(k) for k in _LEDGER_COLS}
 
 
+_FILTERED_DOCS: set = set()   # ledger report documents found to hold only some event types (not re-downloaded)
+
+
 async def _ledger(c, start: datetime, now: datetime, keep=None, need: set | None = None) -> list[dict]:
     """Inventory ledger rows from start to now. Ledger reports made in the last 24 hours (by this Hub or by Claude's
     nightly run) are reused when together they cover the range; only the gaps get new 90-day reports, because
@@ -169,7 +172,7 @@ async def _ledger(c, start: datetime, now: datetime, keep=None, need: set | None
             break
         p = {"nextToken": j["nextToken"]}
     rows, cur, stop, n = [], start, now - timedelta(days=1), 0
-    bad: set = set()
+    bad = _FILTERED_DOCS
 
     def tag(rs):
         for r in rs:
