@@ -98,11 +98,17 @@ GROUPS = [
     ("opex", "Memberships", ["Memberships"]),
     ("opex", "Bank & card fees", ["Bank & card fees"]),
     ("other", "Cash back", ["Chase cash back", "Amex cash back"]),
+    ("other", "Loan interest", ["SBA loan interest (Huntington)", "SBA loan late charges", "Auto loan interest (Chase)"]),
 ]
 # Other income kinds a daily task loads from QuickBooks (profit_other.kind -> page line).
 # Bank-side lines that count as cost of goods sold (the rest of bank.RECURRING is business expenses).
 COGS_BANK_LINES = {"Prep center bills"}
-OTHER_LINES = {"chase_cashback": "Chase cash back", "amex_cashback": "Amex cash back"}
+OTHER_LINES = {"chase_cashback": "Chase cash back", "amex_cashback": "Amex cash back", "sba_interest": "SBA loan interest (Huntington)", "auto_interest": "Auto loan interest (Chase)", "sba_late": "SBA loan late charges"}
+CASHBACK_KINDS = ("chase_cashback", "amex_cashback")
+# Loan interest (Nick, Nov 8 2026) comes from the loan statements in Dropbox, posted with source "loan_statements":
+# Huntington SBA loan …2470 = interest paid, from the change in each invoice's "Paid Year to Date", on the invoice date
+# (plus each new late charge an invoice bills); Chase auto loan …5008 = the
+# interest part of each payment, on the payment date (as QuickBooks books Chase Auto Loan Interest).
 
 
 def line_for(ev: str, kind: str, label: str, reason: str) -> str | None:
@@ -652,7 +658,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         dk = (ln, f"{r['day'].isoformat()} · {r['memo'] or ''}".strip(" ·"), "USD")
         detail[dk] = detail.get(dk, 0.0) + v
         dd = daily.setdefault(r["day"].isoformat(), {"income": 0.0, "fees": 0.0, "cogs": 0.0, "sales": 0.0, "units": 0})
-        dd["income"] += v
+        dd["income" if v > 0 else "fees"] += v
 
     # Contractors (Nick, Nov 8 2026): Ariane's Wise payments and Leen's RealTime ACH payments out of Chase checking,
     # from the Hub's bank transactions (QuickBooks feed rows; payee as QuickBooks' rules assign it), on the bank date.
@@ -682,7 +688,7 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
         amt = sum(lines.get(x, 0.0) for x in ls)
         if not amt and name in ("Other Amazon adjustments", "Other Amazon fees", "Inventory written off", "Prep", "Cash back", "Contractors",
                                                 "Software & apps", "Business insurance", "Shipping & postage",
-                                                "Accounting & legal", "Memberships", "Bank & card fees"):
+                                                "Accounting & legal", "Memberships", "Bank & card fees", "Loan interest"):
             continue
         parts = []
         for x in ls:
@@ -720,7 +726,8 @@ async def report(a: date, b: date, us_only: bool = False, inbound: bool = False,
                      "bank_through": await bank.coverage(),
                      "contractor_payments": len(contractor), "contractor_pending": contractor_pending,
                      "contractor_through": max((r["day"] for r in contractor), default=None),
-                     "other_loaded": other_loaded, "cashback": {k: round(lines.get(v, 0.0), 2) for k, v in OTHER_LINES.items()},
+                     "other_loaded": other_loaded, "cashback": {k: round(lines.get(OTHER_LINES[k], 0.0), 2) for k in CASHBACK_KINDS},
+                     "loan_interest_through": {k: max((r["day"] for r in other_rows if r["kind"] == k), default=None) for k in ("sba_interest", "auto_interest")},
                      "other_currency": {k: round(v, 2) for k, v in other_cur.items()}},
         "status": {k: v for k, v in status.items()},
     }

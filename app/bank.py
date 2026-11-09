@@ -149,7 +149,7 @@ async def summary() -> dict:
 
 # Contractor payments on the Profit page (Nick, Nov 8 2026): (page line, QuickBooks payee, bank-text pattern).
 CONTRACTORS = [
-    ("Ariane Armada (Wise)", "Ariane Armada", r"wise.*ariane"),
+    ("Ariane Armada (Wise)", "Ariane Armada", r"wise.*ariane|wise ltd.*invoice"),   # Wise invoice payments: QuickBooks' rule names them Ariane
     ("Leen Rodriguez (ACH)", "Leen Rodriguez", r"(realtime|same-day ach|basic online) payroll payment"),
 ]
 
@@ -182,7 +182,7 @@ RECURRING = [
     ("Memberships", "Costco", r"costco \*?annual renewal"),
     ("Memberships", "Amazon Business Prime", r"b2b prime"),
     ("Memberships", "Amex Plum annual fee", r"^annual fee$|renewal membership fee"),
-    ("Bank & card fees", "Chase checking fees", r"rtp/same day|standard ach pmnts|chase service fee"),
+    ("Bank & card fees", "Chase checking fees", r"rtp/same day|standard ach pmnts|chase service fee|intl wire fee"),
     ("Bank & card fees", "Card late fees", r"^late fee"),
     # Huntington checking …1948 (statement text has no spaces): RealTime payment fees, paper-statement charge,
     # NSF fees, and the occasional fee refund (positive, so it nets off).
