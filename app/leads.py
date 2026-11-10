@@ -217,9 +217,15 @@ async def list_leads(filters: dict, sort: str = "date", desc: bool = True, limit
     w, a = _where(filters)
     if w:   # a filter that matches one lead of a set shows the whole set (Nick, Nov 2 2026)
         cond = " AND ".join(w)
+        # Find the matching ids once (a text search scans every lead, ~0.5 s); the list, totals and day totals
+        # below then reuse them instead of repeating the scan (Nov 10 2026).
         # (written as two index-friendly lookups; an OR across the two made Postgres scan every lead)
-        w, a = [f"l.id IN (SELECT l.id FROM leads l WHERE {cond} UNION ALL SELECT m.id FROM leads m WHERE m.set_id IN "
-                f"(SELECT l.set_id FROM leads l WHERE l.set_id IS NOT NULL AND {cond}))"], a + a
+        async with db.pool.connection() as conn:
+            cur = await conn.execute(
+                f"SELECT l.id FROM leads l WHERE {cond} UNION SELECT m.id FROM leads m WHERE m.set_id IN "
+                f"(SELECT l.set_id FROM leads l WHERE l.set_id IS NOT NULL AND {cond})", a + a)
+            ids = [r["id"] for r in await cur.fetchall()]
+        w, a = ["l.id = ANY(%s::uuid[])"], [ids]
     where = ("WHERE " + " AND ".join(w)) if w else ""
     order = SORTS.get(sort, SORTS["date"]).format(d="DESC" if desc else "ASC")
     if sort != "date":

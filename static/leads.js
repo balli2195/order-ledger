@@ -100,10 +100,15 @@
     } catch { /* storage blocked or old value */ }
   }
 
+  let loadSeq = 0;
   async function load(append = false) {
     if (!append) { S.offset = 0; saveFilters(); }
+    const seq = ++loadSeq;
     const p = new URLSearchParams({ ...filters(), sort: S.sort, desc: S.desc, limit: PAGE, offset: S.offset });
     const res = await api('GET', '/api/leads?' + p);
+    // Only the newest request may draw the list: a slower, older one (e.g. the page's first load, or the search
+    // before the last keystroke) finishing late used to replace the search results (Nick, Nov 10 2026).
+    if (seq !== loadSeq) return;
     S.rows = append ? S.rows.concat(res.leads) : res.leads;
     S.byId = new Map(S.rows.map((r) => [r.id, r]));
     S.totals = res.totals;
