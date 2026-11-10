@@ -201,7 +201,7 @@
     const cs = t.claude_n ? `<span class="day-claude" title="Sum of Claude buy qty × cost for this day's leads">Claude suggested spend <b>${money(t.claude_spend, 0)}</b></span>` : '';
     const rj = (S.rescore || {})[day];
     const rs = day && can('editor') ? `<button class="btn small day-rescore" data-rescore="${esc(day)}" ${rj && rj.running ? 'disabled' : ''} title="Run every lead on this day through the Lead Score again">${rj && rj.running ? `Rescoring ${rj.done}/${rj.total}…` : '↻ Rescore day'}</button>` : '';
-    return `<tr class="day-row"><td colspan="${S.order.length + 1 + (canPick() ? 1 : 0)}">${cs}<b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span>${rs}</td></tr>`;
+    return `<tr class="day-row"><td colspan="${S.order.length + 1 + (canPick() ? 1 : 0)}"><b>${esc(label)}</b><span class="muted"> · ${bits.join(' · ')}</span>${rs}${cs}</td></tr>`;
   }
 
   function setEdge(r) {   // 'set-first' / 'set-last' for the top and bottom rows of a set (for the box around it)
