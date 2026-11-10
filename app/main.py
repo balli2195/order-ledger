@@ -1636,8 +1636,14 @@ async def gift_cards_page(request: Request):
 
 @app.get("/api/gift-cards")
 async def api_gift_cards(request: Request):
+    """~10k cards is ~4 MB of JSON; gzip it (about 8x smaller) when the browser accepts it."""
     await auth.require(request, tab="gift_cards")
-    return await gc.list_all()
+    import gzip
+    from fastapi import Response
+    body = json.dumps(await gc.list_all(), separators=(",", ":")).encode()
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(gzip.compress(body, 6), media_type="application/json", headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+    return Response(body, media_type="application/json")
 
 
 @app.patch("/api/gift-cards/{cid}")
