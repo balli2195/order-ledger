@@ -444,6 +444,16 @@
     if (keepFocus) $(`#newItem [data-n="${keepFocus}"]`)?.focus();
   }
 
+  // Per-order "Send to PrepOS" (Nick, Nov 10 2026): sends this order's unsent items now; the nightly run skips them.
+  function ppOrderBtn(o) {
+    const its = (o.items || []).filter((i) => (i.qty_ordered || 0) > 0);
+    if (!its.length) return '';
+    const sent = its.filter((i) => i.prepos_sent), days = [...new Set(sent.map((i) => i.prepos_sent))].sort();
+    const sd = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (sent.length === its.length) return `<span class="pp-sent" title="Every item on this order is in PrepOS">✓ In PrepOS ${esc(days.map(sd).join(', '))}</span>`;
+    return `<span id="ppOrderWrap"><button class="btn small" data-act="pp-order" title="Send this order's items to PrepOS now. The nightly send skips them afterwards.">${sent.length ? `Send rest to PrepOS (${its.length - sent.length})` : 'Send to PrepOS'}</button></span>`;
+  }
+
   function _renderDrawer(o) {
     const items = o.items || [];
     const itemsTotal = items.reduce((s, i) => s + (i.qty_ordered || 0) * (i.cost_per_unit || 0), 0);
@@ -465,6 +475,7 @@
     $('#drawer').innerHTML = `
       <div class="drawer-head">
         <h2>${esc(o.store)} <span class="muted mono" style="font-size:15px">${esc(o.order_ref || '')}</span></h2>
+        ${can('editor') ? ppOrderBtn(o) : ''}
         ${can('editor') ? `<button class="btn small" data-act="dup-order">Duplicate</button><span id="delWrap"><button class="btn small danger" data-act="del-order">Delete order</button></span>` : ''}
         <button class="icon-btn" data-act="close" title="Close (Esc)" style="font-size:20px">✕</button>
       </div>
@@ -762,6 +773,21 @@
           const itemTr = btn.closest('tr[data-item]');
           if (btn.dataset.armed) { await api('DELETE', '/api/items/' + itemTr.dataset.item); }
           else { btn.dataset.armed = '1'; btn.textContent = 'Remove?'; btn.style.color = 'var(--bad)'; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕'; btn.style.color = ''; } }, 3000); }
+          break;
+        }
+        case 'pp-order':
+          $('#ppOrderWrap').innerHTML = `<span class="confirm"><span class="muted">Send to PrepOS now? Lines can't be changed there afterwards.</span>
+            <button class="btn small" data-act="pp-order-no">Cancel</button><button class="btn small primary" data-act="pp-order-yes">Send</button></span>`;
+          break;
+        case 'pp-order-no': await refreshDrawer(); break;
+        case 'pp-order-yes': {
+          btn.disabled = true; btn.textContent = 'Sending…';
+          try {
+            const r = await api('POST', `/api/orders/${S.openId}/prepos`);
+            const held = (r.held || []).length;
+            toast(r.sent ? `Sent ${r.sent} line${r.sent === 1 ? '' : 's'} (${r.units} units) to PrepOS${held ? ` · ${held} held: that ASIN already went to PrepOS today, so it goes in a later nightly send` : ''}`
+              : held ? `These ASINs already went to PrepOS today; ${held} line${held === 1 ? '' : 's'} will go in a later nightly send` : 'Nothing left to send on this order', !r.sent && !held);
+          } finally { await refreshDrawer(); }
           break;
         }
         case 'del-order': confirmDeleteOrder(S.openId); break;

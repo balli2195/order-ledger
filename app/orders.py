@@ -365,8 +365,10 @@ async def get_order(order_id=None, order_ref: str | None = None) -> dict | None:
         if not o:
             return None
         cur = await conn.execute(
-            "SELECT id, asin, product_title, shade, set_type, qty_ordered, cost_per_unit, lead_id, created_at, updated_at "
-            "FROM order_items WHERE order_id=%s ORDER BY created_at, id",
+            "SELECT i.id, i.asin, i.product_title, i.shade, i.set_type, i.qty_ordered, i.cost_per_unit, i.lead_id, i.created_at, i.updated_at, "
+            "ps.send_day AS prepos_sent "
+            "FROM order_items i LEFT JOIN prepos_sent_items s ON s.item_id = i.id LEFT JOIN prepos_sends ps ON ps.id = s.send_id "
+            "WHERE i.order_id=%s ORDER BY i.created_at, i.id",
             (order_id,),
         )
         o["items"] = [jsonable(dict(r)) for r in await cur.fetchall()]

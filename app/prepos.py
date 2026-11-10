@@ -12,6 +12,8 @@ Rules (Nick, Oct 29, 2026):
 - Multi-Pack comes from the item's set type: "2-pack" -> 2, "3-pack" -> 3, ... (Single, Split set, Bundle -> blank).
   Items are combined per ASIN and pack size, so a 2-pack and singles of one ASIN are separate lines.
 - A "Send now" button sends early, through any date up to today.
+- A "Send to PrepOS" button on an order sends just that order's unsent items (Nick, Nov 10 2026); the nightly run
+  skips them because they're recorded as sent.
 
 PrepOS API: POST {PREPOS_URL}/items/import, multipart field `products` = the same CSV as the manual import.
 Env: PREPOS_TOKEN (Bearer), optional PREPOS_URL.
@@ -59,19 +61,24 @@ async def config() -> dict:
     return {"start": start, "lag": lag, "default_through": today() - timedelta(days=lag), "enabled": bool(TOKEN)}
 
 
-async def pending(through: date) -> dict:
-    """Unsent items from orders dated start..through, combined into one line per ASIN."""
+async def pending(through: date, order_id: str | None = None) -> dict:
+    """Unsent items from orders dated start..through, combined into one line per ASIN.
+    With order_id: just that order's unsent items, whatever its date (the per-order "Send to PrepOS" button)."""
     cfg = await config()
+    if order_id:
+        where, args = "o.id = %s", (order_id,)
+    else:
+        where, args = "o.order_date >= %s AND o.order_date <= %s", (cfg["start"], through)
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            """SELECT i.id, upper(trim(i.asin)) AS asin, i.product_title, i.qty_ordered, i.cost_per_unit, i.set_type,
+            f"""SELECT i.id, upper(trim(i.asin)) AS asin, i.product_title, i.qty_ordered, i.cost_per_unit, i.set_type,
                       o.id AS order_id, o.store, o.order_ref, o.order_date
                FROM order_items i JOIN orders o ON o.id = i.order_id
                LEFT JOIN prepos_sent_items s ON s.item_id = i.id
-               WHERE s.item_id IS NULL AND o.order_date >= %s AND o.order_date <= %s AND i.qty_ordered > 0
+               WHERE s.item_id IS NULL AND {where} AND i.qty_ordered > 0
                  AND NOT COALESCE(o.confirm_info ? 'canceled', false)
                ORDER BY o.order_date, o.created_at, i.created_at""",
-            (cfg["start"], through),
+            args,
         )
         rows = await cur.fetchall()
         cur = await conn.execute("SELECT DISTINCT asin, multipack FROM prepos_sends WHERE send_day=%s AND status='sent'", (today(),))
@@ -169,8 +176,9 @@ async def upload(data: bytes) -> tuple[int, object]:
     return r.status_code, body
 
 
-async def send(through: date, kind: str, user_id: int | None = None) -> dict:
-    """Combine and upload everything pending through `through`. Returns what was sent."""
+async def send(through: date, kind: str, user_id: int | None = None, order_id: str | None = None) -> dict:
+    """Combine and upload everything pending through `through` (or only one order's unsent items, kind "order").
+    Sent items are recorded in prepos_sent_items, so the nightly run skips them. Returns what was sent."""
     if not TOKEN:
         raise PreposError("PrepOS isn't connected (PREPOS_TOKEN is not set)")
     if through > today():
@@ -181,7 +189,7 @@ async def send(through: date, kind: str, user_id: int | None = None) -> dict:
             if not (await cur.fetchone())["ok"]:
                 raise PreposError("A PrepOS send is already running")
             try:
-                p = await pending(through)
+                p = await pending(through, order_id)
                 lines = p["lines"]
                 if not lines:
                     return {"sent": 0, "units": 0, "lines": [], "held": p["held"], "no_asin": p["no_asin"]}
@@ -217,7 +225,7 @@ async def send(through: date, kind: str, user_id: int | None = None) -> dict:
                         "INSERT INTO audit_log (user_id, source, action, entity, after) VALUES (%s,%s,'create','prepos',%s)",
                         (user_id, "web" if kind == "button" else "system",
                          json.dumps({"lines": len(lines), "units": sum(x["qty"] for x in lines), "through": through.isoformat(),
-                                     "kind": kind, "ok": ok, "code": code})),
+                                     "kind": kind, "ok": ok, "code": code, "order_id": order_id})),
                     )
                 await conn.commit()   # keep the record even when the upload was refused
                 if not ok:

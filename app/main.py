@@ -664,6 +664,16 @@ async def api_prepos(request: Request, through: str | None = None):
             "pending": p, "history": await prepos.history(200)}
 
 
+@app.post("/api/orders/{order_id}/prepos")
+async def api_order_prepos(order_id: str, request: Request):
+    """Send one order's unsent items to PrepOS now; the nightly run then skips them."""
+    user = await auth.require(request, "editor", tab="prepos")
+    try:
+        return await prepos.send(prepos.today(), "order", user.id, order_id)
+    except prepos.PreposError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/prepos/send")
 async def api_prepos_send(request: Request, body: dict = Body(...)):
     user = await auth.require(request, "editor", tab="prepos")
