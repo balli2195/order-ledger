@@ -6,6 +6,9 @@ what is new or changed.
 
   python3 -I refresh.py plan  <triggers.json> <workdir>
       triggers.json = every trigger from list_triggers (all pages; a list, or {"data": [...]} objects, or a list of those).
+      Per trigger only these fields are needed: id, name, enabled, cron_expression, run_once_at, next_run_at,
+      updated_at, last_fired_at, last_run {status, fired_at, finished_at}. Copy updated_at exactly: it is how a
+      changed prompt or schedule is noticed.
       Reads the live map from the Hub (GET /api/engine/system-map), updates schedules, last/next run, on/off for every
       task, and writes:
         <workdir>/draft.json   the registry with all mechanical updates applied
@@ -171,13 +174,15 @@ def plan(trig_path: str, work: str) -> None:
     for t in trig:
         cid = "task:" + t["id"]; live_ids.add(cid)
         sched, when = schedule(t.get("cron_expression") or None, t.get("run_once_at"))
-        pr = prompt_of(t); ph = hashlib.sha1((pr + "|" + (t.get("cron_expression") or "") + "|" + (t.get("run_once_at") or "")).encode()).hexdigest()[:12]
+        pr = prompt_of(t)
+        basis = t.get("updated_at") or pr   # a task's updated_at changes whenever its prompt or schedule is edited
+        ph = hashlib.sha1((basis + "|" + (t.get("cron_expression") or "") + "|" + (t.get("run_once_at") or "")).encode()).hexdigest()[:12] if basis else None
         lr = t.get("last_run") or {}
         st = {"ROUTINE_RUN_STATUS_SUCCEEDED": "ok", "ROUTINE_RUN_STATUS_FAILED": "failed"}.get(lr.get("status", ""), "running" if lr.get("status") else None)
         mech = {"kind": "scheduled", "trigger_id": t["id"], "enabled": bool(t.get("enabled", True)), "cron": t.get("cron_expression") or "",
                 "sched": sched, "when_auto": when, "next_run": t.get("next_run_at") or t.get("run_once_at"),
                 "last_run": {"at": lr.get("finished_at") or lr.get("fired_at") or t.get("last_fired_at"), "status": st} if (lr or t.get("last_fired_at")) else None,
-                "prompt_hash": ph if pr else c_hash(by.get(cid))}
+                "prompt_hash": ph or c_hash(by.get(cid))}
         c = by.get(cid)
         ctx = {"id": cid, "name": t.get("name"), "when_auto": when, "enabled": mech["enabled"], "prompt": pr[:6000],
                "connectors": [x.get("name") for x in t.get("mcp_connections") or []]}
@@ -186,7 +191,7 @@ def plan(trig_path: str, work: str) -> None:
             reg["components"].append(c); by[cid] = c
             todo["new"].append(ctx)
             reg["changes"].append({"date": today, "text": f"New scheduled task: {t.get('name')}"})
-        elif c.get("prompt_hash") and pr and c.get("prompt_hash") != ph:
+        elif c.get("prompt_hash") and ph and c.get("prompt_hash") != ph:
             todo["changed"].append({**ctx, "current": {k: c.get(k) for k in ("name", "area", "what", "reads", "writes", "endpoints", "doc", "warn", "when")}})
         elif c.get("enabled") is not None and c.get("enabled") != mech["enabled"]:
             reg["changes"].append({"date": today, "text": f"{t.get('name')} turned {'on' if mech['enabled'] else 'off'}"})
