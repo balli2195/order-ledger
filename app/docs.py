@@ -15,6 +15,7 @@ PREFIX_TAB = {
     "health_trend": "inventory_health", "doi": "inventory_health",
     "brand_sellers": "brand_sellers",
     "relist": "relist",
+    "system_map": "system_map",
 }
 PATH_RE = re.compile(r"^[A-Za-z0-9_\-.]{1,100}(/[A-Za-z0-9_\-.]{1,100}){1,4}$")
 

@@ -43,6 +43,7 @@ TABS = {
     "commissions": ("Commissions", "/commissions"),
     "reimbursements": ("Reimbursements", "/reimbursements"),
     "profit": ("Profit", "/profit"),
+    "system_map": ("System map", "/system"),
 }
 PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "brand_sellers", "relist", "sephora_leads", "tasks", "timeclock", "commissions", "reimbursements", "profit")   # tabs that are their own page, in menu order
 

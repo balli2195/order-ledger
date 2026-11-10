@@ -87,3 +87,10 @@ Every transaction from Nick's bank and card accounts (Nick, Nov 8 2026). Tables 
   - Catalog upserts leave `active` untouched unless it is sent; new pairs default to active (Nov 9, 2026). Sephora job code lives in `jobs/sephora/` (not imported by the app; see its RUNBOOK.md).
 - **Web API (session):** `GET /api/sephora/overview`, `GET /api/sephora/candidates?status=&since=`, `GET /api/sephora/catalog?q&brand&confidence&sellable&needs_size=1|open&match=ok|wrong|unchecked&active=1|0|all`, `POST /api/sephora/candidates/{id}/approve {size?}`, `POST /api/sephora/candidates/{id}/reject {reason?, wrong_match?}`, `POST /api/sephora/catalog/mark {asin, product_id, match_ok?, size_confirmed?}`. Activity log entity `sephora`.
 - **Connector:** `list_sephora_candidates`, `search_sephora_catalog` (read only).
+
+## System map (Nov 10, 2026)
+Page `/system` (Menu → System map; tab key `system_map`, owner by default) explains every automation and part of the Hub with diagrams. It keeps itself current; nobody has to remember to add things:
+- **Read live from the code on each load** (`app/sysmap.py`): pages = `auth.TABS`; Hub jobs = the `asyncio.create_task(...)` lines in `main.lifespan` (name = the trailing comment, description = the module/function docstring); every `/api/engine/*` route with its last call and status (table `engine_calls`, written by the `engine_call_stats` middleware; `/mcp` is tracked too); hub_docs collections and main-table activity.
+- **Scheduled tasks**: the nightly "System map refresh" scheduled task (3:31 AM Central) lists every Claude scheduled task, runs `jobs/system_map/refresh.py plan`, writes plain-English descriptions only for what's new or changed, then `refresh.py apply` PUTs hub doc `system_map/registry`.
+- When you add a page or a background job, give its module a plain-English docstring and a short comment on the `create_task` line. It shows on /system immediately as "New", and the nightly refresh files its full card.
+- `GET /api/engine/system-map` (engine key) returns the same data for the refresh.

@@ -32,6 +32,7 @@ from . import commissions as comm
 from . import order_bonus
 from . import inbound
 from . import sephora
+from . import sysmap
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -65,6 +66,7 @@ async def lifespan(app: FastAPI):
     inbound_task.cancel()
     profit_task.cancel()
     brand_task.cancel()
+    await sysmap.flush()
     await db.close_pool()
 
 
@@ -89,6 +91,23 @@ async def il_cors(request: Request, call_next):
             resp.headers[k] = v
         return resp
     return await call_next(request)
+
+
+@app.middleware("http")
+async def engine_call_stats(request: Request, call_next):
+    """System map: remember when each /api/engine/* route and the Claude connector were last called (app/sysmap.py)."""
+    p = request.url.path
+    if not (p.startswith("/api/engine/") or p.startswith("/mcp")):
+        return await call_next(request)
+    try:
+        resp = await call_next(request)
+    except Exception:
+        route = request.scope.get("route")
+        sysmap.record(request.method, getattr(route, "path", p), 500)
+        raise
+    route = request.scope.get("route")
+    sysmap.record(request.method, "/mcp" if p.startswith("/mcp") else getattr(route, "path", p), resp.status_code)
+    return resp
 
 
 @app.middleware("http")
@@ -195,6 +214,25 @@ async def reimbursements_page(request: Request):
 @app.get("/profit", include_in_schema=False)
 async def profit_page(request: Request):
     return await _page(request, "profit", "profit.html")
+
+
+@app.get("/system", include_in_schema=False)
+async def system_page(request: Request):
+    return await _page(request, "system_map", "system.html")
+
+
+@app.get("/api/system-map")
+async def api_system_map(request: Request):
+    """System map page data: live parts read from the code + the nightly refresh's registry (app/sysmap.py)."""
+    await auth.require(request, tab="system_map")
+    return await sysmap.build(app)
+
+
+@app.get("/api/engine/system-map")
+async def engine_system_map(request: Request):
+    """For the nightly System map refresh: the same data, so it can see new pages, Hub jobs and engine routes."""
+    auth.require_engine_key(request)
+    return await sysmap.build(app)
 
 
 def _range(start: str | None, end: str | None) -> tuple[date, date]:

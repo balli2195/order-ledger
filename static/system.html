@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>System map · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .sm-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 26px 0 2px; }
+  .sm-head h2 { font-family: var(--serif); font-weight: 400; font-size: 30px; margin: 0; }
+  .sm-head .sp { flex: 1; }
+  .sm-sub { color: var(--muted); font-size: 13px; max-width: 900px; margin: 4px 0 0; }
+  .sm-sub b { color: var(--ink); font-weight: 600; }
+  .sm-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 18px 0 6px; }
+  .sm-tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+  .sm-tile .k { font-size: 12px; color: var(--muted); }
+  .sm-tile .v { font-family: var(--serif); font-size: 32px; line-height: 1.1; }
+  .sm-tile .s { font-size: 12px; color: var(--muted); }
+  .sm-tile .s .ok { color: var(--ok); font-weight: 600; } .sm-tile .s .bad { color: var(--bad); font-weight: 600; }
+  .sm-sec { margin-top: 28px; }
+  .sm-sec > h3 { font-family: var(--serif); font-weight: 400; font-size: 24px; margin: 0 0 2px; }
+  .sm-sec > .lead { color: var(--muted); font-size: 13px; margin: 0 0 10px; max-width: 900px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .sm-attn { padding: 4px 16px; }
+  .sm-attn li { padding: 7px 0; border-bottom: 1px solid var(--line-2); list-style: none; display: flex; gap: 10px; align-items: baseline; }
+  .sm-attn li:last-child { border-bottom: 0; }
+  .sm-attn ul { margin: 0; padding: 0; }
+  .sm-attn .ic { width: 18px; flex: none; text-align: center; }
+  .sm-attn .bad .ic { color: var(--bad); } .sm-attn .warn .ic { color: #b8860b; } .sm-attn .new .ic { color: var(--accent); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 4px 11px; font-size: 12.5px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .chip.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .sm-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0 10px; }
+  .sm-filters input[type=search] { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); min-width: 220px; }
+  .sm-filters label { font-size: 12.5px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
+  /* flow diagram */
+  .flow-wrap { overflow-x: auto; padding: 8px 6px 6px; position: relative; }
+  svg.flow text { font-family: var(--sans); fill: var(--ink); }
+  svg.flow .col-h { font-size: 12px; fill: var(--muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  svg.flow .node rect { fill: var(--panel-2); stroke: var(--line); }
+  svg.flow .node { cursor: pointer; }
+  svg.flow .node:hover rect { stroke: var(--muted); }
+  svg.flow .node text { font-size: 12.5px; }
+  svg.flow .node .sub { font-size: 10.5px; fill: var(--muted); }
+  svg.flow .grp { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+  svg.flow path.edge { fill: none; stroke-width: 1.4; opacity: .38; transition: opacity .15s; }
+  svg.flow.focus path.edge { opacity: .06; }
+  svg.flow.focus path.edge.hi { opacity: .95; stroke-width: 2.2; }
+  svg.flow.focus .node { opacity: .28; }
+  svg.flow.focus .node.hi { opacity: 1; }
+  svg.flow .node.sel rect { stroke: var(--ink); stroke-width: 1.6; }
+  svg.flow .stat { stroke: var(--panel); stroke-width: 1.5; }
+  .flow-detail { margin: 0 14px 14px; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line-2); font-size: 13px; }
+  .flow-detail h4 { margin: 0 0 4px; font-size: 15px; }
+  .flow-hint { font-size: 12px; color: var(--muted); padding: 0 14px 12px; }
+  /* timeline */
+  .tl-wrap { overflow-x: auto; padding: 10px 6px 4px; }
+  svg.tl text { font-family: var(--sans); fill: var(--ink); font-size: 11.5px; }
+  svg.tl .ax { fill: var(--muted); font-size: 11px; }
+  svg.tl .grid { stroke: var(--line-2); }
+  svg.tl .night { fill: var(--line-2); opacity: .55; }
+  svg.tl .now { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  svg.tl .ev { cursor: pointer; }
+  .tl-more { padding: 4px 16px 14px; font-size: 13px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 20px; }
+  .tl-more .when { color: var(--muted); font-variant-numeric: tabular-nums; display: inline-block; min-width: 118px; }
+  /* cards */
+  .area { margin-top: 22px; }
+  .area-h { display: flex; gap: 10px; align-items: baseline; border-bottom: 2px solid var(--line); padding-bottom: 6px; margin-bottom: 10px; }
+  .area-h h4 { margin: 0; font-size: 17px; font-weight: 600; }
+  .area-h .bl { color: var(--muted); font-size: 13px; }
+  .area-h .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; transform: translateY(1px); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 80px; }
+  .card.flash { box-shadow: 0 0 0 3px var(--flash); }
+  .card .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .card .nm { font-weight: 600; font-size: 14.5px; }
+  .card .what { font-size: 13px; }
+  .card .meta { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+  .card .meta b { color: var(--ink); font-weight: 500; }
+  .card .warn { font-size: 12px; color: #8a5a00; background: color-mix(in srgb, #e0a100 14%, transparent); border-radius: 6px; padding: 4px 8px; }
+  .card .links { font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .kb { font-size: 10.5px; border-radius: 99px; padding: 1px 8px; background: var(--line-2); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .kb.newb { background: var(--accent-soft); color: var(--accent); }
+  .kb.off { background: var(--warn-soft); color: var(--bad); }
+  .st-ok { color: var(--ok); font-weight: 600; } .st-bad { color: var(--bad); font-weight: 600; } .st-q { color: var(--muted); }
+  .plumb { padding: 6px 16px 14px; font-size: 12.5px; }
+  .plumb table { width: 100%; border-collapse: collapse; }
+  .plumb td, .plumb th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  .plumb th { font-weight: 600; color: var(--muted); font-size: 11.5px; }
+  details > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
+  .changes { padding: 4px 16px 12px; font-size: 13px; }
+  .changes li { padding: 3px 0; }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/relist" data-tab="relist">Sephora relist</a><a href="/sephora-leads" data-tab="sephora_leads">Sephora leads</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+
+  <div class="sm-head"><h2>How it all fits together</h2><span class="sp"></span><span class="muted" id="fresh" style="font-size:12.5px"></span></div>
+  <p class="sm-sub">Everything that runs your Amazon business: the scheduled tasks Claude runs for you, the jobs the Hub runs on its own, the Hub's pages, and the outside services they talk to. <b>This page keeps itself up to date.</b> New Hub pages and Hub jobs show up the moment they're added to the code; a check every night at 3:31 AM finds new or changed scheduled tasks and writes their explanations here. You never need to ask for something to be added.</p>
+
+  <div class="sm-tiles" id="tiles"></div>
+
+  <div class="sm-sec" id="attnSec" hidden>
+    <h3>Worth a look</h3>
+    <p class="lead">Things that failed, look stale, or were just added. This list empties itself as they're fixed.</p>
+    <div class="panel sm-attn"><ul id="attn"></ul></div>
+  </div>
+
+  <div class="sm-sec">
+    <h3>The big picture</h3>
+    <p class="lead">Read left to right: where information comes from, what moves it, where it lands in the Hub, and what gets changed or sent to you. Click any box to light up only its connections; click it again (or the background) to clear.</p>
+    <div class="sm-filters">
+      <div class="chips" id="areaChips"></div>
+      <span class="sp" style="flex:1"></span>
+      <label style="white-space:nowrap"><input type="checkbox" id="showOther"> Show non-Amazon tasks</label>
+    </div>
+    <div class="panel">
+      <div class="flow-wrap"><svg class="flow" id="flow"></svg></div>
+      <div class="flow-detail" id="flowDetail" hidden></div>
+      <div class="flow-hint" id="flowHint">Tip: click <b>Seller Snap</b> on the right to see everything that changes your mins and maxes.</div>
+    </div>
+  </div>
+
+  <div class="sm-sec">
+    <h3>A day in the Hub</h3>
+    <p class="lead">When each scheduled task runs, in Central time. The shaded part is overnight; the dashed line is now. Hub jobs that run all day are listed under the clock.</p>
+    <div class="panel">
+      <div class="tl-wrap"><svg class="tl" id="tl"></svg></div>
+      <div class="tl-more" id="tlMore"></div>
+    </div>
+  </div>
+
+  <div class="sm-sec">
+    <h3>Every part, explained</h3>
+    <p class="lead">Grouped by what it's for. Each card says what it does in plain words, when it runs, how it last went, what it reads and what it changes.</p>
+    <div class="sm-filters"><input type="search" id="q" placeholder="Search, e.g. Seller Snap, Gmail, cases…"></div>
+    <div id="areas"></div>
+  </div>
+
+  <div class="sm-sec">
+    <div class="panel">
+      <details id="chDet"><summary>Recent changes to the system</summary><ul class="changes" id="changes"></ul></details>
+    </div>
+  </div>
+
+  <div class="sm-sec" style="margin-bottom:40px">
+    <div class="panel">
+      <details><summary>Plumbing: every connection scheduled tasks use to talk to the Hub</summary>
+        <div class="plumb"><p class="muted" style="margin:0 0 8px">Read straight from the Hub's code, with the last time each was called. A red status means the last call failed.</p><div id="plumb"></div></div>
+      </details>
+    </div>
+  </div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/bonus.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, $$, esc, api, fail } = LG;
+  const S = { d: null, comps: [], nodes: {}, areas: [], areaOn: new Set(), showOther: false, sel: null, q: '' };
+  const NS = 'http://www.w3.org/2000/svg';
+  const KIND = { scheduled: 'Scheduled task', hub_job: 'Hub job', page: 'Hub page', server: 'Outside service', chat: 'Chat-run' };
+  const DEFAULT_AREAS = [{ id: 'other', name: 'Other', color: '#7a7266' }];
+  const OTHER_AREAS = new Set(['assistant', 'not_amazon']);
+  const now = new Date();
+
+  // ------------------------------------------------------------ helpers
+  const ago = (iso) => {
+    if (!iso) return null;
+    const s = (now - new Date(iso)) / 1000;
+    if (s < 0) { const m = -s / 60; return m < 90 ? `in ${Math.round(m)} min` : m < 60 * 36 ? `in ${Math.round(m / 60)} h` : `in ${Math.round(m / 1440)} days`; }
+    if (s < 90) return 'just now';
+    if (s < 5400) return `${Math.round(s / 60)} min ago`;
+    if (s < 129600) return `${Math.round(s / 3600)} h ago`;
+    return `${Math.round(s / 86400)} days ago`;
+  };
+  const isRecent = (iso, days) => iso && (now - new Date(iso)) / 86400000 <= days;
+  const area = (id) => S.areas.find((a) => a.id === id) || S.areas.find((a) => a.id === 'other') || DEFAULT_AREAS[0];
+  const nodeName = (id) => id.startsWith('page:') ? (S.comps.find((c) => c.id === id)?.name || id.slice(5)) : (S.nodes[id]?.name || id);
+  const ctCentral = () => { const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(now); return (+p.find((x) => x.type === 'hour').value % 24) * 60 + +p.find((x) => x.type === 'minute').value; };
+  const hm = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const fmtT = (t) => { let [h, m] = t.split(':').map(Number); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')} ${ap}`; };
+
+  // Merge the registry (written nightly) with what the Hub reads from its own code right now.
+  function assemble(d) {
+    const R = d.registry || {};
+    S.areas = (R.areas && R.areas.length ? R.areas : []).concat(R.areas?.some((a) => a.id === 'other') ? [] : DEFAULT_AREAS);
+    S.nodes = R.nodes || {};
+    const comps = (R.components || []).map((c) => ({ ...c }));
+    const byId = new Map(comps.map((c) => [c.id, c]));
+    const calls = d.live.engine_calls || [];
+    for (const p of d.live.pages) {
+      if (!p.own_page) continue;
+      const c = byId.get(p.id);
+      if (c) { c.path = p.path; c.live = true; }
+      else comps.push({ id: p.id, kind: 'page', name: p.name, path: p.path, area: 'other', what: p.code_doc || 'A new Hub page. Its explanation is written by tonight’s check.', isNew: true, live: true });
+    }
+    for (const j of d.live.hub_jobs) {
+      const c = byId.get(j.id);
+      if (c) { c.live = true; if (!c.what) c.what = j.code_doc; }
+      else comps.push({ id: j.id, kind: 'hub_job', name: j.name, area: 'other', what: j.code_doc || 'A new background job in the Hub. Its explanation is written by tonight’s check.', when: 'Runs inside the Hub', sched: { type: 'continuous' }, isNew: true, live: true });
+    }
+    for (const c of comps) {
+      if ((c.kind === 'page' || c.kind === 'hub_job') && !c.live && !c.removed) c.gone = true;   // removed from the code since the last check
+      // Last time this part talked to the Hub (engine API), straight from the Hub's own log
+      const eps = c.endpoints || [];
+      const hits = calls.filter((x) => eps.some((e) => x.path === e.split(' ').pop() && (!e.includes(' ') || e.startsWith(x.method + ' '))));
+      if (hits.length) {
+        const last = hits.reduce((a, b) => (a.last_at > b.last_at ? a : b));
+        c.hub_last = last.last_at; c.hub_status = last.last_status;
+      }
+      const tl = (c.tables || []).map((t) => d.live.tables?.[t]).filter(Boolean).sort().pop();
+      if (tl) c.table_last = tl;
+    }
+    S.comps = comps.filter((c) => !c.removed && !c.gone);
+    S.gone = comps.filter((c) => c.gone);
+    S.calls = calls;
+  }
+
+  function status(c) {   // {cls, text}
+    if (c.kind === 'scheduled') {
+      if (c.enabled === false) return { cls: 'st-q', text: 'Turned off' };
+      const r = c.last_run || {};
+      if (r.status === 'failed') return { cls: 'st-bad', text: `Last run failed ${ago(r.at) || ''}` };
+      if (r.status === 'ok') return { cls: 'st-ok', text: `Last run OK · ${ago(r.at)}` };
+      if (c.sched?.type === 'manual') return { cls: 'st-q', text: 'Runs when started (no schedule)' };
+      return { cls: 'st-q', text: 'Hasn’t run yet' };
+    }
+    if (c.hub_last) return c.hub_status >= 400 ? { cls: 'st-bad', text: `Last Hub call failed (${c.hub_status}) · ${ago(c.hub_last)}` } : { cls: 'st-ok', text: `Last active ${ago(c.hub_last)}` };
+    if (c.table_last) return { cls: 'st-ok', text: `Last active ${ago(c.table_last)}` };
+    if (c.kind === 'page') return { cls: 'st-q', text: 'Page' };
+    if (c.kind === 'hub_job') return { cls: 'st-ok', text: 'Running inside the Hub' };
+    return { cls: 'st-q', text: '' };
+  }
+
+  // ------------------------------------------------------------ tiles + attention
+  function renderTop() {
+    const R = S.d.registry || {};
+    const sch = S.comps.filter((c) => c.kind === 'scheduled' && !OTHER_AREAS.has(c.area));
+    const onSch = sch.filter((c) => c.enabled !== false && c.sched?.type !== 'once' && c.sched?.type !== 'manual');
+    const bad = sch.filter((c) => c.last_run?.status === 'failed');
+    const jobs = S.comps.filter((c) => c.kind === 'hub_job');
+    const pagesN = S.comps.filter((c) => c.kind === 'page');
+    const servers = S.comps.filter((c) => c.kind === 'server');
+    const outs = new Set(Object.entries(S.nodes).filter(([, n]) => n.side !== 'hub').map(([k]) => k));
+    $('#tiles').innerHTML = [
+      ['Scheduled tasks', onSch.length, bad.length ? `<span class="bad">${bad.length} failed last run</span>` : `<span class="ok">all ran OK</span> last time`],
+      ['Hub jobs', jobs.length, 'run inside the Hub, all day'],
+      ['Hub pages', pagesN.length, 'tabs and menu pages'],
+      ['Outside services', servers.length + outs.size, `${servers.length} of yours + ${outs.size} connected apps`],
+    ].map(([k, v, s]) => `<div class="sm-tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+    const upd = S.d.registry_updated_at;
+    $('#fresh').textContent = upd ? `Scheduled tasks last checked ${ago(upd)} · pages and Hub jobs read live` : 'Waiting for the first nightly check';
+
+    const A = [];
+    if (!upd || !isRecent(upd, 1.6)) A.push(['bad', '!', `The nightly check hasn’t updated this page since ${upd ? ago(upd) : 'it was set up'}. Scheduled-task details may be out of date.`]);
+    for (const c of sch) if (c.last_run?.status === 'failed') A.push(['bad', '✕', `<a href="#c-${esc(c.id)}" data-jump="${esc(c.id)}">${esc(c.name)}</a> failed on its last run (${esc(ago(c.last_run.at) || '')}).`]);
+    for (const x of S.calls) if (x.last_status >= 400 && isRecent(x.last_at, 2)) A.push(['bad', '✕', `A scheduled task’s last call to <span class="mono">${esc(x.method + ' ' + x.path)}</span> failed (${x.last_status}, ${esc(ago(x.last_at))}).`]);
+    for (const c of S.comps) for (const w of (c.warn || [])) A.push(['warn', '▲', `<a href="#c-${esc(c.id)}" data-jump="${esc(c.id)}">${esc(c.name)}</a>: ${esc(w)}`]);
+    for (const c of S.comps) if (c.isNew) A.push(['new', '●', `New: <a href="#c-${esc(c.id)}" data-jump="${esc(c.id)}">${esc(c.name)}</a> just appeared in the Hub. Tonight’s check will write its full explanation.`]);
+    for (const c of S.comps) if (!c.isNew && isRecent(c.added, 7)) A.push(['new', '●', `Added ${esc(ago(c.added))}: <a href="#c-${esc(c.id)}" data-jump="${esc(c.id)}">${esc(c.name)}</a>`]);
+    for (const c of S.gone) A.push(['warn', '▲', `${esc(c.name)} is no longer in the Hub’s code; tonight’s check will move it to past changes.`]);
+    $('#attnSec').hidden = !A.length;
+    $('#attn').innerHTML = A.map(([cls, ic, t]) => `<li class="${cls}"><span class="ic">${ic}</span><span>${t}</span></li>`).join('');
+
+    const ch = (R.changes || []).slice(-25).reverse();
+    $('#changes').innerHTML = ch.length ? ch.map((x) => `<li><span class="muted">${esc(x.date)}</span> · ${esc(x.text)}</li>`).join('') : '<li class="muted">Nothing yet.</li>';
+  }
+
+  // ------------------------------------------------------------ flow diagram
+  const visible = () => S.comps.filter((c) => (S.showOther || !OTHER_AREAS.has(c.area)) && (!S.areaOn.size || S.areaOn.has(c.area)));
+
+  function renderChips() {
+    const used = new Set(S.comps.filter((c) => S.showOther || !OTHER_AREAS.has(c.area)).map((c) => c.area));
+    $('#areaChips').innerHTML = `<button class="chip ${S.areaOn.size ? '' : 'on'}" data-area="">Everything</button>` +
+      S.areas.filter((a) => used.has(a.id)).map((a) => `<button class="chip ${S.areaOn.has(a.id) ? 'on' : ''}" data-area="${esc(a.id)}"><span class="dot" style="background:${esc(a.color)}"></span>${esc(a.name)}</button>`).join('');
+  }
+
+  function el(tag, attrs = {}, parent) { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); parent?.appendChild(e); return e; }
+  function trunc(s, px, size = 12.5) { const max = Math.floor(px / (size * 0.53)); return s.length > max ? s.slice(0, max - 1) + '…' : s; }
+
+  function renderFlow() {
+    const svg = $('#flow'); svg.innerHTML = '';
+    const comps = visible();
+    const autos = comps.filter((c) => ['scheduled', 'hub_job', 'server', 'chat'].includes(c.kind) && c.sched?.type !== 'once');
+    const pages = comps.filter((c) => c.kind === 'page');
+    const ins = new Set(), outs = new Set(), pageIds = new Set(pages.map((p) => p.id));
+    const edges = [];
+    for (const a of autos) {
+      for (const r of a.reads || []) if (!r.startsWith('page:') && S.nodes[r]) { ins.add(r); edges.push(['in:' + r, a.id, a]); }
+      for (const w of a.writes || []) {
+        if (w.startsWith('page:')) { if (pageIds.has(w)) edges.push([a.id, w, a]); }
+        else if (S.nodes[w]) { outs.add(w); edges.push([a.id, 'out:' + w, a]); }
+      }
+    }
+    for (const p of pages) for (const w of p.writes || []) if (!w.startsWith('page:') && S.nodes[w]) { outs.add(w); edges.push([p.id, 'out:' + w, p]); }
+    if (!autos.length) { svg.setAttribute('width', 400); svg.setAttribute('height', 60); el('text', { x: 10, y: 30 }, svg).textContent = 'Nothing in this group.'; return; }
+
+    const W = Math.max(1080, $('.flow-wrap').clientWidth - 12);
+    const colW = [170, 250, 170, 170];
+    const gap = (W - colW.reduce((a, b) => a + b, 0)) / 3;
+    const X = [0, colW[0] + gap, colW[0] + colW[1] + 2 * gap, colW[0] + colW[1] + colW[2] + 3 * gap];
+    const NH = 30, NG = 7, TOP = 34;
+
+    // middle column: automations grouped by area, in area order
+    const pos = {};
+    let y = TOP;
+    const groups = [];
+    for (const a of S.areas) {
+      const g = autos.filter((c) => c.area === a.id);
+      if (!g.length) continue;
+      groups.push([a, y]); y += 16;
+      for (const c of g.sort((p, q) => (p.kind === 'scheduled') - (q.kind === 'scheduled') || p.name.localeCompare(q.name))) { pos[c.id] = { x: X[1], y, w: colW[1], c }; y += NH + NG; }
+      y += 8;
+    }
+    const H = y + 10;
+    // side columns: order by the average height of what they connect to, then spread over the full height
+    const place = (ids, key, col) => {
+      const bary = ids.map((id) => { const ys = edges.filter((e) => e[0] === key(id) || e[1] === key(id)).map((e) => pos[e[0] === key(id) ? e[1] : e[0]]?.y).filter((v) => v != null); return [id, ys.length ? ys.reduce((a, b) => a + b) / ys.length : H / 2]; }).sort((a, b) => a[1] - b[1]);
+      const step = Math.max(NH + NG, (H - TOP - NH) / Math.max(1, bary.length - 1));
+      const span = step * (bary.length - 1); let yy = bary.length > 1 ? TOP + Math.max(0, (H - TOP - NH - span) / 2) : TOP + (H - TOP) / 2 - NH / 2;
+      // pull each toward its barycenter but keep order and spacing
+      const out = []; let prev = -1e9;
+      for (const [id, b] of bary) { let want = Math.min(Math.max(b, yy), H - NH); want = Math.max(want, prev + NH + NG); out.push([id, want]); prev = want; yy += step; }
+      const over = prev + NH - H; if (over > 0) for (const o of out) o[1] -= over;
+      for (const [id, yv] of out) pos[key(id)] = { x: X[col], y: Math.max(TOP, yv), w: colW[col], id };
+    };
+    // pages placed after automations so their order follows the edges
+    place([...ins], (id) => 'in:' + id, 0);
+    place([...pages.map((p) => p.id)], (id) => id, 2);
+    place([...outs], (id) => 'out:' + id, 3);
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+    ['Where information comes from', 'What moves it', 'Where it lands in the Hub', 'What gets changed'].forEach((t, i) => { el('text', { x: X[i], y: 16, class: 'col-h' }, svg).textContent = t; });
+    for (const [a, gy] of groups) { const t = el('text', { x: X[1], y: gy + 11, class: 'grp', fill: a.color }, svg); t.textContent = a.name; }
+
+    const eg = el('g', {}, svg);
+    for (const [s, t, c] of edges) {
+      const A = pos[s], B = pos[t]; if (!A || !B) continue;
+      const x1 = A.x + A.w, y1 = A.y + NH / 2, x2 = B.x, y2 = B.y + NH / 2, mx = (x1 + x2) / 2;
+      el('path', { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, class: 'edge', stroke: area(c.area).color, 'data-s': s, 'data-t': t }, eg);
+    }
+    const ng = el('g', {}, svg);
+    for (const [key, p] of Object.entries(pos)) {
+      const g = el('g', { class: 'node', 'data-id': key, transform: `translate(${p.x},${p.y})` }, ng);
+      const c = p.c || (key.startsWith('page:') ? S.comps.find((x) => x.id === key) : null);
+      el('rect', { width: p.w, height: NH, rx: 7 }, g);
+      if (c) el('rect', { width: 4, height: NH - 10, x: 4, y: 5, rx: 2, fill: area(c.area).color, stroke: 'none' }, g);
+      const label = c ? c.name : nodeName(key.replace(/^(in|out):/, ''));
+      el('text', { x: c ? 14 : 10, y: NH / 2 + 4.5 }, g).textContent = trunc(label, p.w - (c?.kind === 'scheduled' ? 40 : 24));
+      if (c && ['scheduled', 'hub_job', 'server'].includes(c.kind)) {
+        const st = status(c);
+        el('circle', { cx: p.w - 12, cy: NH / 2, r: 4.5, class: 'stat', fill: st.cls === 'st-bad' ? 'var(--bad)' : st.cls === 'st-ok' ? 'var(--ok)' : 'var(--line)' }, g);
+      }
+      const tt = el('title', {}, g); tt.textContent = label + (c?.when ? ' · ' + c.when : '');
+    }
+    S.edges = edges; S.pos = pos;
+    if (S.sel && pos[S.sel]) focus(S.sel); else { S.sel = null; $('#flowDetail').hidden = true; }
+  }
+
+  function focus(key) {
+    const svg = $('#flow');
+    if (!key || S.sel === key && svg.classList.contains('focus') && focus.toggle) { S.sel = null; svg.classList.remove('focus'); $$('.node', svg).forEach((n) => n.classList.remove('hi', 'sel')); $$('path.edge', svg).forEach((e) => e.classList.remove('hi')); $('#flowDetail').hidden = true; $('#flowHint').hidden = false; return; }
+    S.sel = key;
+    const near = new Set([key]);
+    // an automation lights up its own edges; a source/page/output lights up every automation touching it and those automations' edges
+    const auto = S.pos[key]?.c;
+    const touch = S.edges.filter((e) => e[0] === key || e[1] === key);
+    const autosHit = auto ? [key] : touch.map((e) => (e[0] === key ? e[1] : e[0])).filter((k) => S.pos[k]?.c);
+    const hiEdges = new Set();
+    S.edges.forEach((e, i) => { if (auto ? (e[0] === key || e[1] === key) : (e[0] === key || e[1] === key)) hiEdges.add(i); });
+    if (!auto) S.edges.forEach((e, i) => { if (autosHit.includes(e[0]) || autosHit.includes(e[1])) hiEdges.add(i); });
+    hiEdges.forEach((i) => { near.add(S.edges[i][0]); near.add(S.edges[i][1]); });
+    svg.classList.add('focus');
+    $$('.node', svg).forEach((n) => { n.classList.toggle('hi', near.has(n.dataset.id)); n.classList.toggle('sel', n.dataset.id === key); });
+    $$('path.edge', svg).forEach((p, i) => p.classList.toggle('hi', hiEdges.has(i)));
+    // detail
+    const c = auto || S.comps.find((x) => x.id === key);
+    const d = $('#flowDetail'); d.hidden = false; $('#flowHint').hidden = true;
+    if (c) d.innerHTML = `<h4>${esc(c.name)} <span class="kb">${esc(KIND[c.kind] || c.kind)}</span></h4><div>${esc(c.what || '')}</div><div class="muted" style="margin-top:4px">${c.when ? esc(c.when) + ' · ' : ''}<span class="${status(c).cls}">${esc(status(c).text)}</span> · <a href="#c-${esc(c.id)}" data-jump="${esc(c.id)}">full card ↓</a></div>`;
+    else { const id = key.replace(/^(in|out):/, ''); const n = S.nodes[id] || {}; const list = autosHit.map((k) => S.pos[k].c.name);
+      d.innerHTML = `<h4>${esc(n.name || id)}</h4><div>${esc(n.what || '')}</div><div class="muted" style="margin-top:4px">${key.startsWith('in:') ? 'Read by' : 'Changed by'}: ${esc(list.join(', ') || '—')}</div>`; }
+  }
+
+  // ------------------------------------------------------------ timeline
+  function renderTimeline() {
+    const svg = $('#tl'); svg.innerHTML = '';
+    const comps = visible();
+    const daily = [], more = [];
+    for (const c of comps) {
+      const s = c.sched || {}; if (!['scheduled', 'hub_job'].includes(c.kind) || c.enabled === false) continue;
+      if (s.type === 'daily' && s.times?.length) daily.push(c); else if (c.kind === 'scheduled') more.push(c);
+    }
+    const W = Math.max(1080, $('.tl-wrap').clientWidth - 12), L = 10, Rr = 10, x = (m) => L + (W - L - Rr) * m / 1440;
+    // lanes: greedy so labels never overlap
+    const items = daily.map((c) => ({ c, ms: c.sched.times.map(hm).sort((a, b) => a - b) })).sort((a, b) => a.ms[0] - b.ms[0]);
+    const lanes = [];
+    // label to the right of the (last) dot, or to the left of the first dot when it would run off the edge
+    for (const it of items) {
+      const label = it.c.name + (it.ms.length > 1 ? ` (${it.ms.length}× a day)` : '');
+      const w = label.length * 6.4, f = x(it.ms[0]), l = x(it.ms[it.ms.length - 1]);
+      it.label = label;
+      if (l + 9 + w <= W - Rr) { it.side = 'r'; it.a = f - 6; it.b = l + 9 + w; it.lx = l + 9; }
+      else { it.side = 'l'; it.a = f - 9 - w; it.b = l + 6; it.lx = f - 9; }
+    }
+    // multi-time tasks first so their long lines get the top lanes, then by time
+    items.sort((p, q) => (q.ms.length > 1) - (p.ms.length > 1) || p.a - q.a);
+    for (const it of items) {
+      let li = lanes.findIndex((end) => end < it.a); if (li < 0) { li = lanes.length; lanes.push(0); }
+      lanes[li] = it.b + 10; it.lane = li;
+    }
+    const LH = 24, top = 22, H = top + Math.max(1, lanes.length) * LH + 26;
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    el('rect', { x: x(0), y: 0, width: x(6 * 60) - x(0), height: H - 20, class: 'night' }, svg);
+    el('rect', { x: x(21 * 60), y: 0, width: x(1440) - x(21 * 60), height: H - 20, class: 'night' }, svg);
+    for (let h = 0; h <= 24; h += 3) { el('line', { x1: x(h * 60), x2: x(h * 60), y1: 0, y2: H - 20, class: 'grid' }, svg); const t = el('text', { x: x(h * 60), y: H - 6, class: 'ax', 'text-anchor': h === 0 ? 'start' : h === 24 ? 'end' : 'middle' }, svg); t.textContent = h === 0 || h === 24 ? 'midnight' : h === 12 ? 'noon' : `${h % 12} ${h < 12 ? 'AM' : 'PM'}`; }
+    for (const it of items) {
+      const yy = top + it.lane * LH, col = area(it.c.area).color;
+      const g = el('g', { class: 'ev', 'data-jump': it.c.id }, svg);
+      if (it.ms.length > 1) el('line', { x1: x(it.ms[0]), x2: x(it.ms[it.ms.length - 1]), y1: yy, y2: yy, stroke: col, 'stroke-width': 2, opacity: .45 }, g);
+      for (const m of it.ms) el('circle', { cx: x(m), cy: yy, r: 5, fill: col }, g);
+      const t = el('text', { x: it.lx, y: yy + 4, 'text-anchor': it.side === 'l' ? 'end' : 'start' }, g); t.textContent = it.label;
+      const tt = el('title', {}, g); tt.textContent = `${it.c.name}: ${it.c.when || ''}`;
+    }
+    const nm = ctCentral(); el('line', { x1: x(nm), x2: x(nm), y1: 0, y2: H - 20, class: 'now' }, svg);
+    if (!items.length) el('text', { x: 20, y: 40 }, svg).textContent = 'No daily tasks in this group.';
+    const jobs = comps.filter((c) => (c.kind === 'hub_job' && c.sched?.type !== 'daily') || c.kind === 'server');
+    const ord = { weekly: 1, monthly: 2, manual: 3, once: 4 };
+    $('#tlMore').innerHTML = more.sort((a, b) => (ord[a.sched?.type] || 9) - (ord[b.sched?.type] || 9)).map((c) => `<div><span class="when">${esc(c.when || '')}</span> <a href="#c-${esc(c.id)}" data-jump="${esc(c.id)}">${esc(c.name)}</a></div>`).join('') +
+      (jobs.length ? `<div style="grid-column:1/-1;margin-top:6px" class="muted">All day, inside the Hub or on your other servers: ${jobs.map((c) => `<a href="#c-${esc(c.id)}" data-jump="${esc(c.id)}">${esc(c.name)}</a>`).join(' · ')}</div>` : '');
+  }
+
+  // ------------------------------------------------------------ cards
+  function card(c) {
+    const st = status(c), a = area(c.area);
+    const reads = (c.reads || []).map(nodeName), writes = (c.writes || []).map(nodeName);
+    const badge = c.isNew || isRecent(c.added, 7) ? '<span class="kb newb">New</span>' : '';
+    const off = c.enabled === false ? '<span class="kb off">Off</span>' : '';
+    const links = [];
+    if (c.path) links.push(`<a href="${esc(c.path)}">Open page →</a>`);
+    if (c.url) links.push(`<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>`);
+    if (c.doc) links.push(`<span class="muted">How it works: <span class="mono">${esc(c.doc)}</span></span>`);
+    return `<div class="card" id="c-${esc(c.id)}" style="border-left:4px solid ${esc(a.color)}">
+      <div class="top"><span class="nm">${esc(c.name)}</span><span class="kb">${esc(KIND[c.kind] || c.kind)}</span>${badge}${off}</div>
+      <div class="what">${esc(c.what || '')}</div>
+      <div class="meta">
+        ${c.when ? `<div>When: <b>${esc(c.when)}</b></div>` : ''}
+        ${st.text ? `<div class="${st.cls}">${esc(st.text)}${c.kind === 'scheduled' && c.next_run ? ` <span class="muted" style="font-weight:400">· next ${esc(ago(c.next_run))}</span>` : ''}</div>` : ''}
+        ${reads.length ? `<div>Reads: <b>${esc(reads.join(', '))}</b></div>` : ''}
+        ${writes.length ? `<div>Changes or sends: <b>${esc(writes.join(', '))}</b></div>` : ''}
+        ${c.asks ? `<div>Needs you for: <b>${esc(c.asks)}</b></div>` : ''}
+      </div>
+      ${(c.warn || []).map((w) => `<div class="warn">${esc(w)}</div>`).join('')}
+      ${links.length ? `<div class="links">${links.join('')}</div>` : ''}
+    </div>`;
+  }
+
+  function renderCards() {
+    const q = S.q.trim().toLowerCase();
+    const comps = visible().filter((c) => !q || JSON.stringify([c.name, c.what, c.when, (c.reads || []).map(nodeName), (c.writes || []).map(nodeName), c.doc]).toLowerCase().includes(q));
+    const order = { page: 0, scheduled: 1, hub_job: 2, server: 3, chat: 4 };
+    const html = S.areas.map((a) => {
+      const g = comps.filter((c) => c.area === a.id).sort((x, y) => (order[x.kind] ?? 9) - (order[y.kind] ?? 9) || x.name.localeCompare(y.name));
+      if (!g.length) return '';
+      return `<div class="area"><div class="area-h"><span class="sw" style="background:${esc(a.color)}"></span><h4>${esc(a.name)}</h4><span class="bl">${esc(a.blurb || '')}</span></div><div class="cards">${g.map(card).join('')}</div></div>`;
+    }).join('');
+    $('#areas').innerHTML = html || '<div class="empty">Nothing matches.</div>';
+  }
+
+  function renderPlumb() {
+    const calls = new Map(S.calls.map((x) => [x.method + ' ' + x.path, x]));
+    const users = (r) => S.comps.filter((c) => (c.endpoints || []).some((e) => e === r.method + ' ' + r.path || e === r.path)).map((c) => c.name);
+    const rows = S.d.live.engine_routes.map((r) => { const k = calls.get(r.method + ' ' + r.path); return `<tr><td class="mono">${esc(r.method)} ${esc(r.path)}</td><td>${esc(r.doc || '')}</td><td>${esc(users(r).join(', '))}</td><td class="${k ? (k.last_status >= 400 ? 'st-bad' : 'st-ok') : 'st-q'}">${k ? esc(ago(k.last_at)) + (k.last_status >= 400 ? ` (${k.last_status})` : '') : 'not since tracking began'}</td></tr>`; }).join('');
+    const mcp = calls.get('POST /mcp');
+    $('#plumb').innerHTML = `<table><tr><th>Connection</th><th>What it’s for</th><th>Used by</th><th>Last called</th></tr>${rows}</table>
+      <p class="muted" style="margin:10px 0 0">Claude chats that use the Myrddin Hub connector: last used ${mcp ? esc(ago(mcp.last_at)) : '—'}. Code folders the scheduled tasks run: ${S.d.live.repo_jobs.map((j) => `<span class="mono">${esc(j.folder)}</span>`).join(', ') || '—'}. Reports stored in the Hub: ${S.d.live.doc_collections.map((x) => `${esc(x.collection)} (${esc(ago(x.updated_at))})`).join(', ')}.</p>`;
+  }
+
+  function renderAll() { renderTop(); renderChips(); renderFlow(); renderTimeline(); renderCards(); renderPlumb(); }
+
+  // ------------------------------------------------------------ events
+  document.addEventListener('click', (e) => {
+    const ch = e.target.closest('#areaChips .chip');
+    if (ch) { const a = ch.dataset.area; if (!a) S.areaOn.clear(); else if (S.areaOn.has(a)) S.areaOn.delete(a); else S.areaOn.add(a); S.sel = null; renderChips(); renderFlow(); renderTimeline(); renderCards(); return; }
+    const j = e.target.closest('[data-jump]');
+    if (j) { e.preventDefault(); const c = document.getElementById('c-' + j.dataset.jump); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('flash'); setTimeout(() => c.classList.remove('flash'), 1600); } return; }
+    const n = e.target.closest('#flow .node');
+    if (n) { focus.toggle = true; focus(S.sel === n.dataset.id ? null : n.dataset.id); return; }
+    if (e.target.closest('#flow')) focus(null);
+  });
+  $('#showOther').addEventListener('change', (e) => { S.showOther = e.target.checked; S.areaOn.clear(); renderAll(); });
+  $('#q').addEventListener('input', (e) => { S.q = e.target.value; renderCards(); });
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { renderFlow(); renderTimeline(); }, 200); });
+
+  (async () => {
+    try {
+      await LG.header();
+      S.d = await api('GET', '/api/system-map');
+      assemble(S.d);
+      renderAll();
+    } catch (e) { fail(e); }
+  })();
+})();
+</script>
+</body>
+</html>

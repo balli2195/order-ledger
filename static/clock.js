@@ -63,6 +63,14 @@ window.TimeClock = (() => {
     bonusSwitch();
   }
 
+  function systemMenu(me) {   // System map: how every automation and page fits together (Nick, Nov 10 2026)
+    const menu = document.getElementById('menu');
+    if (!menu || !(me?.tabs || []).includes('system_map') || menu.querySelector('[data-go="/system"]')) return;
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.go = '/system'; b.textContent = 'System map';
+    b.addEventListener('click', () => { location.href = '/system'; });
+    menu.insertBefore(b, menu.querySelector('hr'));
+  }
+
   // Owner: turn the order bonus on for today only (Nick, Nov 5 2026) — a button in the Menu, and one on the Time clock page
   const money0 = (n) => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const bon = { s: null, btns: [] };
@@ -105,6 +113,7 @@ window.TimeClock = (() => {
   function init(me) {
     st.me = me;
     ownerMenu(me);
+    systemMenu(me);
     taskBadge(); setInterval(() => { if (!document.hidden) taskBadge(); }, 120000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) taskBadge(); });
     window.addEventListener('tasks:changed', taskBadge);

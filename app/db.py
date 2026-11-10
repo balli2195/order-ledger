@@ -809,6 +809,21 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX IF NOT EXISTS sephora_runs_kind_idx ON sephora_runs (kind, at DESC);
     """,
+    # System map page (Nov 10 2026): when each engine API route / the Claude connector was last called, and how it went
+    """
+    CREATE TABLE IF NOT EXISTS engine_calls (
+        method      text NOT NULL,
+        path        text NOT NULL,
+        n           bigint NOT NULL DEFAULT 0,
+        n_err       bigint NOT NULL DEFAULT 0,
+        last_at     timestamptz,
+        last_status int,
+        last_ok_at  timestamptz,
+        last_err_at timestamptz,
+        since       timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (method, path)
+    );
+    """,
 ]
 
 
