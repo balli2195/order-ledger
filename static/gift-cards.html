@@ -38,6 +38,8 @@
   .pill.cb { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin: 10px 0; color: var(--muted); font-size: 13px; }
   .checked { font-size: 11px; color: var(--muted); display: block; }
+  table.gc th.sortable { cursor: pointer; user-select: none; }
+  table.gc th.sortable:hover, table.gc th.on { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -84,7 +86,35 @@
 (() => {
   const { $, esc, money, api, fail, toast, can } = LG;
   const PER = 100;
-  const S = { cards: [], statuses: [], store: '', page: 0, shown: new Set(), view: [] };
+  const S = { cards: [], statuses: [], store: '', page: 0, shown: new Set(), view: [], sort: null, dir: 1 };
+  // Columns; ones with a key sort when their header is clicked (again to flip; blanks always go last).
+  const COLS = [
+    { t: 'Date', k: 'order_date', date: 1 }, { t: 'Order #', k: 'order_ref' }, { t: 'Store', k: 'store' },
+    { t: 'Face', k: 'face_value', num: 1 }, { t: 'Disc.', k: 'discount_pct', num: 1 }, { t: 'Paid', k: 'price', num: 1 },
+    { t: 'Cash back', k: 'cashback', num: 1 }, { t: 'Cost', k: 'cost', num: 1 }, { t: 'Card #' }, { t: 'PIN' },
+    { t: 'AC balance', k: 'source_balance', num: 1 }, { t: 'Used (orders)', k: 'used_total', num: 1 },
+    { t: 'Est. left', k: 'est_left', num: 1 }, { t: 'Balance', k: 'balance', num: 1 }, { t: 'Status', k: 'status' }, { t: 'Notes', k: 'notes' }];
+  const sortVal = (c, k) => {
+    if (k === 'est_left') return c.used_total == null || c.used_match === 'shared' ? null : Math.max(0, Number(c.face_value || 0) - Number(c.used_total));
+    const v = c[k]; if (v == null || v === '') return null;
+    if (k === 'order_ref') return /^\d+$/.test(v) ? Number(v) : v;
+    return COLS.find((x) => x.k === k)?.num ? Number(v) : v;
+  };
+  function sorted(V) {
+    if (!S.sort) return V;
+    const k = S.sort, d = S.dir;
+    return V.slice().sort((a, b) => {
+      const x = sortVal(a, k), y = sortVal(b, k);
+      if (x == null && y == null) return a.id - b.id; if (x == null) return 1; if (y == null) return -1;
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * d || a.id - b.id;
+    });
+  }
+  function thead() {
+    return '<thead><tr>' + COLS.filter((c) => c.k !== 'order_date' || S.hasDate).map((c) => {
+      const on = c.k && S.sort === c.k, arrow = on ? (S.dir > 0 ? ' ▲' : ' ▼') : '';
+      return `<th class="${c.num ? 'num' : ''}${c.k ? ' sortable' : ''}${on ? ' on' : ''}"${c.k ? ` data-sort="${c.k}" title="Sort by ${c.t}"` : ''}>${c.t}${arrow}</th>`;
+    }).join('') + '</tr></thead>';
+  }
   const n0 = (v) => Number(v || 0);
   const mask = (s) => s ? '•••• ' + String(s).slice(-4) : '—';
   const fmt = (d) => { if (!d) return ''; const [y, m, day] = d.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
@@ -117,7 +147,7 @@
   }
 
   function render() {
-    const base = filtered(true), V = filtered(false); S.view = V;
+    const base = filtered(true), V = sorted(filtered(false)); S.view = V;
     const by = {}; base.forEach((c) => { const k = c.store || '?'; (by[k] ||= { n: 0, face: 0 }); by[k].n++; by[k].face += n0(c.face_value); });
     const stores = Object.entries(by).sort((a, b) => b[1].face - a[1].face);
     $('#stores').innerHTML = `<button data-store="" class="${S.store ? '' : 'on'}">All<span class="n">${base.length.toLocaleString()}</span></button>` +
@@ -135,8 +165,7 @@
       stat('Balance checked', chk.length ? money(bal, 0) : '—', `${chk.length.toLocaleString()} of ${V.length.toLocaleString()} cards`);
     const pages = Math.max(1, Math.ceil(V.length / PER)); S.page = Math.min(S.page, pages - 1);
     const rows = V.slice(S.page * PER, S.page * PER + PER), edit = can('editor');
-    $('#tbl').innerHTML = `<thead><tr>${S.hasDate ? '<th>Date</th>' : ''}<th>Order #</th><th>Store</th><th class="num">Face</th><th class="num">Disc.</th><th class="num">Paid</th><th class="num">Cash back</th><th class="num">Cost</th>
-      <th>Card #</th><th>PIN</th><th class="num">AC balance</th><th class="num">Used (orders)</th><th class="num">Est. left</th><th class="num">Balance</th><th>Status</th><th>Notes</th></tr></thead><tbody>` +
+    $('#tbl').innerHTML = thead() + '<tbody>' +
       (rows.length ? rows.map((c) => { const sh = S.shown.has(c.id); return `<tr data-id="${c.id}">
         ${S.hasDate ? `<td>${fmt(c.order_date)}</td>` : ''}<td class="mono">${esc(c.order_ref || '')}</td><td>${esc(c.store || '')}</td>
         <td class="num">${money(c.face_value)}</td><td class="num">${c.discount_pct != null ? Number(c.discount_pct) + '%' : '·'}</td><td class="num">${money(c.price)}</td>
@@ -158,6 +187,8 @@
   ['q', 'status', 'from', 'to'].forEach((id) => $('#' + id).addEventListener('input', () => { S.page = 0; render(); }));
   $('#pager').addEventListener('click', (e) => { const b = e.target.closest('[data-pg]'); if (!b) return; S.page += Number(b.dataset.pg); render(); window.scrollTo({ top: $('#tbl').offsetTop - 80 }); });
   $('#tbl').addEventListener('click', async (e) => {
+    const h = e.target.closest('th[data-sort]');
+    if (h) { const k = h.dataset.sort; if (S.sort === k) S.dir = -S.dir; else { S.sort = k; S.dir = COLS.find((x) => x.k === k)?.num ? -1 : 1; } S.page = 0; render(); return; }
     const r = e.target.closest('[data-reveal]'); if (r) { const id = Number(r.dataset.reveal); S.shown.has(id) ? S.shown.delete(id) : S.shown.add(id); render(); return; }
     const c = e.target.closest('[data-copy]'); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); toast('Copied'); } catch (err) { fail(err); } }
   });
