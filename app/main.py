@@ -674,6 +674,16 @@ async def api_order_prepos(order_id: str, request: Request):
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/engine/orders/{order_id}/prepos")
+async def engine_order_prepos(order_id: str, request: Request):
+    """Claude: send one order's unsent items to PrepOS (only when Nick asks); the nightly run then skips them."""
+    auth.require_engine_key(request)
+    try:
+        return await prepos.send(prepos.today(), "order", None, order_id)
+    except prepos.PreposError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/prepos/send")
 async def api_prepos_send(request: Request, body: dict = Body(...)):
     user = await auth.require(request, "editor", tab="prepos")
