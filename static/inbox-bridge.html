@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Myrddin · inbox bridge</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;margin:40px;color:#222}#log{white-space:pre-wrap;color:#555}</style></head>
+<body>
+<h3>Myrddin Hub · inbox bridge</h3>
+<p>This tab receives data read from your own Gmail / Outlook tab and saves it to the Hub with your sign-in. You can close it when it says done.</p>
+<div id="log">Waiting for data…</div>
+<script>
+// Nov 10 2026: Outlook's page won't let a script send data to other sites, so a script in Nick's Outlook tab opens this page
+// and hands it the data with postMessage. Only Gmail / Outlook origins are accepted, and only known kinds of data.
+const ORIGINS = ['https://outlook.cloud.microsoft', 'https://outlook.office.com', 'https://outlook.live.com', 'https://mail.google.com'];
+const KINDS = { 'order-dates': '/api/gift-cards/order-dates' };
+const log = (t) => { document.getElementById('log').textContent = t; };
+window.addEventListener('message', async (e) => {
+  if (!ORIGINS.includes(e.origin) || !e.data || !KINDS[e.data.type]) return;
+  log(`Saving ${e.data.rows.length} rows from ${e.origin}…`);
+  try {
+    const r = await fetch(KINDS[e.data.type], { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ rows: e.data.rows }) });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(out.detail || r.status);
+    log('Done: ' + JSON.stringify(out));
+    e.source.postMessage({ type: e.data.type + ':ok', id: e.data.id, result: out }, e.origin);
+  } catch (err) {
+    log('Failed: ' + err.message + ' (are you signed in to the Hub in this browser?)');
+    e.source.postMessage({ type: e.data.type + ':error', id: e.data.id, error: String(err.message) }, e.origin);
+  }
+});
+if (window.opener) window.opener.postMessage({ type: 'bridge:ready' }, '*');
+</script>
+</body></html>

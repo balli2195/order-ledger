@@ -1725,6 +1725,16 @@ async def _gc_check_auth(request: Request) -> None:
     auth.require_engine_key(request)
 
 
+@app.post("/api/gift-cards/order-dates")
+async def api_gift_card_order_dates(request: Request, body: dict = Body(...)):
+    """Same as the engine call, signed in as an editor (used by static/inbox-bridge.html)."""
+    await auth.require(request, role="editor", tab="gift_cards")
+    rows = body.get("rows") or []
+    if not isinstance(rows, list) or len(rows) > 20000:
+        raise HTTPException(400, "rows must be a list of at most 20000")
+    return await gc.set_order_dates("arbitragecard", rows)
+
+
 @app.post("/api/engine/giftcards/order-dates")
 async def engine_giftcard_order_dates(request: Request, body: dict = Body(...)):
     """{source, rows:[{o, dt}]} — Arbitrage Card order number -> order date, read from the order emails in Outlook."""
