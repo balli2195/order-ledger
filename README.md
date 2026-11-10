@@ -94,3 +94,9 @@ Page `/system` (Menu → System map; tab key `system_map`, owner by default) exp
 - **Scheduled tasks**: the nightly "System map refresh" scheduled task (3:31 AM Central) lists every Claude scheduled task, runs `jobs/system_map/refresh.py plan`, writes plain-English descriptions only for what's new or changed, then `refresh.py apply` PUTs hub doc `system_map/registry`.
 - When you add a page or a background job, give its module a plain-English docstring and a short comment on the `create_task` line. It shows on /system immediately as "New", and the nightly refresh files its full card.
 - `GET /api/engine/system-map` (engine key) returns the same data for the refresh.
+
+## Gift cards page (Nov 10, 2026)
+`/gift-cards` (tab `gift_cards`, owners only unless ticked per person): one row per gift card bought. Code: `app/giftcards.py`, `static/gift-cards.html`, table `gift_cards`.
+- Columns: source (`arbitragecard`), order_ref, order_date, product, store (parsed from the product name), card_number, pin, face_value, price (paid per card at checkout), cashback (Arbitrage Card cash back per card), cost (= price − cashback), balance, balance_checked_at, status (unknown/active/used/partial/invalid), notes.
+- Card number and PIN are masked on the page until clicked; owners can download the filtered list as CSV. Typing a balance sets status active (0 → used).
+- **Engine API (X-Engine-Key):** `POST /api/engine/giftcards {source, rows:[{o, dt, p, n, pin, face, price, cb}]}` (long names order_ref/order_date/product/card_number/face_value/cashback also accepted) upserts by (source, card_number) and never touches balance/status/notes. Also answers cross-origin POSTs from arbitragecard.com (loading straight from Nick's signed-in tab). `POST /api/engine/giftcards/balances {source, rows:[{card_number, balance}]}` for a balance-check job.

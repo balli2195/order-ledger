@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gift cards · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .gc-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 26px 0 0; }
+  .gc-head h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0; }
+  .gc-sub { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 820px; }
+  .stats .stat.main { border-color: var(--accent); }
+  .stats .stat .sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .gc-stores { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .gc-stores button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 4px 11px; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .gc-stores button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .gc-stores button .n { color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .gc-stores button.on .n { color: inherit; opacity: .8; }
+  .gc-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 10px; }
+  .gc-filters input[type=search] { width: 240px; }
+  .gc-filters input[type=date] { width: 150px; }
+  .gc-filters .grow { flex: 1; }
+  table.gc td, table.gc th { white-space: nowrap; }
+  table.gc td.num, table.gc th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.gc td.prod { max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 12.5px; }
+  .sec { font-family: var(--mono); font-size: 12.5px; cursor: pointer; border-bottom: 1px dotted var(--muted); }
+  .sec.shown { border-bottom-color: transparent; }
+  .cp { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 0 3px; font-size: 13px; }
+  .cp:hover { color: var(--accent); }
+  input.bal { width: 86px; text-align: right; padding: 3px 6px; font-variant-numeric: tabular-nums; }
+  input.note { width: 160px; padding: 3px 6px; }
+  select.st { padding: 3px 4px; }
+  .pill { font-size: 11px; border-radius: 99px; padding: 1px 7px; font-weight: 600; }
+  .pill.cb { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin: 10px 0; color: var(--muted); font-size: 13px; }
+  .checked { font-size: 11px; color: var(--muted); display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="brand">Myrddin Hub</h1>
+    </div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/relist" data-tab="relist">Sephora relist</a><a href="/sephora-leads" data-tab="sephora_leads">Sephora leads</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/gift-cards" data-tab="gift_cards" class="on">Gift cards</a><a href="/commissions" data-tab="commissions" class="on">Commissions</a></nav>
+
+  <div class="gc-head"><h2>Gift cards</h2><span class="muted" id="whoLine"></span></div>
+  <p class="gc-sub">Every gift card bought, one row per card. Source: Arbitrage Card orders. <b>Paid</b> is what the card cost at checkout; <b>Cost</b> is paid minus Arbitrage Card cash back. Card numbers and PINs stay hidden until you click them. Type a balance once you've checked a card (0 marks it used).</p>
+  <div class="stats" id="stats"></div>
+  <div class="gc-stores" id="stores"></div>
+  <div class="gc-filters">
+    <input type="search" id="q" placeholder="Card #, PIN, order #, notes">
+    <select id="status"><option value="">Any status</option></select>
+    <label class="muted">From <input type="date" id="from"></label>
+    <label class="muted">To <input type="date" id="to"></label>
+    <span class="grow"></span>
+    <button class="btn small" id="csv">Download CSV</button>
+  </div>
+  <div class="table-wrap"><table class="gc" id="tbl"></table></div>
+  <div class="pager" id="pager"></div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, esc, money, api, fail, toast, can } = LG;
+  const PER = 100;
+  const S = { cards: [], statuses: [], store: '', page: 0, shown: new Set(), view: [] };
+  const n0 = (v) => Number(v || 0);
+  const mask = (s) => s ? '•••• ' + String(s).slice(-4) : '—';
+  const fmt = (d) => { if (!d) return ''; const [y, m, day] = d.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+
+  async function load() {
+    const d = await api('GET', '/api/gift-cards');
+    S.cards = d.cards; S.statuses = d.statuses;
+    if ($('#status').options.length === 1) $('#status').insertAdjacentHTML('beforeend', S.statuses.map((s) => `<option>${s}</option>`).join(''));
+    render();
+  }
+
+  function filtered(ignoreStore) {
+    const q = $('#q').value.trim().toLowerCase(), st = $('#status').value, f = $('#from').value, t = $('#to').value;
+    return S.cards.filter((c) => (ignoreStore || !S.store || c.store === S.store) && (!st || c.status === st)
+      && (!f || (c.order_date || '') >= f) && (!t || (c.order_date || '') <= t)
+      && (!q || [c.card_number, c.pin, c.order_ref, c.notes, c.product].some((x) => String(x || '').toLowerCase().includes(q))));
+  }
+
+  function render() {
+    const base = filtered(true), V = filtered(false); S.view = V;
+    const by = {}; base.forEach((c) => { const k = c.store || '?'; (by[k] ||= { n: 0, face: 0 }); by[k].n++; by[k].face += n0(c.face_value); });
+    const stores = Object.entries(by).sort((a, b) => b[1].face - a[1].face);
+    $('#stores').innerHTML = `<button data-store="" class="${S.store ? '' : 'on'}">All<span class="n">${base.length.toLocaleString()}</span></button>` +
+      stores.map(([k, v]) => `<button data-store="${esc(k)}" class="${S.store === k ? 'on' : ''}" title="${money(v.face, 0)} face value">${esc(k)}<span class="n">${v.n.toLocaleString()}</span></button>`).join('');
+    const face = V.reduce((a, c) => a + n0(c.face_value), 0), paid = V.reduce((a, c) => a + n0(c.price), 0), cost = V.reduce((a, c) => a + n0(c.cost), 0);
+    const chk = V.filter((c) => c.balance != null), bal = chk.reduce((a, c) => a + n0(c.balance), 0);
+    const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    $('#stats').innerHTML = stat('Cards', V.length.toLocaleString(), S.store || 'all stores', true) + stat('Face value', money(face, 0)) +
+      stat('Paid', money(paid, 0), face ? ((1 - paid / face) * 100).toFixed(1) + '% under face' : '') +
+      stat('Cost after cash back', money(cost, 0), face ? ((1 - cost / face) * 100).toFixed(1) + '% under face' : '') +
+      stat('Balance checked', chk.length ? money(bal, 0) : '—', `${chk.length.toLocaleString()} of ${V.length.toLocaleString()} cards`);
+    const pages = Math.max(1, Math.ceil(V.length / PER)); S.page = Math.min(S.page, pages - 1);
+    const rows = V.slice(S.page * PER, S.page * PER + PER), edit = can('editor');
+    $('#tbl').innerHTML = `<thead><tr><th>Date</th><th>Order #</th><th>Store</th><th class="num">Face</th><th class="num">Paid</th><th class="num">Cash back</th><th class="num">Cost</th>
+      <th>Card #</th><th>PIN</th><th class="num">Balance</th><th>Status</th><th>Notes</th><th>Product</th></tr></thead><tbody>` +
+      (rows.length ? rows.map((c) => { const sh = S.shown.has(c.id); return `<tr data-id="${c.id}">
+        <td>${fmt(c.order_date)}</td><td class="mono">${esc(c.order_ref || '')}</td><td>${esc(c.store || '')}</td>
+        <td class="num">${money(c.face_value)}</td><td class="num">${money(c.price)}</td>
+        <td class="num">${n0(c.cashback) ? `<span class="pill cb">${money(c.cashback)}</span>` : '<span class="muted">·</span>'}</td><td class="num"><b>${money(c.cost)}</b></td>
+        <td><span class="sec ${sh ? 'shown' : ''}" data-reveal="${c.id}" title="Click to show">${sh ? esc(c.card_number) : mask(c.card_number)}</span>${sh ? `<button class="cp" data-copy="${esc(c.card_number)}" title="Copy">⧉</button>` : ''}</td>
+        <td><span class="sec ${sh ? 'shown' : ''}" data-reveal="${c.id}">${sh ? esc(c.pin || '—') : (c.pin ? '••••' : '—')}</span>${sh && c.pin ? `<button class="cp" data-copy="${esc(c.pin)}" title="Copy">⧉</button>` : ''}</td>
+        <td class="num">${edit ? `<input class="bal" data-f="balance" value="${c.balance ?? ''}" placeholder="—">` : money(c.balance)}${c.balance_checked_at ? `<span class="checked">${fmt(c.balance_checked_at)}</span>` : ''}</td>
+        <td>${edit ? `<select class="st" data-f="status">${S.statuses.map((s) => `<option ${s === c.status ? 'selected' : ''}>${s}</option>`).join('')}</select>` : esc(c.status)}</td>
+        <td>${edit ? `<input class="note" data-f="notes" value="${esc(c.notes || '')}">` : esc(c.notes || '')}</td>
+        <td class="prod" title="${esc(c.product || '')}">${esc(c.product || '')}</td></tr>`; }).join('')
+      : `<tr><td colspan="13" class="empty">${S.cards.length ? 'No cards match these filters.' : 'No gift cards loaded yet.'}</td></tr>`) + '</tbody>';
+    $('#pager').innerHTML = V.length > PER ? `<button class="btn small" data-pg="-1" ${S.page ? '' : 'disabled'}>‹ Prev</button>
+      <span>${(S.page * PER + 1).toLocaleString()}–${Math.min(V.length, S.page * PER + PER).toLocaleString()} of ${V.length.toLocaleString()}</span>
+      <button class="btn small" data-pg="1" ${S.page < pages - 1 ? '' : 'disabled'}>Next ›</button>` : '';
+  }
+
+  $('#stores').addEventListener('click', (e) => { const b = e.target.closest('[data-store]'); if (!b) return; S.store = b.dataset.store; S.page = 0; render(); });
+  ['q', 'status', 'from', 'to'].forEach((id) => $('#' + id).addEventListener('input', () => { S.page = 0; render(); }));
+  $('#pager').addEventListener('click', (e) => { const b = e.target.closest('[data-pg]'); if (!b) return; S.page += Number(b.dataset.pg); render(); window.scrollTo({ top: $('#tbl').offsetTop - 80 }); });
+  $('#tbl').addEventListener('click', async (e) => {
+    const r = e.target.closest('[data-reveal]'); if (r) { const id = Number(r.dataset.reveal); S.shown.has(id) ? S.shown.delete(id) : S.shown.add(id); render(); return; }
+    const c = e.target.closest('[data-copy]'); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); toast('Copied'); } catch (err) { fail(err); } }
+  });
+  $('#tbl').addEventListener('change', async (e) => {
+    const el = e.target.closest('[data-f]'); if (!el) return;
+    const id = Number(el.closest('tr').dataset.id), card = S.cards.find((x) => x.id === id);
+    try { const row = await api('PATCH', '/api/gift-cards/' + id, { [el.dataset.f]: el.value }); Object.assign(card, row); render(); toast('Saved'); } catch (err) { fail(err); }
+  });
+  $('#csv').addEventListener('click', () => {
+    const cols = ['order_date', 'order_ref', 'store', 'product', 'face_value', 'price', 'cashback', 'cost', 'card_number', 'pin', 'balance', 'balance_checked_at', 'status', 'notes'];
+    const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const txt = [cols.join(',')].concat(S.view.map((c) => cols.map((k) => q(k === 'card_number' || k === 'pin' ? (c[k] ? '\t' + c[k] : '') : c[k])).join(','))).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' })); a.download = `gift-cards-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+  });
+
+  LG.header().then((me) => { $('#csv').hidden = me.role !== 'owner'; return load(); }).catch(fail);
+  let t = null;
+  LG.live?.((msg) => { if (msg.t === 'giftcards' && msg.op !== 'update') { clearTimeout(t); t = setTimeout(() => load().catch(() => {}), 2000); } });
+})();
+</script>
+</body>
+</html>

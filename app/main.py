@@ -33,6 +33,7 @@ from . import order_bonus
 from . import inbound
 from . import sephora
 from . import sysmap
+from . import giftcards as gc
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -75,13 +76,16 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
-_CORS_PATHS = ("/api/engine/profit/costs",)
+_CORS_PATHS = ("/api/engine/profit/costs", "/api/engine/giftcards")
+# The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
+_GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
 
 
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    if request.url.path in _CORS_PATHS and origin in _IL_ORIGINS:
+    allowed = _GC_ORIGINS if request.url.path == "/api/engine/giftcards" else _IL_ORIGINS
+    if request.url.path in _CORS_PATHS and origin in allowed:
         h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST, OPTIONS",
              "Access-Control-Allow-Headers": "Content-Type, X-Engine-Key", "Access-Control-Max-Age": "600", "Vary": "Origin"}
         if request.method == "OPTIONS":
@@ -978,7 +982,7 @@ async def api_set_can_source(kind: str, name: str, request: Request, body: dict 
 async def api_events(request: Request):
     user = await auth.require(request)
     q = live.subscribe()
-    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock", "task": "tasks", "inbound": "reimbursements", "sephora": "sephora_leads"}
+    kinds = {"order": "orders", "lead": "leads", "store": ("stores", "leads"), "doc": "inventory_health", "timeclock": "timeclock", "task": "tasks", "inbound": "reimbursements", "sephora": "sephora_leads", "giftcards": "gift_cards"}
 
     def allowed(payload: str) -> bool:
         try:
@@ -1621,6 +1625,47 @@ async def oauth_login_submit(
         return _oauth_page(f"<p>{html.escape(str(e))}</p>")
     set_session(resp, user.id, ver)
     return resp
+
+
+# ---------------------------------------------------------------- gift cards (app/giftcards.py)
+
+@app.get("/gift-cards", include_in_schema=False)
+async def gift_cards_page(request: Request):
+    return await _page(request, "gift_cards", "gift-cards.html")
+
+
+@app.get("/api/gift-cards")
+async def api_gift_cards(request: Request):
+    await auth.require(request, tab="gift_cards")
+    return await gc.list_all()
+
+
+@app.patch("/api/gift-cards/{cid}")
+async def api_gift_card_update(cid: int, request: Request, body: dict = Body(...)):
+    user = await auth.require(request, role="editor", tab="gift_cards")
+    try:
+        return await gc.update(cid, body, user.label)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/engine/giftcards")
+async def engine_giftcards(request: Request, body: dict = Body(...)):
+    """{source, rows:[{o|order_ref, dt|order_date, p|product, n|card_number, pin, face, price, cb}]} -> upsert by (source, card_number)."""
+    auth.require_engine_key(request)
+    rows = body.get("rows") or []
+    if not isinstance(rows, list) or len(rows) > 20000:
+        raise HTTPException(400, "rows must be a list of at most 20000")
+    return await gc.upsert(body.get("source") or "arbitragecard", rows)
+
+
+@app.post("/api/engine/giftcards/balances")
+async def engine_giftcard_balances(request: Request, body: dict = Body(...)):
+    """{source, rows:[{card_number, balance}]} — for a balance-check job."""
+    auth.require_engine_key(request)
+    return await gc.engine_balances(body.get("source") or "arbitragecard", body.get("rows") or [])
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

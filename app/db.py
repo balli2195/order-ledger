@@ -824,6 +824,33 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (method, path)
     );
     """,
+    # Gift cards page (Nov 10 2026): one row per gift card bought (Arbitrage Card orders first), balances filled in later
+    """
+    CREATE TABLE IF NOT EXISTS gift_cards (
+        id                 bigserial PRIMARY KEY,
+        source             text NOT NULL DEFAULT 'arbitragecard',
+        order_ref          text,
+        order_date         date,
+        product            text,
+        store              text,
+        card_number        text NOT NULL,
+        pin                text,
+        face_value         numeric(12,2),
+        price              numeric(12,2),
+        cashback           numeric(12,2) NOT NULL DEFAULT 0,
+        cost               numeric(12,2),
+        balance            numeric(12,2),
+        balance_checked_at timestamptz,
+        status             text NOT NULL DEFAULT 'unknown',
+        notes              text,
+        updated_by         text,
+        created_at         timestamptz NOT NULL DEFAULT now(),
+        updated_at         timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (source, card_number)
+    );
+    CREATE INDEX IF NOT EXISTS gift_cards_date_idx ON gift_cards (order_date DESC);
+    CREATE INDEX IF NOT EXISTS gift_cards_store_idx ON gift_cards (store);
+    """,
 ]
 
 
