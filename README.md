@@ -100,3 +100,11 @@ Page `/system` (Menu → System map; tab key `system_map`, owner by default) exp
 - Columns: source (`arbitragecard`), order_ref, order_date, product, store (parsed from the product name), card_number, pin, face_value, price (paid per card at checkout), cashback (Arbitrage Card cash back per card), cost (= price − cashback), balance, balance_checked_at, status (unknown/active/used/partial/invalid), notes.
 - Card number and PIN are masked on the page until clicked; owners can download the filtered list as CSV. Typing a balance sets status active (0 → used).
 - **Engine API (X-Engine-Key):** `POST /api/engine/giftcards {source, rows:[{o, dt, p, n, pin, face, price, cb}]}` (long names order_ref/order_date/product/card_number/face_value/cashback also accepted) upserts by (source, card_number) and never touches balance/status/notes. Also answers cross-origin POSTs from arbitragecard.com (loading straight from Nick's signed-in tab). `POST /api/engine/giftcards/balances {source, rows:[{card_number, balance}]}` for a balance-check job.
+
+### Gift card uses from order emails (Nov 10, 2026)
+Kohl's order emails list each gift card by its last 4 digits and the amount taken ("Kohl's Gift Card x5634 -$315.00").
+These are read in Nick's signed-in Gmail / Outlook tabs and posted to `POST /api/engine/giftcards/uses` (engine key; CORS open
+to mail.google.com and Outlook web only) as `{rows:[{store, o, dt, l4, a, m?, mb?}]}` -> table `gift_card_uses`, unique on
+(store, order, last 4, amount). `giftcards.rematch()` then rolls uses onto cards with the same store + last 4:
+`used_match` = exact / shared (several cards end in the same digits) / over (more spent than face: likely a card bought elsewhere).
+The page shows **Used (orders)** and **Est. left** (face − used). Sephora emails show only "Gift Card: $250.00" (no digits), so they can't be matched.

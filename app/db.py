@@ -857,6 +857,27 @@ MIGRATIONS: list[str] = [
     ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS source_balance numeric(12,2);
     ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS source_status text;
     """,
+    # Gift cards: what each card paid for, read from the stores' order emails (Kohl's shows "Gift Card x1234 -$315.00").
+    # One row per (store, order, last 4, amount); matched to cards by store + last 4 digits. Nov 10 2026.
+    """
+    CREATE TABLE IF NOT EXISTS gift_card_uses (
+      id bigserial PRIMARY KEY,
+      store text NOT NULL,
+      order_ref text NOT NULL,
+      order_date date,
+      last4 text NOT NULL,
+      method text NOT NULL DEFAULT 'gift card',
+      amount numeric(12,2) NOT NULL,
+      mailbox text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (store, order_ref, last4, amount)
+    );
+    CREATE INDEX IF NOT EXISTS gift_card_uses_l4_idx ON gift_card_uses (store, last4);
+    ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS used_total numeric(12,2);
+    ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS used_count int;
+    ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS last_used date;
+    ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS used_match text;
+    """,
 ]
 
 

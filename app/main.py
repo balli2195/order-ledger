@@ -76,15 +76,17 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
-_CORS_PATHS = ("/api/engine/profit/costs", "/api/engine/giftcards")
+_CORS_PATHS = ("/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses")
 # The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
 _GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
+# Gift card uses are read from the stores' order emails in Nick's signed-in Gmail / Outlook tabs (Nov 10 2026).
+_MAIL_ORIGINS = {"https://mail.google.com", "https://outlook.office.com", "https://outlook.cloud.microsoft", "https://outlook.live.com"}
 
 
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    allowed = _GC_ORIGINS if request.url.path == "/api/engine/giftcards" else _IL_ORIGINS
+    allowed = {"/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS}.get(request.url.path, _IL_ORIGINS)
     if request.url.path in _CORS_PATHS and origin in allowed:
         h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST, OPTIONS",
              "Access-Control-Allow-Headers": "Content-Type, X-Engine-Key", "Access-Control-Max-Age": "600", "Vary": "Origin"}
@@ -1698,6 +1700,16 @@ async def engine_giftcards(request: Request, body: dict = Body(...)):
     if not isinstance(rows, list) or len(rows) > 20000:
         raise HTTPException(400, "rows must be a list of at most 20000")
     return await gc.upsert(body.get("source") or "arbitragecard", rows)
+
+
+@app.post("/api/engine/giftcards/uses")
+async def engine_giftcard_uses(request: Request, body: dict = Body(...)):
+    """{rows:[{store, o, dt, l4, a, m?, mb?}]} — gift card payments read from store order emails; re-matches cards by last 4."""
+    auth.require_engine_key(request)
+    rows = body.get("rows") or []
+    if not isinstance(rows, list) or len(rows) > 20000:
+        raise HTTPException(400, "rows must be a list of at most 20000")
+    return await gc.add_uses(rows)
 
 
 @app.post("/api/engine/giftcards/balances")
