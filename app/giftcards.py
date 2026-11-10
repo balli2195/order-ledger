@@ -243,7 +243,8 @@ async def check_key() -> str:
 
 async def to_check(store: str, limit: int = 50, recheck_days: int = 7, include_zero: bool = False) -> list[dict]:
     """Cards to check next: never checked (or checked more than recheck_days ago), not marked used/invalid,
-    skipping cards Arbitrage Card already shows at $0 unless include_zero. Biggest likely balance first."""
+    skipping cards Arbitrage Card already shows at $0 unless include_zero. Oldest card first (purchase date, then
+    Arbitrage Card order number, which rises over time — most export cards have no date)."""
     names = CHECK_STORES.get(store)
     if not names:
         raise ValueError("Unknown store")
@@ -255,7 +256,7 @@ async def to_check(store: str, limit: int = 50, recheck_days: int = 7, include_z
                  AND status NOT IN ('used', 'invalid')
                  AND (balance_checked_at IS NULL OR balance_checked_at < now() - make_interval(days => %s))
                  AND (%s OR source_balance IS NULL OR source_balance > 0)
-               ORDER BY coalesce(source_balance, face_value) DESC NULLS LAST, id
+               ORDER BY order_date NULLS LAST, CASE WHEN order_ref ~ '^[0-9]+$' THEN order_ref::bigint END NULLS LAST, id
                LIMIT %s""",
             (list(names), recheck_days, include_zero, max(1, min(limit, 500))))
         return [jsonable(dict(r)) for r in await cur.fetchall()]

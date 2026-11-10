@@ -113,7 +113,7 @@ The page shows **Used (orders)** and **Est. left** (face − used). Sephora emai
 `static/macys-gc-check.js` is pasted into the console on https://www.macys.com/account/giftcardbalance in Nick's Chrome
 (the Gift cards page's **Copy Macy's balance script** button fills in the Hub address and the check key, setting `gc_check_key`).
 It pulls cards from `GET /api/engine/giftcards/to-check?store=macys` (X-GC-Key; CORS macys.com only; skips cards marked used/invalid,
-checked in the last 7 days, or shown at $0 by Arbitrage Card; biggest likely balance first), fills Macy's own form one card every 12–20 s,
+checked in the last 7 days, or shown at $0 by Arbitrage Card; oldest card first by date, then Arbitrage Card order #), fills Macy's own form one card every 12–20 s,
 and posts `{id, balance}` / `{id, error}` to `POST /api/engine/giftcards/check-results` (balance, checked time, status used/partial/active;
 a rejected card becomes `invalid` with Macy's message in notes). It stops at the first rejected card (Macy's locks the form after
 3 rejections) and pauses on any visible CAPTCHA for Nick to solve himself — it never solves or bypasses one.

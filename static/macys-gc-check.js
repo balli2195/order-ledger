@@ -1,6 +1,6 @@
 // Myrddin Hub — Macy's gift card balance check (Nov 10 2026)
 // Paste into the browser console on https://www.macys.com/account/giftcardbalance (your own signed-in Chrome).
-// It asks the Hub for cards to check (biggest likely balance first), fills Macy's own form one card at a time,
+// It asks the Hub for cards to check (oldest card first), fills Macy's own form one card at a time,
 // reads the balance Macy's shows, and saves it to the Gift cards page.
 // Safety:
 //  * Macy's locks the form after 3 rejected tries, so the script STOPS at the first card Macy's rejects.
