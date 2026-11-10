@@ -77,7 +77,7 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
 _CORS_PATHS = ("/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
-               "/api/engine/giftcards/to-check", "/api/engine/giftcards/check-results")
+               "/api/engine/giftcards/to-check", "/api/engine/giftcards/check-results", "/api/engine/giftcards/order-dates")
 # The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
 _GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
 # Gift card uses are read from the stores' order emails in Nick's signed-in Gmail / Outlook tabs (Nov 10 2026).
@@ -89,7 +89,7 @@ _STORE_ORIGINS = {"https://www.macys.com", "https://macys.com"}
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    allowed = {"/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS,
+    allowed = {"/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
                "/api/engine/giftcards/to-check": _STORE_ORIGINS, "/api/engine/giftcards/check-results": _STORE_ORIGINS}.get(request.url.path, _IL_ORIGINS)
     if request.url.path in _CORS_PATHS and origin in allowed:
         h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -1723,6 +1723,16 @@ async def _gc_check_auth(request: Request) -> None:
     if given and _h.compare_digest(given, await gc.check_key()):
         return
     auth.require_engine_key(request)
+
+
+@app.post("/api/engine/giftcards/order-dates")
+async def engine_giftcard_order_dates(request: Request, body: dict = Body(...)):
+    """{source, rows:[{o, dt}]} — Arbitrage Card order number -> order date, read from the order emails in Outlook."""
+    auth.require_engine_key(request)
+    rows = body.get("rows") or []
+    if not isinstance(rows, list) or len(rows) > 20000:
+        raise HTTPException(400, "rows must be a list of at most 20000")
+    return await gc.set_order_dates(body.get("source") or "arbitragecard", rows)
 
 
 @app.get("/api/engine/giftcards/to-check")

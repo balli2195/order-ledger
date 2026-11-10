@@ -290,3 +290,25 @@ async def check_results(rows: list[dict], who: str = "balance check") -> dict:
                 n += cur.rowcount
             await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "giftcards", "op": "balances"}),))
     return {"updated": n}
+
+
+async def set_order_dates(source: str, rows: list[dict]) -> dict:
+    """[{o: order number, dt: 'November 10, 2026' | ISO}] -> order_date on every card from that order (Nov 10 2026:
+    dates read from Arbitrage Card's "order is now complete" emails; the card export has no dates)."""
+    pairs = {}
+    for r in rows:
+        o, d = str(r.get("o") or r.get("order_ref") or "").strip(), _date(r.get("dt") or r.get("order_date"))
+        if o and d:
+            pairs[o] = d
+    if not pairs:
+        return {"received": len(rows), "orders": 0, "cards": 0}
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute(
+                """UPDATE gift_cards g SET order_date = x.d, updated_at = now()
+                   FROM unnest(%s::text[], %s::date[]) AS x(o, d)
+                   WHERE g.source = %s AND g.order_ref = x.o AND g.order_date IS DISTINCT FROM x.d""",
+                (list(pairs), list(pairs.values()), (source or "arbitragecard").lower()))
+            n = cur.rowcount
+            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "giftcards", "op": "dates"}),))
+    return {"received": len(rows), "orders": len(pairs), "cards": n}
