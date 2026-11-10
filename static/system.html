@@ -264,12 +264,13 @@
     const jobs = S.comps.filter((c) => c.kind === 'hub_job');
     const pagesN = S.comps.filter((c) => c.kind === 'page');
     const servers = S.comps.filter((c) => c.kind === 'server');
-    const outs = new Set(Object.entries(S.nodes).filter(([, n]) => n.side !== 'hub').map(([k]) => k));
+    const NOT_APPS = new Set(['you', 'project_docs', 'old_hub', 'recorder_files', 'lead_score_model']);
+    const outs = new Set(Object.keys(S.nodes).filter((k) => !NOT_APPS.has(k) && !S.nodes[k].internal));
     $('#tiles').innerHTML = [
       ['Scheduled tasks', onSch.length, bad.length ? `<span class="bad">${bad.length} failed last run</span>` : `<span class="ok">all ran OK</span> last time`],
       ['Hub jobs', jobs.length, 'run inside the Hub, all day'],
       ['Hub pages', pagesN.length, 'tabs and menu pages'],
-      ['Outside services', servers.length + outs.size, `${servers.length} of yours + ${outs.size} connected apps`],
+      ['Outside services', servers.length + outs.size, `${servers.length} servers of yours + ${outs.size} apps and sites`],
     ].map(([k, v, s]) => `<div class="sm-tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
     const upd = S.d.registry_updated_at;
     $('#fresh').textContent = upd ? `Scheduled tasks last checked ${ago(upd)} · pages and Hub jobs read live` : 'Waiting for the first nightly check';
@@ -316,6 +317,9 @@
       }
     }
     for (const p of pages) for (const w of p.writes || []) if (!w.startsWith('page:') && S.nodes[w]) { outs.add(w); edges.push([p.id, 'out:' + w, p]); }
+    // pages nothing in this view connects to are left out of the picture (they still have cards below)
+    const linked = new Set(edges.flatMap((e) => [e[0], e[1]]));
+    for (let i = pages.length - 1; i >= 0; i--) if (!linked.has(pages[i].id)) pages.splice(i, 1);
     if (!autos.length) { svg.setAttribute('width', 400); svg.setAttribute('height', 60); el('text', { x: 10, y: 30 }, svg).textContent = 'Nothing in this group.'; return; }
 
     const W = Math.max(1080, $('.flow-wrap').clientWidth - 12);
