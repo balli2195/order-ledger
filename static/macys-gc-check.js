@@ -67,10 +67,15 @@
     const full = area().innerText, old = new Set(before.split('\n'));
     const fresh = full.split('\n').filter(l => !old.has(l)).join('\n');
     if (!S.last && !fresh) return visibleChallenge() ? { k: 'challenge' } : null;
-    if (S.last && S.last.t) {
+    // Macy's own answer (/account-xapi/api/giftcardbalance):
+    // {"giftCard":{"cardBalance":"$0.00",...},"captchaError":false,"cardError":false}
+    if (S.last && S.last.t && /giftcardbalance/i.test(S.last.u)) {
       try {
-        const f = S.last.t.match(/"(?:balance|remainingBalance|availableBalance|currentBalance|cardBalance)"\s*:\s*"?\$?([\d,]+(?:\.\d+)?)/i);
-        if (f) return { k: 'balance', v: Number(f[1].replace(/,/g, '')) };
+        const j = JSON.parse(S.last.t);
+        if (j.captchaError) return { k: 'challenge', api: true };
+        if (j.cardError) return { k: 'rejected', msg: (fresh.match(/[^\n]*(invalid|not valid|try again)[^\n]*/i) || [])[0] || "Macy's says the card number or CID is invalid" };
+        const cb = j.giftCard && j.giftCard.cardBalance;
+        if (cb != null && /\d/.test(String(cb))) return { k: 'balance', v: Number(String(cb).replace(/[^\d.]/g, '')) };
       } catch (e) {}
     }
     if (/locked out|too many attempts|temporarily (locked|unavailable)/i.test(fresh) && !/chances? left/i.test(fresh))
@@ -114,7 +119,8 @@
           cards.splice(cards.indexOf(c) + 1, 0, c); continue;
         }
         if (ans.k === 'challenge') {
-          await pauseFor('Macy\'s is showing a verification challenge. Solve it yourself in this tab, then press Resume.');
+          await pauseFor(ans.api ? 'Macy\'s turned down this try at its reCAPTCHA check. Wait a few minutes (or solve any challenge it shows you in this tab), then press Resume to retry the same card.'
+                                 : 'Macy\'s is showing a verification challenge. Solve it yourself in this tab, then press Resume.');
           if (S.stop) break;
           cards.splice(cards.indexOf(c) + 1, 0, c); continue;
         }
