@@ -65,7 +65,9 @@ async def pending(through: date, order_id: str | None = None) -> dict:
     """Unsent items from orders dated start..through, combined into one line per ASIN.
     With order_id: just that order's unsent items, whatever its date (the per-order "Send to PrepOS" button)."""
     cfg = await config()
-    if order_id:
+    if isinstance(order_id, (list, tuple)):   # several orders at once: combined into one line per ASIN
+        where, args = "o.id = ANY(%s::uuid[])", (list(order_id),)
+    elif order_id:
         where, args = "o.id = %s", (order_id,)
     else:
         where, args = "o.order_date >= %s AND o.order_date <= %s", (cfg["start"], through)
