@@ -851,6 +851,12 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS gift_cards_date_idx ON gift_cards (order_date DESC);
     CREATE INDEX IF NOT EXISTS gift_cards_store_idx ON gift_cards (store);
     """,
+    # Gift cards: what the source (Arbitrage Card export) says about each card, kept apart from balances Nick checks himself
+    """
+    ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS discount_pct numeric(6,2);
+    ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS source_balance numeric(12,2);
+    ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS source_status text;
+    """,
 ]
 
 

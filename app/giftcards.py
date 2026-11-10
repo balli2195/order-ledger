@@ -62,26 +62,35 @@ async def upsert(source: str, rows: list[dict]) -> dict:
         price = _money(r.get("price"))
         cb = _money(r.get("cashback", r.get("cb"))) or Decimal("0.00")
         cost = _money(r.get("cost"))
+        disc = _money(r.get("discount_pct", r.get("disc")))
+        face = _money(r.get("face_value", r.get("face")))
+        if price is None and face is not None and disc is not None:
+            price = (face * (1 - disc / 100)).quantize(Decimal("0.01"))
         if cost is None and price is not None:
             cost = price - cb
         clean.append((source, str(r.get("order_ref") or r.get("o") or "").strip() or None,
-                      _date(r.get("order_date") or r.get("dt")), product, r.get("store") or store_of(product),
-                      num, str(r.get("pin") or "").strip() or None, _money(r.get("face_value", r.get("face"))),
-                      price, cb, cost))
+                      _date(r.get("order_date") or r.get("dt")), product, (str(r.get("store") or "").strip() or store_of(product)),
+                      num, str(r.get("pin") or "").strip() or None, face,
+                      price, cb, cost, disc, _money(r.get("source_balance")), (str(r.get("source_status") or "").strip() or None)))
     added = 0
     async with db.pool.connection() as conn:
         async with conn.transaction():
             for i in range(0, len(clean), 500):
                 chunk = clean[i:i + 500]
                 cur = await conn.execute(
-                    """INSERT INTO gift_cards (source, order_ref, order_date, product, store, card_number, pin, face_value, price, cashback, cost)
+                    """INSERT INTO gift_cards (source, order_ref, order_date, product, store, card_number, pin, face_value, price, cashback, cost,
+                                               discount_pct, source_balance, source_status)
                        SELECT * FROM unnest(%s::text[], %s::text[], %s::date[], %s::text[], %s::text[], %s::text[], %s::text[],
-                                            %s::numeric[], %s::numeric[], %s::numeric[], %s::numeric[])
+                                            %s::numeric[], %s::numeric[], %s::numeric[], %s::numeric[], %s::numeric[], %s::numeric[], %s::text[])
                        ON CONFLICT (source, card_number) DO UPDATE SET
-                         order_ref = EXCLUDED.order_ref, order_date = EXCLUDED.order_date, product = EXCLUDED.product,
-                         store = EXCLUDED.store, pin = COALESCE(EXCLUDED.pin, gift_cards.pin),
+                         order_ref = COALESCE(EXCLUDED.order_ref, gift_cards.order_ref),
+                         order_date = COALESCE(EXCLUDED.order_date, gift_cards.order_date),
+                         product = COALESCE(NULLIF(EXCLUDED.product, ''), gift_cards.product),
+                         store = COALESCE(NULLIF(EXCLUDED.store, ''), gift_cards.store),
+                         discount_pct = COALESCE(EXCLUDED.discount_pct, gift_cards.discount_pct),
+                         source_balance = EXCLUDED.source_balance, source_status = COALESCE(EXCLUDED.source_status, gift_cards.source_status), pin = COALESCE(EXCLUDED.pin, gift_cards.pin),
                          face_value = COALESCE(EXCLUDED.face_value, gift_cards.face_value),
-                         price = COALESCE(EXCLUDED.price, gift_cards.price), cashback = EXCLUDED.cashback,
+                         price = COALESCE(EXCLUDED.price, gift_cards.price), cashback = GREATEST(EXCLUDED.cashback, gift_cards.cashback),
                          cost = COALESCE(EXCLUDED.cost, gift_cards.cost), updated_at = now()
                        RETURNING (xmax = 0) AS inserted""",
                     [list(col) for col in zip(*chunk)])
@@ -94,8 +103,9 @@ async def list_all() -> dict:
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             """SELECT id, source, order_ref, order_date, product, store, card_number, pin, face_value, price, cashback, cost,
-                      balance, balance_checked_at, status, notes, updated_at
-               FROM gift_cards ORDER BY order_date DESC NULLS LAST, order_ref DESC, id""")
+                      discount_pct, source_balance, source_status, balance, balance_checked_at, status, notes, updated_at
+               FROM gift_cards
+               ORDER BY order_date DESC NULLS LAST, CASE WHEN order_ref ~ '^[0-9]+$' THEN order_ref::bigint END DESC NULLS LAST, id""")
         rows = [jsonable(dict(r)) for r in await cur.fetchall()]
     return {"cards": rows, "statuses": STATUSES}
 
@@ -145,5 +155,3 @@ async def engine_balances(source: str, rows: list[dict]) -> dict:
     return {"updated": n}
 
 
-def jsonable_any(v: Any) -> Any:
-    return jsonable(v)
