@@ -70,6 +70,7 @@
     <label class="muted dt">From <input type="date" id="from"></label>
     <label class="muted dt">To <input type="date" id="to"></label>
     <span class="grow"></span>
+    <button class="btn small" id="mscript" hidden title="Copies a script that checks Macy's card balances in your own Macy's tab">Copy Macy's balance script</button>
     <button class="btn small" id="csv">Download CSV</button>
   </div>
   <div class="table-wrap"><table class="gc" id="tbl"></table></div>
@@ -172,7 +173,17 @@
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' })); a.download = `gift-cards-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
   });
 
-  LG.header().then((me) => { $('#csv').hidden = me.role !== 'owner'; return load(); }).catch(fail);
+  $('#mscript').addEventListener('click', async () => {
+    try {
+      const r = await fetch('/api/gift-cards/check-script/macys', { credentials: 'same-origin' });
+      if (!r.ok) throw new Error(await r.text());
+      await navigator.clipboard.writeText(await r.text());
+      alert("Copied. Open https://www.macys.com/account/giftcardbalance in Chrome, open the console (Cmd+Option+J), paste and press Enter.\n\n" +
+        "It checks one card every 12-20 seconds, biggest likely balance first, and saves each balance here. It stops at the first card Macy's rejects " +
+        "(Macy's locks the form after 3 rejections) and pauses if a verification challenge appears - solve it yourself, then press Resume.");
+    } catch (e) { alert('Could not copy the script: ' + e.message); }
+  });
+  LG.header().then((me) => { $('#csv').hidden = me.role !== 'owner'; $('#mscript').hidden = !['owner', 'editor'].includes(me.role); return load(); }).catch(fail);
   let t = null;
   LG.live?.((msg) => { if (msg.t === 'giftcards' && msg.op !== 'update') { clearTimeout(t); t = setTimeout(() => load().catch(() => {}), 2000); } });
 })();

@@ -76,20 +76,24 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
-_CORS_PATHS = ("/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses")
+_CORS_PATHS = ("/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
+               "/api/engine/giftcards/to-check", "/api/engine/giftcards/check-results")
 # The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
 _GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
 # Gift card uses are read from the stores' order emails in Nick's signed-in Gmail / Outlook tabs (Nov 10 2026).
 _MAIL_ORIGINS = {"https://mail.google.com", "https://outlook.office.com", "https://outlook.cloud.microsoft", "https://outlook.live.com"}
+# The Macy's balance script runs in Nick's own macys.com tab (Nov 10 2026).
+_STORE_ORIGINS = {"https://www.macys.com", "https://macys.com"}
 
 
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    allowed = {"/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS}.get(request.url.path, _IL_ORIGINS)
+    allowed = {"/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS,
+               "/api/engine/giftcards/to-check": _STORE_ORIGINS, "/api/engine/giftcards/check-results": _STORE_ORIGINS}.get(request.url.path, _IL_ORIGINS)
     if request.url.path in _CORS_PATHS and origin in allowed:
-        h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST, OPTIONS",
-             "Access-Control-Allow-Headers": "Content-Type, X-Engine-Key", "Access-Control-Max-Age": "600", "Vary": "Origin"}
+        h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+             "Access-Control-Allow-Headers": "Content-Type, X-Engine-Key, X-GC-Key", "Access-Control-Max-Age": "600", "Vary": "Origin"}
         if request.method == "OPTIONS":
             return JSONResponse({}, headers=h)
         resp = await call_next(request)
@@ -1710,6 +1714,46 @@ async def engine_giftcard_uses(request: Request, body: dict = Body(...)):
     if not isinstance(rows, list) or len(rows) > 20000:
         raise HTTPException(400, "rows must be a list of at most 20000")
     return await gc.add_uses(rows)
+
+
+async def _gc_check_auth(request: Request) -> None:
+    """The balance-check script's own key (X-GC-Key) or the engine key."""
+    import hmac as _h
+    given = request.headers.get("x-gc-key", "")
+    if given and _h.compare_digest(given, await gc.check_key()):
+        return
+    auth.require_engine_key(request)
+
+
+@app.get("/api/engine/giftcards/to-check")
+async def engine_giftcards_to_check(request: Request, store: str = "macys", limit: int = 50, recheck_days: int = 7, include_zero: bool = False):
+    await _gc_check_auth(request)
+    try:
+        return {"cards": await gc.to_check(store, limit, recheck_days, include_zero)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/engine/giftcards/check-results")
+async def engine_giftcards_check_results(request: Request, body: dict = Body(...)):
+    """{rows:[{id, balance} | {id, error}]} from the store balance script."""
+    await _gc_check_auth(request)
+    rows = body.get("rows") or []
+    if not isinstance(rows, list) or len(rows) > 1000:
+        raise HTTPException(400, "rows must be a list of at most 1000")
+    return await gc.check_results(rows, str(body.get("who") or "Macy's balance check")[:60])
+
+
+@app.get("/api/gift-cards/check-script/{store}")
+async def api_gift_card_check_script(store: str, request: Request):
+    """The paste-in balance script for a store, with the Hub address and the check key filled in (editors only)."""
+    await auth.require(request, role="editor", tab="gift_cards")
+    from fastapi import Response
+    f = STATIC / f"{store}-gc-check.js"
+    if store not in gc.CHECK_STORES or not f.exists():
+        raise HTTPException(404, "No balance script for that store")
+    js = f.read_text().replace("__HUB__", str(request.base_url).rstrip("/").replace("http://", "https://")).replace("__KEY__", await gc.check_key())
+    return Response(js, media_type="text/plain", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/engine/giftcards/balances")

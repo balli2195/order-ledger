@@ -219,3 +219,73 @@ async def rematch() -> dict:
             stats["unmatched"] = jsonable(dict(await cur.fetchone()))
             await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "giftcards", "op": "uses"}),))
     return stats
+
+
+# ---------------------------------------------------------------- store balance checks (Macy's script, Nov 10 2026)
+# A script Nick pastes into his own macys.com balance tab asks the Hub for cards to check (number + PIN),
+# fills Macy's own form one card at a time, and posts each balance back. Its key (settings 'gc_check_key')
+# only opens these two endpoints, so the script never carries the full engine key.
+
+CHECK_STORES = {"macys": ("Macy's", "Macy's Online Store")}
+
+
+async def check_key() -> str:
+    import secrets
+    async with db.pool.connection() as conn:
+        r = await (await conn.execute("SELECT value #>> '{}' AS v FROM settings WHERE key = 'gc_check_key'")).fetchone()
+        if r and r["v"]:
+            return r["v"]
+        k = secrets.token_urlsafe(24)
+        await conn.execute("INSERT INTO settings (key, value) VALUES ('gc_check_key', to_jsonb(%s::text)) ON CONFLICT (key) DO NOTHING", (k,))
+        r = await (await conn.execute("SELECT value #>> '{}' AS v FROM settings WHERE key = 'gc_check_key'")).fetchone()
+        return r["v"]
+
+
+async def to_check(store: str, limit: int = 50, recheck_days: int = 7, include_zero: bool = False) -> list[dict]:
+    """Cards to check next: never checked (or checked more than recheck_days ago), not marked used/invalid,
+    skipping cards Arbitrage Card already shows at $0 unless include_zero. Biggest likely balance first."""
+    names = CHECK_STORES.get(store)
+    if not names:
+        raise ValueError("Unknown store")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            r"""SELECT id, regexp_replace(card_number, '\D', '', 'g') AS n, pin, face_value AS face, source_balance AS ac
+               FROM gift_cards
+               WHERE store = ANY(%s) AND pin IS NOT NULL
+                 AND status NOT IN ('used', 'invalid')
+                 AND (balance_checked_at IS NULL OR balance_checked_at < now() - make_interval(days => %s))
+                 AND (%s OR source_balance IS NULL OR source_balance > 0)
+               ORDER BY coalesce(source_balance, face_value) DESC NULLS LAST, id
+               LIMIT %s""",
+            (list(names), recheck_days, include_zero, max(1, min(limit, 500))))
+        return [jsonable(dict(r)) for r in await cur.fetchall()]
+
+
+async def check_results(rows: list[dict], who: str = "balance check") -> dict:
+    """[{id, balance} | {id, error}] -> balance + checked time + status (0 used, below face partial, else active);
+    an error (card refused by the store) marks the card invalid with the store's message in notes."""
+    n = 0
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            for r in rows:
+                try:
+                    cid = int(r.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                if r.get("error"):
+                    cur = await conn.execute(
+                        """UPDATE gift_cards SET status = 'invalid', updated_at = now(), updated_by = %s,
+                                  notes = left(concat_ws(' | ', nullif(notes, ''), %s), 500)
+                           WHERE id = %s""", (who, "Balance check: " + str(r["error"])[:200], cid))
+                    n += cur.rowcount
+                    continue
+                b = _money(r.get("balance"))
+                if b is None:
+                    continue
+                cur = await conn.execute(
+                    """UPDATE gift_cards SET balance = %s, balance_checked_at = now(), updated_at = now(), updated_by = %s,
+                              status = CASE WHEN %s <= 0 THEN 'used' WHEN %s < face_value THEN 'partial' ELSE 'active' END
+                       WHERE id = %s""", (b, who, b, b, cid))
+                n += cur.rowcount
+            await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "giftcards", "op": "balances"}),))
+    return {"updated": n}
