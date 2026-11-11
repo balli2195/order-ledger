@@ -581,3 +581,5 @@ td.promo, .wrap.full td.promo { max-width: min(280px, 13vw); }
 tr.day-row .day-rescore { margin-left: 12px; padding: 2px 10px; font-size: 12.5px; vertical-align: 1px; }
 
 .drawer-head .pp-sent { font-size: 13px; color: var(--ok); white-space: nowrap; }
+[data-needs-tab][hidden] { display: none !important; }
+a.btn { color: var(--ink); text-decoration: none; }
