@@ -13,8 +13,7 @@ from . import db
 PREFIX_TAB = {
     "liquidation": "inventory_health", "liquidation_trend": "inventory_health", "liquidation_history": "inventory_health",
     "health_trend": "inventory_health", "doi": "inventory_health",
-    "brand_sellers": "brand_sellers",
-    "relist": "relist",
+    "relist": "sephora_leads",   # Lead DB -> Archived lists
     "system_map": "system_map",
 }
 PATH_RE = re.compile(r"^[A-Za-z0-9_\-.]{1,100}(/[A-Za-z0-9_\-.]{1,100}){1,4}$")

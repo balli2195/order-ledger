@@ -35,7 +35,6 @@ TABS = {
     "stores": ("Stores & brands", "/stores"),
     "prepos": ("PrepOS", "/"),
     "inventory_health": ("Inventory health", "/inventory-health"),
-    "brand_sellers": ("Sephora brands", "/brand-sellers"),
     "sephora_leads": ("Lead DB", "/lead-db"),   # was "Sephora leads"; also holds the archived relist lists (Nov 11, 2026)
     "timeclock": ("Time clock", "/timeclock"),
     "tasks": ("Inbox", "/tasks"),
@@ -45,7 +44,7 @@ TABS = {
     "gift_cards": ("Gift cards", "/gift-cards"),
     "system_map": ("System map", "/system"),
 }
-PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "brand_sellers", "sephora_leads", "tasks", "timeclock", "commissions", "reimbursements", "profit", "gift_cards")   # tabs that are their own page, in menu order
+PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "sephora_leads", "tasks", "timeclock", "commissions", "reimbursements", "profit", "gift_cards")   # tabs that are their own page, in menu order
 
 
 @dataclass
