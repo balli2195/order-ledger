@@ -150,6 +150,26 @@ def main():
     hub_asins = {r["asin"] for r in cat}
     C.log(f"catalog: {len(cat)} pairs, {len(by_pid)} products")
 
+    # ---- 1b. learned match rules (Nick's wrong-match marks): written to .data/match_rules.json for catalog/match.py,
+    # then existing unconfirmed pairs that break one are downgraded to confidence low (the daily watch skips low)
+    rules, wrong, rule_down = None, [], []
+    try:
+        wrong = C.hub("GET", "/api/engine/sephora/feedback").get("wrong_matches") or []
+        rules = C.learned_rules(wrong)
+        for r in cat:
+            if not r.get("active") or r.get("match_ok") is not None or r.get("confidence") not in ("high", "medium"):
+                continue
+            br = C.rule_breaks(rules, r)
+            if br:
+                rule_down.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"], "confidence": "low",
+                                  "match_reason": "; ".join(x for x in [r.get("match_reason"), *br] if x)[:2000],
+                                  "_name": r.get("sephora_name"), "_why": br[0]})
+        if rule_down and not a.dry_run:
+            C.hub_upsert_catalog([{k: v for k, v in x.items() if not k.startswith("_")} for x in rule_down])
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"match rules step failed: {e!r}")
+    counts["rule_downgraded"] = len(rule_down)
+
     # ---- 2. brand listings
     listing, brand_ok = {}, {}
     for b in cfg["brands"]:
@@ -432,6 +452,22 @@ def main():
         L += ["To keep auto-added / lead-found brands permanently, copy them from job state 'brands_added' into brands.json "
               "(they are already used by every run while the state lasts).", ""]
     L += notes + [""]
+    rstate = C.state_get("match_rules", {}) or {}
+    seen_thru = rstate.get("notes_reviewed_through") or ""
+    new_notes = [w for w in wrong if C.after_ts(w.get("created_at") or "", seen_thru) and (w.get("note") or set(w.get("tags") or []) & {"version", "product", "other"})]
+    L += ["## Match rules learned from Nick's wrong-match marks", ""]
+    if rules:
+        L += [f"- {len(wrong)} wrong-match marks; automatic checks: " +
+              (", ".join(f"{r_['kind']} ({r_['brand']}, {r_['marks']} mark{'s' if r_['marks'] != 1 else ''})" for r_ in rules["auto"]) or "none") +
+              f"; manual rules: {len(rules['manual'])}",
+              f"- Existing pairs downgraded to low by a rule this week: {len(rule_down)}"]
+        L += [f"  - {x['asin']} {x['_name'] or ''}: {x['_why']}" for x in rule_down[:20]]
+    L += ["", f"**Notes for Claude to review (RUNBOOK step 4b): {len(new_notes)}**"]
+    for w in new_notes[:40]:
+        L.append(f"- {w.get('created_at', '')[:10]} {w.get('brand') or ''} | {w.get('asin')} ↔ {w.get('sephora_name') or w.get('sephora_url') or ''} | "
+                 f"tags: {', '.join(w.get('tags') or []) or '-'} | note: {w.get('note') or '-'}"
+                 + (f" | correct ASIN {w['correct_asin']}" if w.get("correct_asin") else ""))
+    L.append("")
     L += ["## brand_weights (Nick's decisions on Sephora candidates)", ""]
     if bw_lines:
         L += ["| Brand | Approved | Rejected | Wrong match | Units ordered | Spend |", "|---|---|---|---|---|---|"] + bw_lines + [""]

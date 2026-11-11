@@ -64,12 +64,23 @@ Run it once a week (for example Sunday).
 - **Adding a brand by hand:** copy an entry in `brands.json`. The next weekly run builds it.
 - **Keep the brand lists in sync.** `exclude_brands` mirrors the Hub `brands.can_source=false` list; refresh it with the Myrddin Hub `get_lead_choices` tool if Nick changes it.
 
+## 4b. Weekly: learn from Nick's wrong-match marks (after the weekly script)
+
+Nick (or his team) marks wrong Amazon ↔ Sephora matches on the Hub — the Sephora leads tab (candidate card or catalog) and the Sephora relist page — and says why: tags `size`, `shade`, `concentration`, `set`, `bonus`, `multipack`, `version`, `product`, `other`, plus an optional note and the correct ASIN. They are stored in the Hub table `match_feedback` and come back as `wrong_matches` from `GET /api/engine/sephora/feedback`.
+
+- **Automatic (no action needed):** every run turns tags into strict checks (`catalog/match_rules.py`): `size`, `shade`, `concentration`, `set`, `bonus`, `multipack` apply to that brand after 1 mark and to every brand once a tag shows up in 3+ brands. New matches that break one are capped at confidence low; the weekly job downgrades existing unconfirmed pairs that break one; the daily watch holds them back. A pair Nick marks OK is never held back.
+- **Your part:** the weekly summary lists "Notes for Claude to review". Read them (`python3 -I rules.py show` prints them with the Amazon titles). When several marks show the same clear, repeatable pattern that the automatic checks miss (a word like "tester", "refill", "travel" on one side), add a manual rule:
+  `python3 -I rules.py add --brand "<Brand or *>" --kind block_term|require_term --side amazon|sephora --term "<word>" --note "<why, from N marks>"`
+  Don't add a rule from a single one-off mark. If a note gives the correct ASIN, mention it to Nick so he can add that lead. Then run `python3 -I rules.py reviewed`.
+- In the message to Nick, add one line: wrong-match marks this week, automatic checks now on, any manual rule you added (and why), pairs downgraded.
+
 ## 5. Other scripts
 
 - `build_backlog.py --max-tokens N` runs once within N Keepa tokens, then exits.
   - It builds brands with no matcher rows (lead-found, auto-added or hand-added), recording each in state `brands_built`.
   - The weekly job calls it each week until the backlog is empty.
   - Run it by hand with e.g. `--max-tokens 3000` to speed up the backlog.
+- `rules.py show|add|remove|reviewed` shows the learned match rules and Nick's new wrong-match notes, and edits the manual rules (Hub doc `sephora_jobs/match_rules`). See step 4b.
 - `recompute_roi.py` recomputes every pair's ROI and watch price from stored values (no API calls). Run it after changing the economics rules in `common.py`.
 - `seed_from_leads.py [--since DATE] [--dry-run] [--write-brands-json]` adds Nick's own past Sephora lead pairs.
   - Live products keep confidence high.
@@ -106,7 +117,7 @@ After the weekly run, add: new products matched (flag ROI ≥ 21%), brands auto-
 
 ## 8. Rules the jobs keep
 
-- Nick's answers in the catalog (`match_ok`, `size_confirmed`) are never sent.
+- Nick's answers in the catalog (`match_ok`, `size_confirmed`, `wrong_tags`, `wrong_note`, `correct_asin`) are never sent.
   - `match_ok=false` pairs are never proposed.
   - `size_confirmed` decides which Sephora price is used.
 - ASINs Nick approved or rejected in the last 21 days are not proposed again unless the cost is now lower.

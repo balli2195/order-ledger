@@ -129,3 +129,9 @@ Outlook search tops out at about 1,000 results and hides same-subject emails ins
 date ranges with conversation grouping off. Nick's setting, "Group messages by branches within conversations", was restored afterwards.
 An order sitting between two orders from the same day was given that day, since Arbitrage Card order numbers only go up over time.
 Result: 9,607 of 9,653 cards dated; 46 cards (29 orders) are still blank, each known to within 1–27 days.
+
+## Wrong-match reasons (Nov 11, 2026)
+- "Wrong match" on the Sephora leads tab (candidate card and catalog) and on the Sephora relist page opens one dialog (`static/wrongmatch.js`): quick-pick reasons (size, shade, scent/type, set vs single, bonus item, pack count, old version, different product, other), a note and an optional correct ASIN.
+- Stored in table `match_feedback` (one row per mark; cleared when the pair is later marked OK or the relist mark is undone) and on the catalog pair (`wrong_tags`, `wrong_note`, `correct_asin`). Relist marks also flag the pair in the Sephora catalog when it's there.
+- Plain Reject on a candidate now shows quick reasons (ROI too low, historical price too low, too many sellers, can't sell / gated, not in stock at Sephora) plus a text box.
+- The Sephora jobs read the marks (`GET /api/engine/sephora/feedback` → `wrong_matches`) and turn them into match rules (`jobs/sephora/catalog/match_rules.py`, RUNBOOK step 4b). Chats can read them with the connector tool `list_match_feedback`.

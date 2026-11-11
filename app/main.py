@@ -502,6 +502,26 @@ async def api_relist_current(request: Request, since: str = "2026-10-30"):
     return {"since": d.isoformat(), "asins": {r["asin"]: {"leads": r["leads"], "ordered": int(r["ordered"]), "last": r["last"].isoformat()} for r in rows}}
 
 
+@app.get("/api/relist/wrong")
+async def api_relist_wrong_list(request: Request, path: str):
+    """Wrong-match marks made on one relist list."""
+    await auth.require(request, tab="relist")
+    return {"marks": await sephora.wrong_matches(list_path=path)}
+
+
+@app.post("/api/relist/wrong")
+async def api_relist_wrong(request: Request, body: dict = Body(...)):
+    """{path, asin, sephora_url, product, brand, tags, note, correct_asin} -> match_feedback (+ Sephora catalog when the pair is there)."""
+    user = await auth.require(request, "editor", tab="relist")
+    return await sephora.relist_wrong(web_actor(user), body)
+
+
+@app.delete("/api/relist/wrong/{fid}")
+async def api_relist_unwrong(fid: str, request: Request):
+    user = await auth.require(request, "editor", tab="relist")
+    return await sephora.relist_unwrong(web_actor(user), fid)
+
+
 @app.get("/no-access", include_in_schema=False)
 async def no_access(request: Request):
     user = await auth.current_user(request)
@@ -1444,15 +1464,17 @@ async def api_sephora_approve(cid: str, request: Request, body: dict = Body(defa
 async def api_sephora_reject(cid: str, request: Request, body: dict = Body(default={})):
     """{reason?, wrong_match?: true} — wrong_match also marks the catalog pair match_ok=false."""
     user = await auth.require(request, "editor", tab="sephora_leads")
-    return await sephora.reject(web_actor(user), cid, body.get("reason"), bool(body.get("wrong_match")))
+    return await sephora.reject(web_actor(user), cid, body.get("reason"), bool(body.get("wrong_match")),
+                                {k: body.get(k) for k in ("tags", "note", "correct_asin")})
 
 
 @app.post("/api/sephora/catalog/mark")
 async def api_sephora_mark(request: Request, body: dict = Body(...)):
-    """{asin, product_id, match_ok?: true|false|null, size_confirmed?: 'lo'|'hi'|null}"""
+    """{asin, product_id, match_ok?: true|false|null, size_confirmed?: 'lo'|'hi'|null, tags?, note?, correct_asin?}
+    (tags / note / correct_asin say what was wrong when match_ok is false)."""
     user = await auth.require(request, "editor", tab="sephora_leads")
     return await sephora.mark_catalog(web_actor(user), body.get("asin"), body.get("product_id"),
-                                      {k: body[k] for k in ("match_ok", "size_confirmed") if k in body})
+                                      {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin") if k in body})
 
 
 @app.post("/api/engine/sephora/catalog")

@@ -256,7 +256,8 @@ async def run_sql(sql: Annotated[str, Field(description="One read-only SELECT/WI
     users(id, email, name, role), settings(key, value), sephora_catalog(asin, product_id, brand, sephora_name, sephora_url,
     price_lo, price_hi, sale_price, needs_size, size_confirmed, confidence, sellable, buybox, roi_now, match_ok, active, ...),
     sephora_candidates(id, asin, product_id, found_on, reason, cost, roi_now, status, lead_id, decided_at),
-    sephora_runs(kind, at, counts, sale). Use unnest(stores) to group by store. Max 500 rows, 15s."""
+    sephora_runs(kind, at, counts, sale), match_feedback(source, asin, product_id, brand, sephora_name, amazon_title, tags[], note,
+    correct_asin, list_path, marked_by, created_at) = why Nick marked a match wrong. Use unnest(stores) to group by store. Max 500 rows, 15s."""
     await _actor(tab="_all")
     return await o.run_readonly_sql(sql)
 
@@ -457,3 +458,20 @@ async def search_sephora_catalog(
     f = {"q": query, "brand": brand, "match": match, "needs_size": "open" if needs_size_open else None,
          "active": "all" if include_inactive else "1"}
     return await sephora.page_catalog({k: v for k, v in f.items() if v}, min(max(limit, 1), 500), 0)
+
+
+
+@mcp.tool()
+async def list_match_feedback(
+    brand: Annotated[str | None, Field(description="Only this brand (case-insensitive)")] = None,
+    limit: int = 200,
+) -> dict:
+    """Wrong matches Nick (or his team) marked on the Sephora leads tab or the Sephora relist page, newest first:
+    asin, Sephora product, tags (size, shade, concentration, set, bonus, multipack, version, product, other), note, correct_asin.
+    Read this before matching Sephora products to ASINs, and avoid the same mistakes."""
+    from . import sephora
+    await _actor(tab="sephora_leads")
+    rows = await sephora.wrong_matches()
+    if brand:
+        rows = [r for r in rows if (r.get("brand") or "").lower() == brand.lower()]
+    return {"wrong_matches": rows[: max(1, min(limit, 1000))], "tags": list(sephora.WRONG_TAGS)}

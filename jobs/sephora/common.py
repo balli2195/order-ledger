@@ -153,6 +153,38 @@ def hub_upsert_catalog(rows: list[dict]) -> dict:
     return tot
 
 
+# ---------------------------------------------------------------- learned match rules (Nick's wrong-match marks)
+
+def learned_rules(wrong: list | None = None) -> dict:
+    """Rules from the Hub's wrong_matches + manual rules (Hub doc sephora_jobs/match_rules); also saved to
+    .data/match_rules.json, which catalog/match.py reads. See catalog/match_rules.py."""
+    import match_rules as MR
+    if wrong is None:
+        wrong = hub("GET", "/api/engine/sephora/feedback").get("wrong_matches") or []
+    manual = (state_get("match_rules", {}) or {}).get("manual") or []
+    rules = MR.derive(wrong, manual)
+    MR.save(rules)
+    return rules
+
+
+def after_ts(a, b) -> bool:
+    """ISO timestamp a is later than b (b empty -> True); compares real times, whatever the offsets."""
+    if not b:
+        return True
+    try:
+        return dt.datetime.fromisoformat(str(a).replace("Z", "+00:00")) > dt.datetime.fromisoformat(str(b).replace("Z", "+00:00"))
+    except ValueError:
+        return str(a) > str(b)
+
+
+def rule_breaks(rules: dict, r: dict) -> list[str]:
+    """Learned rules a Hub catalog row breaks ([] = none)."""
+    import match_rules as MR
+    ex = r.get("extra") or {}
+    return MR.violations(rules, r.get("brand"), r.get("amazon_title"), ex.get("amazon_size"), r.get("shade"),
+                         r.get("sephora_name"), sephora_multi=bool(r.get("needs_size")))
+
+
 # ---------------------------------------------------------------- economics (same rules as catalog/build.py)
 
 def referral_frac(pct_frac, price):

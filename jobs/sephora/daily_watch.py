@@ -156,9 +156,21 @@ def main():
         return C.fnum(r.get("price_lo")), C.fnum(r.get("price_hi")), (C.fnum(r.get("sale_price")) if r.get("on_sale") else None)
 
     # ---- 3. watch rows
+    try:   # rules learned from Nick's wrong-match marks: a pair that breaks one isn't proposed until he marks it OK
+        rules = C.learned_rules()
+    except Exception as e:  # noqa: BLE001
+        rules = None
+        problems.append(f"match rules unavailable (wrong-match feedback read failed): {e!r}")
+    rule_skipped = []
+
     def watchable(r):
         if not r["active"] or r.get("sellable") != "open" or r.get("match_ok") is False:
             return False
+        if rules and r.get("match_ok") is not True:
+            br = C.rule_breaks(rules, r)
+            if br:
+                rule_skipped.append((r["asin"], r.get("sephora_name"), br[0]))
+                return False
         if r.get("confidence") not in CONF_OK and r.get("match_ok") is not True:
             return False
         ex = r.get("extra") or {}
@@ -461,7 +473,8 @@ def main():
              f"- Watched {len(watch)} ASINs; Keepa refreshed {len(refreshed)} today ({tokens} tokens this run; {kstop or 'all done'})",
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
              f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}",
-             f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min", ""]
+             f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
+             f"- Held back by learned match rules (Nick's wrong-match marks): {len(rule_skipped)}", ""]
     if cand_view:
         lines += ["## Candidates", "", "| ASIN | Brand | Sephora product | Cost | Buy Box | ROI | Band | Pred ROI | Reason |",
                   "|---|---|---|---|---|---|---|---|---|"]
@@ -478,6 +491,9 @@ def main():
                          f"{e['label']} | {(r.get('extra') or {}).get('amazon_size') or '?'} | "
                          f"${(amz[r['asin']]['buybox'] or amz[r['asin']]['fba_low'] or 0):.2f} | {C.pct(roi_)} |")
         lines.append("")
+    if rule_skipped:
+        lines += ["## Held back by learned match rules (marked OK on the Sephora leads tab -> proposed again)", ""]
+        lines += [f"- {a_} {n_ or ''}: {why}" for a_, n_, why in rule_skipped[:30]] + [""]
     if fatal:
         lines.insert(1, f"**RUN FAILED: {fatal}.**")
     if problems:

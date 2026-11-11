@@ -12,6 +12,7 @@ Method (per brand):
   mini/travel, set/kit, or refill and the other is not.
 - Variation children (same parentAsin) inherit the family's best product unless they have a strong own match.
 - Confidence: high / medium / low by score and margin over the runner-up; below LOW_MIN -> unmatched.
+- Learned rules (match_rules.py, from Nick's wrong-match marks): a match that breaks one is capped at low.
 """
 import json, math, os, re, sys, unicodedata
 from collections import Counter, defaultdict
@@ -181,6 +182,8 @@ def size_ml(text):
 
 
 def match_brand(slug, cfg_b):
+    import match_rules as MR   # rules learned from Nick's wrong-match marks (written by the weekly job before matching)
+    rules = MR.load()
     seph = json.load(open(os.path.join(CAT, "raw", "sephora", slug + ".json")))
     keepa = json.load(open(os.path.join(CAT, "raw", "keepa", slug + ".json")))
     drop = set()
@@ -350,6 +353,11 @@ def match_brand(slug, cfg_b):
         elif conf == "high" and x["flags"]["set"]:
             conf = "medium"   # sets/kits change contents every season under similar names: verify before buying
             reason.append("set: verify contents")
+        broken = MR.violations(rules, cfg_b.get("name"), a.get("title"), a.get("size"), a.get("color"), x["p"]["name"],
+                               sephora_multi=x["multi"])
+        if broken:   # same kind of mistake Nick has marked before: never proposed until he says OK
+            conf = "low"
+            reason.extend(broken)
         common = sorted(set(tokens(a["title"] or "", drop)) & x["set"], key=lambda w: -idf[w])
         reason.insert(0, f"score {s:.2f} (margin {margin:.2f}); shared words: {' '.join(common[:6])}"
                          + ("; clear winner by margin" if o.get("promoted") else ""))

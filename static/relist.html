@@ -27,6 +27,11 @@
   .rl-since { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
   .rl-since input { width: auto; padding: 4px 7px; }
   .rl-cur { font-size: 12px; white-space: nowrap; }
+  .rl-mk { white-space: nowrap; }
+  .rl-mkx { margin-top: 4px; }
+  .rl-mkx .btn { padding: 1px 7px; font-size: 11.5px; }
+  .rl-wrong { color: var(--bad); font-weight: 600; font-size: 12px; }
+  .rl-why { font-size: 11.5px; color: var(--muted); white-space: normal; max-width: 200px; }
   .rl-cur.ord { color: var(--ok); font-weight: 600; }
   .rl-cur.log { color: #7a5a00; font-weight: 600; }
 </style>
@@ -94,10 +99,27 @@
 <script src="/static/clock.js"></script>
 <script src="/static/bonus.js"></script>
 <script src="/static/common.js"></script>
+<script src="/static/wrongmatch.js"></script>
 <script>
 (async () => {
   const { $, $$, esc, num, money, pct, api, fail } = LG;
-  const S = { rows: [], k: 'roi', dir: -1, tier: '', cur: {} };
+  const S = { rows: [], k: 'roi', dir: -1, tier: '', cur: {}, path: '', marks: {} };
+  const editor = () => LG.can('editor') && !LG.st.me?.viewed_by;
+  function matchCell(r) {
+    const m = S.marks[r.asin];
+    if (m) return `<div class="rl-wrong">✗ Wrong match</div><div class="rl-why">${esc(WrongMatch.text(m.tags, m.note))}</div>`
+      + (m.correct_asin ? `<div class="rl-why">Correct: <a href="https://www.amazon.com/dp/${esc(m.correct_asin)}" target="_blank" rel="noopener">${esc(m.correct_asin)}</a></div>` : '')
+      + (editor() ? `<button class="btn small ghost" data-undo="${esc(m.id)}">Undo</button>` : '');
+    return editor() ? `<button class="btn small ghost danger" data-wrong="${esc(r.asin)}">Wrong match</button>` : '';
+  }
+  async function loadMarks() {
+    S.marks = {};
+    if (!S.path) return;
+    try {
+      ((await api('GET', '/api/relist/wrong?path=' + encodeURIComponent(S.path))).marks || [])
+        .forEach((m) => { if (!S.marks[m.asin]) S.marks[m.asin] = m; });
+    } catch (e) { fail(e); }
+  }
   const SALE_START = '2026-10-30';
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
   const amz = (a) => a ? `<a href="https://www.amazon.com/dp/${esc(a)}" target="_blank" rel="noopener">${esc(a)}</a>` : '';
@@ -123,7 +145,7 @@
     $('#rows').innerHTML = rows.map((r) => `<tr style="cursor:default">
       <td><span class="rl-tier ${r.tier === 'Ready' ? 'rl-ready' : 'rl-check'}">${esc(r.tier)}</span></td>
       <td>${r.cur_ordered ? `<span class="rl-cur ord" title="Last lead ${esc(r.cur_last)}">✓ Ordered ${num(r.cur_ordered)}</span>` : r.cur_leads ? `<span class="rl-cur log" title="Last lead ${esc(r.cur_last)}">Logged, not ordered</span>` : '<span class="muted rl-cur">No</span>'}</td>
-      <td>${amz(r.asin)}${r.spring_asin ? `<span class="rl-src">spring: ${amz(r.spring_asin)}</span>` : ''}</td>
+      <td class="rl-mk">${amz(r.asin)}${r.spring_asin ? `<span class="rl-src">spring: ${amz(r.spring_asin)}</span>` : ''}<div class="rl-mkx">${matchCell(r)}</div></td>
       <td class="rl-prod">${esc(r.product)}</td>
       <td>${r.sephora_url ? `<a href="${esc(r.sephora_url)}" target="_blank" rel="noopener">Sephora</a>` : ''}</td>
       <td class="num">${r.sephora_price != null ? money(r.sephora_price) : `<span class="muted" title="Not confirmed; buy cost uses the spring lead cost">—</span>`}</td>
@@ -146,6 +168,7 @@
   function show(doc) {
     const d = (doc && doc.data) || {};
     S.rows = d.rows || [];
+    S.path = (doc && doc.path) || '';
     $('#sub').textContent = d.label || '';
     $('#assume').textContent = d.assumptions || '';
     $('#notes').innerHTML = (d.notes || []).map((n) => `<li>${esc(n)}</li>`).join('');
@@ -176,11 +199,27 @@
     if (!docs.length) { $('#empty').textContent = 'No relist has been loaded yet.'; $('#empty').classList.remove('hidden'); return; }
     $('#list').innerHTML = docs.map((d) => `<option value="${esc(d.path)}">${esc(d.data?.label || d.id)}</option>`).join('');
     $('#list').hidden = docs.length < 2;
-    const pick = () => show(docs.find((d) => d.path === $('#list').value) || docs[0]);
+    const pick = async () => { const d = docs.find((x) => x.path === $('#list').value) || docs[0]; S.path = d.path; await loadMarks(); show(d); };
     const saved = store.get('relistList'); if (saved && docs.some((d) => d.path === saved)) $('#list').value = saved;
     $('#list').addEventListener('change', () => { store.set('relistList', $('#list').value); pick(); });
+    $('#rows').addEventListener('click', async (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.wrong) {
+        const r = S.rows.find((x) => x.asin === b.dataset.wrong); if (!r) return;
+        const w = await WrongMatch.ask({ asin: r.asin, sephora: r.product });
+        if (!w) return;
+        try {
+          const res = await api('POST', '/api/relist/wrong', { path: S.path, asin: r.asin, sephora_url: r.sephora_url, product: r.product,
+            brand: r.brand, ...w });
+          LG.toast(res.catalog_marked ? 'Marked wrong — also removed from the Sephora leads catalog' : 'Marked wrong match');
+          await loadMarks(); render();
+        } catch (err) { fail(err); }
+      } else if (b.dataset.undo) {
+        try { await api('DELETE', '/api/relist/wrong/' + encodeURIComponent(b.dataset.undo)); await loadMarks(); render(); } catch (err) { fail(err); }
+      }
+    });
     await loadCurrent();
-    pick();
+    await pick();
     let t; LG.live((m) => { if (m.t === 'lead') { clearTimeout(t); t = setTimeout(async () => { await loadCurrent(); render(); }, 1500); } });
   } catch (e) { fail(e); }
 })();

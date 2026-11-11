@@ -35,11 +35,16 @@
   .sl-tag.reason { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .sl-links { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; margin-top: 8px; }
   .sl-note { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
-  .sl-acts { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 150px; }
+  .sl-acts { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 150px; max-width: 330px; }
   .sl-acts .btn { white-space: nowrap; }
   .sl-size { display: flex; gap: 4px; }
   .sl-size .btn { flex: 1; padding: 4px 6px; font-size: 12.5px; }
   .sl-size .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .sl-rejbox { display: flex; flex-direction: column; gap: 5px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--line-2); }
+  .sl-rejq { display: flex; flex-wrap: wrap; gap: 4px; }
+  .sl-rejq .btn { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+  .sl-rejq .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .sl-why { font-size: 11.5px; color: var(--bad); margin-top: 3px; max-width: 180px; white-space: normal; }
   .sl-rej { display: flex; gap: 4px; }
   .sl-rej input { min-width: 0; padding: 4px 7px; font-size: 13px; }
   .sl-done { grid-column: 1 / -1; font-size: 13px; }
@@ -125,9 +130,11 @@
 <script src="/static/clock.js"></script>
 <script src="/static/bonus.js"></script>
 <script src="/static/common.js"></script>
+<script src="/static/wrongmatch.js"></script>
 <script>
 (async () => {
   const { $, $$, esc, num, money, pct, fmtDate, api, toast, fail } = LG;
+  const REJ_QUICK = ['ROI too low', 'Historical price too low', 'Too many sellers', "Can't sell / gated", 'Not in stock at Sephora'];
   const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', ov: null, size: {}, rejecting: null };
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
   const safeUrl = (u) => u && /^https?:\/\//i.test(u) ? u : null;
@@ -190,7 +197,9 @@
           <button class="btn small ${sz === 'lo' ? 'on' : ''}" data-size="lo" data-id="${esc(c.id)}">Mini / smaller size</button>
           <button class="btn small ${sz === 'hi' ? 'on' : ''}" data-size="hi" data-id="${esc(c.id)}">Full size</button></div>` : '';
       const rej = S.rejecting === c.id
-        ? `<div class="sl-rej"><input id="rejReason" placeholder="Reason (optional)" maxlength="300"><button class="btn small danger" data-act="reject-go" data-id="${esc(c.id)}">Reject</button></div>`
+        ? `<div class="sl-rejbox"><div class="sl-rejq">${REJ_QUICK.map((q) => `<button type="button" class="btn small" data-rq="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+            <div class="sl-rej"><input id="rejReason" placeholder="Why? (optional)" maxlength="300"><button class="btn small danger" data-act="reject-go" data-id="${esc(c.id)}">Reject</button></div>
+            <button type="button" class="btn small ghost" data-act="reject-cancel">Cancel</button></div>`
         : `<button class="btn small" data-act="reject" data-id="${esc(c.id)}">Reject</button>`;
       acts = `<div class="sl-acts">${size}
         <button class="btn primary small" data-act="approve" data-id="${esc(c.id)}" ${c.needs_size && !sz ? 'disabled title="Pick the size first"' : ''}>Approve → lead</button>
@@ -263,7 +272,7 @@
         <td class="num">${pct(r.roi_avg90)}</td>
         <td class="num">${num(r.monthly_sold)}</td>
         <td><div class="sl-tags" style="margin:0">${flags.map(([c, t]) => `<span class="sl-tag ${c}">${esc(t)}</span>`).join('')}</div></td>
-        <td class="mk">${mk(r, true, 'OK')} ${mk(r, false, 'Wrong', 'danger')}${r.marked_by ? `<div class="muted" style="font-size:11px">${esc(r.marked_by)}</div>` : ''}</td>
+        <td class="mk">${mk(r, true, 'OK')} ${mk(r, false, 'Wrong', 'danger')}${r.marked_by ? `<div class="muted" style="font-size:11px">${esc(r.marked_by)}</div>` : ''}${r.match_ok === false && (r.wrong_tags?.length || r.wrong_note) ? `<div class="sl-why">${esc(WrongMatch.text(r.wrong_tags, r.wrong_note))}</div>` : ''}</td>
         <td class="mk">${r.needs_size ? `${sz(r, 'lo')} ${sz(r, 'hi')}${!r.size_confirmed && r.size_guess && r.size_guess !== 'unknown' ? `<div class="muted" style="font-size:11px">guess: ${r.size_guess === 'lo' ? 'mini' : 'full'}</div>` : ''}` : '<span class="muted">—</span>'}</td></tr>`;
     }).join('');
     $('#catEmpty').classList.toggle('hidden', rows.length > 0);
@@ -322,6 +331,13 @@
       try { await api('POST', '/api/sephora/catalog/mark', { asin: c.asin, product_id: c.product_id, size_confirmed: b.dataset.size }); c.size_confirmed = b.dataset.size; } catch (err) { fail(err); }
       renderQueue(); return;
     }
+    if (b.dataset.rq) {   // quick reject reason: add / remove it in the reason box
+      const inp = $('#rejReason'); if (!inp) return;
+      const parts = inp.value.split(';').map((x) => x.trim()).filter(Boolean);
+      const i = parts.indexOf(b.dataset.rq);
+      if (i >= 0) parts.splice(i, 1); else parts.push(b.dataset.rq);
+      inp.value = parts.join('; '); b.classList.toggle('on', i < 0); inp.focus(); return;
+    }
     const a = b.dataset.act;
     if (a === 'approve') {
       const c = find(id); const size = c && c.needs_size ? (c.size_confirmed || S.size[id]) : undefined;
@@ -329,10 +345,13 @@
         (r) => `Lead added for ${r.asin} at ${money(r.cost)}${r.promo_code ? ` (code ${r.promo_code})` : ''}${r.cost_note ? ' — ' + r.cost_note : ''}`);
     }
     if (a === 'reject') { S.rejecting = id; renderQueue(); return; }
+    if (a === 'reject-cancel') { S.rejecting = null; renderQueue(); return; }
     if (a === 'reject-go') return act(id, () => api('POST', `/api/sephora/candidates/${encodeURIComponent(id)}/reject`, { reason: $('#rejReason')?.value || '' }), 'Rejected');
     if (a === 'wrong') {
-      if (!confirm('Mark this as a wrong match? This Sephora product won\'t be suggested for this ASIN again.')) return;
-      return act(id, () => api('POST', `/api/sephora/candidates/${encodeURIComponent(id)}/reject`, { wrong_match: true }), 'Marked wrong match and rejected');
+      const c = S.cands.find((x) => x.id === id);
+      const w = await WrongMatch.ask({ asin: c && c.asin, sephora: c && [c.sephora_name, c.shade].filter(Boolean).join(' · ') });
+      if (!w) return;
+      return act(id, () => api('POST', `/api/sephora/candidates/${encodeURIComponent(id)}/reject`, { wrong_match: true, ...w }), 'Marked wrong match and rejected');
     }
   });
   $('#queue').addEventListener('keydown', (e) => {
@@ -346,9 +365,15 @@
     if (b.dataset.mark === 'match') {
       const v = b.dataset.v === 'true';
       body.match_ok = r.match_ok === v ? null : v;   // clicking the chosen answer again clears it
-      if (body.match_ok === false && r.open_candidates && !confirm('Mark as a wrong match? Its open candidates are rejected too.')) return;
+      if (body.match_ok === false) {   // say what was wrong (its open candidates are rejected too)
+        const w = await WrongMatch.ask({ asin: r.asin, sephora: [r.sephora_name, r.shade].filter(Boolean).join(' · ') });
+        if (!w) return;
+        Object.assign(body, w);
+      }
     } else body.size_confirmed = r.size_confirmed === b.dataset.v ? null : b.dataset.v;
-    try { await api('POST', '/api/sephora/catalog/mark', body); Object.assign(r, body); renderCatalog(); loadOverview().catch(() => {}); } catch (err) { fail(err); }
+    try { await api('POST', '/api/sephora/catalog/mark', body); Object.assign(r, body);
+      if ('match_ok' in body) { r.wrong_tags = body.match_ok === false ? body.tags : null; r.wrong_note = body.match_ok === false ? body.note : null; }
+      renderCatalog(); loadOverview().catch(() => {}); } catch (err) { fail(err); }
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
   ['#fConf', '#fSell', '#fSize', '#fMatch', '#fActive'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));

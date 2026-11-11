@@ -35,7 +35,14 @@ CAT_BOOL = ("on_sale", "needs_size", "amazon_on", "active")
 CAT_ENUM = {"size_guess": ("lo", "hi", "unknown"), "confidence": ("high", "medium", "low"),
             "sellable": ("open", "approval_required", "restricted")}
 CAT_FIELDS = set(CAT_TEXT) | set(CAT_MONEY) | set(CAT_NUM) | set(CAT_INT) | set(CAT_BOOL) | set(CAT_ENUM) | {"extra"}
-NICK_FIELDS = {"match_ok", "size_confirmed", "marked_by", "marked_at"}
+NICK_FIELDS = {"match_ok", "size_confirmed", "marked_by", "marked_at", "wrong_tags", "wrong_note", "correct_asin"}
+
+# What can be wrong with a match (the Wrong match dialog's quick picks; static/wrongmatch.js has the labels).
+# The jobs turn repeated tags into match rules (jobs/sephora/match_rules.py).
+WRONG_TAGS = ("size", "shade", "concentration", "set", "bonus", "multipack", "version", "product", "other")
+WRONG_LABELS = {"size": "wrong size", "shade": "wrong shade", "concentration": "wrong scent/type", "set": "set vs single",
+                "bonus": "bundle/bonus item", "multipack": "pack count differs", "version": "old version", "product": "different product",
+                "other": "other"}
 
 CAND_FIELDS = {"asin", "product_id", "found_on", "reason", "cost", "price_basis", "buybox", "roi_now", "lead_score_band",
                "lead_score_pred_roi", "lead_score_notes", "note"}
@@ -237,7 +244,7 @@ async def deactivate_catalog(keys: list) -> dict:
 CAT_COLS = ("asin, product_id, sku_id, brand, sephora_name, sephora_url, price_lo, price_hi, sale_price, on_sale, needs_size, "
             "size_guess, size_confirmed, confidence, match_reason, sellable, shade, amazon_title, buybox, fba_low, bb_avg90, "
             "referral_pct, fba_fee, monthly_sold, offers_fba, amazon_on, roi_now, roi_avg90, watch_price, match_ok, marked_by, "
-            "marked_at, active, extra, created_at, updated_at")
+            "marked_at, wrong_tags, wrong_note, correct_asin, active, extra, created_at, updated_at")
 
 
 async def engine_catalog(brand: str | None, active: str | None, limit: int, offset: int, asin: str | None = None) -> dict:
@@ -313,7 +320,8 @@ SELECT s.id, s.asin, s.product_id, s.found_on, s.reason, s.cost, s.price_basis, 
        s.created_at, s.updated_at,
        c.brand, c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.price_lo, c.price_hi, c.sale_price, c.on_sale,
        c.needs_size, c.size_guess, c.size_confirmed, c.confidence, c.match_reason, c.sellable, c.fba_low, c.bb_avg90,
-       c.monthly_sold, c.offers_fba, c.amazon_on, c.roi_avg90, c.watch_price, c.match_ok, c.active AS catalog_active,
+       c.monthly_sold, c.offers_fba, c.amazon_on, c.roi_avg90, c.watch_price, c.match_ok, c.wrong_tags, c.wrong_note, c.correct_asin,
+       c.active AS catalog_active,
        l.qty_ordered AS lead_qty_ordered, l.buy_qty AS lead_buy_qty
   FROM sephora_candidates s
   LEFT JOIN sephora_catalog c ON c.asin = s.asin AND c.product_id = s.product_id
@@ -417,7 +425,60 @@ async def feedback(since: str | None = None) -> dict:
                   LEFT JOIN leads l ON l.id = s.lead_id
                  WHERE {' AND '.join(w)} GROUP BY c.brand ORDER BY approved DESC, c.brand""", a)
         brands = [jsonable(dict(r)) for r in await cur.fetchall()]
-    return {"decisions": rows, "brands": brands}
+        wrong = await wrong_matches(conn)
+    return {"decisions": rows, "brands": brands, "wrong_matches": wrong}
+
+
+def clean_wrong(body: dict) -> dict:
+    """tags / note / correct_asin from a Wrong match dialog."""
+    tags = body.get("tags") or body.get("wrong_tags") or []
+    if isinstance(tags, str):
+        tags = [t for t in re.split(r"[,\s]+", tags) if t]
+    tags = [str(t).strip().lower() for t in tags if str(t).strip()]
+    bad = [t for t in tags if t not in WRONG_TAGS]
+    if bad:
+        raise LedgerError(f"Unknown wrong-match reason {bad[0]!r}; use one of {', '.join(WRONG_TAGS)}")
+    ca = body.get("correct_asin")
+    ca = _asin(ca) if ca not in (None, "") else None
+    return {"tags": list(dict.fromkeys(tags)), "note": _txt(body.get("note") or body.get("wrong_note"), 1000), "correct_asin": ca}
+
+
+def wrong_text(w: dict) -> str:
+    """'Wrong match: size, shade — note' for reject_reason."""
+    t = ", ".join(WRONG_LABELS.get(x, x) for x in (w.get("tags") or []))
+    return "Wrong match" + (f": {t}" if t else "") + (f" — {w['note']}" if w.get("note") else "")
+
+
+async def log_wrong(conn, actor: Actor, source: str, asin: str, product_id: str | None, w: dict, list_path: str | None = None,
+                    extra: dict | None = None) -> dict:
+    """One match_feedback row (names and titles copied from the catalog when the pair is there)."""
+    cat = {}
+    if product_id:
+        cur = await conn.execute("SELECT brand, sephora_name, sephora_url, amazon_title FROM sephora_catalog WHERE asin=%s AND product_id=%s",
+                                 (asin, product_id))
+        cat = dict(await cur.fetchone() or {})
+    e = extra or {}
+    cur = await conn.execute(
+        "INSERT INTO match_feedback (source, asin, product_id, brand, sephora_name, sephora_url, amazon_title, tags, note, correct_asin, "
+        "list_path, marked_by) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, created_at",
+        (source, asin, product_id, e.get("brand") or cat.get("brand"), e.get("sephora_name") or cat.get("sephora_name"),
+         e.get("sephora_url") or cat.get("sephora_url"), e.get("amazon_title") or cat.get("amazon_title"),
+         w.get("tags") or [], w.get("note"), w.get("correct_asin"), list_path, actor.label))
+    return jsonable(dict(await cur.fetchone()))
+
+
+async def wrong_matches(conn=None, list_path: str | None = None) -> list:
+    async def q(c):
+        w, a = "", []
+        if list_path:
+            w, a = "WHERE list_path = %s", [list_path]
+        cur = await c.execute(f"SELECT id, source, asin, product_id, brand, sephora_name, sephora_url, amazon_title, tags, note, correct_asin, "
+                              f"list_path, marked_by, created_at FROM match_feedback {w} ORDER BY created_at DESC", a)
+        return [jsonable(dict(r)) for r in await cur.fetchall()]
+    if conn is not None:
+        return await q(conn)
+    async with db.pool.connection() as c:
+        return await q(c)
 
 
 # ---------------------------------------------------------------- page reads
@@ -498,8 +559,17 @@ async def mark_catalog(actor: Actor, asin: str, product_id: str, body: dict) -> 
         if v is not None and v not in ("lo", "hi"):
             raise LedgerError("size_confirmed must be lo (mini / smaller size), hi (full size) or empty")
         sets.append("size_confirmed=%s"); args.append(v); after["size_confirmed"] = v
+    wrong = None
+    if "match_ok" in after:
+        if after["match_ok"] is False:
+            wrong = clean_wrong(body)
+            sets += ["wrong_tags=%s", "wrong_note=%s", "correct_asin=%s"]; args += [wrong["tags"], wrong["note"], wrong["correct_asin"]]
+            after.update(wrong_tags=wrong["tags"], wrong_note=wrong["note"], correct_asin=wrong["correct_asin"])
+        else:   # OK or cleared: the old wrong-match reason no longer applies
+            sets.append("wrong_tags=NULL, wrong_note=NULL, correct_asin=NULL")
     if not sets:
         raise LedgerError("Nothing to change")
+    source = body.get("_source") or "catalog"
     async with db.pool.connection() as conn:
         async with conn.transaction():
             cur = await conn.execute("SELECT match_ok, size_confirmed FROM sephora_catalog WHERE asin=%s AND product_id=%s FOR UPDATE",
@@ -510,13 +580,18 @@ async def mark_catalog(actor: Actor, asin: str, product_id: str, body: dict) -> 
             await conn.execute(f"UPDATE sephora_catalog SET {', '.join(sets)}, marked_by=%s, marked_at=now(), updated_at=now() "
                                f"WHERE asin=%s AND product_id=%s", args + [actor.label, asin, product_id])
             expired = 0
+            if "match_ok" in after and after["match_ok"] is not False:   # changed his mind: stop learning from the old mark
+                await conn.execute("DELETE FROM match_feedback WHERE asin=%s AND product_id=%s", (asin, product_id))
             if after.get("match_ok") is False:   # a wrong match: its open candidates go too
                 cur = await conn.execute(
-                    "UPDATE sephora_candidates SET status='rejected', reject_reason=COALESCE(reject_reason, 'Wrong match'), "
+                    "UPDATE sephora_candidates SET status='rejected', reject_reason=COALESCE(reject_reason, %s), "
                     "decided_by=%s, decided_at=now(), updated_at=now() WHERE asin=%s AND product_id=%s AND status='new' RETURNING id",
-                    (actor.label, asin, product_id))
+                    (wrong_text(wrong), actor.label, asin, product_id))
                 expired = len(await cur.fetchall())
-            await _audit(conn, actor, "mark", "sephora", None, None, {"asin": asin, "product_id": product_id, **{k: before[k] for k in after}},
+                if not body.get("_no_log"):
+                    await log_wrong(conn, actor, source, asin, product_id, wrong, body.get("_list_path"))
+            await _audit(conn, actor, "mark", "sephora", None, None,
+                         {"asin": asin, "product_id": product_id, **{k: before[k] for k in after if k in before}},
                          {"asin": asin, "product_id": product_id, **after})
             await _notify(conn)
     return {"asin": asin, "product_id": product_id, **after, "candidates_rejected": expired}
@@ -614,15 +689,16 @@ async def approve(actor: Actor, cid: str, size: str | None = None) -> dict:
             "cost_note": cost_note}
 
 
-async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match: bool = False) -> dict:
+async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match: bool = False, wrong: dict | None = None) -> dict:
     reason = _txt(reason, 300)
+    w = clean_wrong(wrong or {}) if wrong_match else None
     async with db.pool.connection() as conn:
         async with conn.transaction():
             c = await _candidate(conn, cid, lock=True)
             if c["status"] != "new":
                 raise LedgerError(f"This candidate was already {c['status']}")
             if wrong_match:
-                reason = reason or "Wrong match"
+                reason = wrong_text(w)
             await conn.execute("UPDATE sephora_candidates SET status='rejected', reject_reason=%s, decided_by=%s, decided_at=now(), "
                                "updated_at=now() WHERE id=%s", (reason, actor.label, cid))
             await _audit(conn, actor, "reject", "sephora", cid, None, {"status": "new"},
@@ -630,8 +706,56 @@ async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match:
             await _notify(conn)
     out = {"ok": True, "status": "rejected", "reason": reason}
     if wrong_match:
-        out.update(await mark_catalog(actor, c["asin"], c["product_id"], {"match_ok": False}))
+        out.update(await mark_catalog(actor, c["asin"], c["product_id"], {"match_ok": False, **w, "_source": "candidate"}))
     return out
+
+
+async def relist_wrong(actor: Actor, body: dict) -> dict:
+    """Wrong match from the Sephora relist page: {path, asin, sephora_url, product?, tags, note, correct_asin}.
+    Logged in match_feedback; when the pair is in the Sephora catalog it is marked wrong there too (so it is never proposed)."""
+    path = _txt(body.get("path"), 200)
+    if not path or not path.startswith("relist/"):
+        raise LedgerError("path must be a relist list (relist/...)")
+    asin = _asin(body.get("asin"))
+    w = clean_wrong(body)
+    url = _txt(body.get("sephora_url"), 1000)
+    m = re.search(r"\b(P\d{4,8})\b", url or "")
+    pid = m.group(1) if m else None
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            in_cat = False
+            if pid:
+                cur = await conn.execute("SELECT 1 FROM sephora_catalog WHERE asin=%s AND product_id=%s", (asin, pid))
+                in_cat = bool(await cur.fetchone())
+            row = await log_wrong(conn, actor, "relist", asin, pid, w, path,
+                                  {"sephora_url": url, "sephora_name": _txt(body.get("product"), 300), "brand": _txt(body.get("brand"), 100),
+                                   "amazon_title": _txt(body.get("amazon_title"), 500)})
+            await _audit(conn, actor, "wrong_match", "relist", None, None, None, {"path": path, "asin": asin, **w})
+            await _notify(conn)
+    out = {"ok": True, "id": row["id"], "catalog_marked": False}
+    if in_cat:
+        await mark_catalog(actor, asin, pid, {"match_ok": False, **w, "_no_log": True})
+        out["catalog_marked"] = True
+    return out
+
+
+async def relist_unwrong(actor: Actor, fid: str) -> dict:
+    """Undo a relist-page wrong match; when that mark also flagged the pair in the Sephora catalog, the catalog flag is cleared."""
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("DELETE FROM match_feedback WHERE id=%s AND source='relist' RETURNING asin, product_id, list_path", (fid,))
+            r = await cur.fetchone()
+            if not r:
+                raise LedgerError("That relist mark doesn't exist")
+            await _audit(conn, actor, "wrong_match_undo", "relist", None, None, {"asin": r["asin"], "path": r["list_path"]}, None)
+            await _notify(conn)
+            cat = None
+            if r["product_id"]:
+                cur = await conn.execute("SELECT match_ok FROM sephora_catalog WHERE asin=%s AND product_id=%s", (r["asin"], r["product_id"]))
+                cat = await cur.fetchone()
+    if cat and cat["match_ok"] is False:
+        await mark_catalog(actor, r["asin"], r["product_id"], {"match_ok": None})
+    return {"ok": True}
 
 
 _score_lock = asyncio.Lock()

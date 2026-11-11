@@ -878,6 +878,32 @@ MIGRATIONS: list[str] = [
     ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS last_used date;
     ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS used_match text;
     """,
+    """
+    -- match_feedback: why a matched Amazon ASIN <-> Sephora product was wrong (Nick, Nov 11 2026). One row per mark,
+    -- from the Sephora leads tab (candidate card or catalog) or the Sephora relist page. The Sephora jobs read it
+    -- (GET /api/engine/sephora/feedback -> wrong_matches) and turn repeated reasons into match rules.
+    CREATE TABLE IF NOT EXISTS match_feedback (
+      id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      source        text NOT NULL,             -- candidate | catalog | relist
+      asin          text NOT NULL,
+      product_id    text,
+      brand         text,
+      sephora_name  text,
+      sephora_url   text,
+      amazon_title  text,
+      tags          text[] NOT NULL DEFAULT '{}',
+      note          text,
+      correct_asin  text,
+      list_path     text,                      -- relist doc path, for marks made on the relist page
+      marked_by     text,
+      created_at    timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS match_feedback_asin_idx ON match_feedback (asin);
+    CREATE INDEX IF NOT EXISTS match_feedback_list_idx ON match_feedback (list_path);
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS wrong_tags text[];
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS wrong_note text;
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS correct_asin text;
+    """,
 ]
 
 
