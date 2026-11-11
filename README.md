@@ -117,3 +117,13 @@ checked in the last 7 days, or shown at $0 by Arbitrage Card; oldest card first 
 and posts `{id, balance}` / `{id, error}` to `POST /api/engine/giftcards/check-results` (balance, checked time, status used/partial/active;
 a rejected card becomes `invalid` with Macy's message in notes). It stops at the first rejected card (Macy's locks the form after
 3 rejections) and pauses on any visible CAPTCHA for Nick to solve himself — it never solves or bypasses one.
+
+### Gift card order dates (Nov 10, 2026)
+Arbitrage Card's export has no dates, so `order_date` was filled from the "Your Arbitrage Card order is now complete" emails in
+Nick's Outlook ("[Order #146602] (November 10, 2026)"). The rows were read in his Outlook tab and handed to `static/inbox-bridge.html`
+with postMessage, because Outlook's page blocks direct requests to the Hub. The bridge page saves them through the signed-in
+`POST /api/gift-cards/order-dates`; the engine-key version is `POST /api/engine/giftcards/order-dates`.
+Outlook search tops out at about 1,000 results and hides same-subject emails inside conversations, so the emails were searched in
+date ranges with conversation grouping off. Nick's setting, "Group messages by branches within conversations", was restored afterwards.
+An order sitting between two orders from the same day was given that day, since Arbitrage Card order numbers only go up over time.
+Result: 9,607 of 9,653 cards dated; 46 cards (29 orders) are still blank, each known to within 1–27 days.
