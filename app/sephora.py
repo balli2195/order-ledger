@@ -27,7 +27,7 @@ CENTRAL = ZoneInfo("America/Chicago")
 ASIN_RE = re.compile(r"^[A-Z0-9]{10}$")
 
 # Catalog columns the job may write, by kind. match_ok / size_confirmed / marked_* are Nick's and never written here.
-CAT_TEXT = ("sku_id", "brand", "sephora_name", "sephora_url", "shade", "amazon_title", "match_reason")
+CAT_TEXT = ("store", "sku_id", "brand", "sephora_name", "sephora_url", "shade", "amazon_title", "match_reason")   # store: Lead DB, Nov 11 2026
 CAT_MONEY = ("price_lo", "price_hi", "sale_price", "buybox", "fba_low", "bb_avg90", "fba_fee", "watch_price")
 CAT_NUM = ("referral_pct", "roi_now", "roi_avg90")
 CAT_INT = ("monthly_sold", "offers_fba")
@@ -241,7 +241,7 @@ async def deactivate_catalog(keys: list) -> dict:
     return {"deactivated": n, "candidates_expired": exp}
 
 
-CAT_COLS = ("asin, product_id, sku_id, brand, sephora_name, sephora_url, price_lo, price_hi, sale_price, on_sale, needs_size, "
+CAT_COLS = ("asin, product_id, store, sku_id, brand, sephora_name, sephora_url, price_lo, price_hi, sale_price, on_sale, needs_size, "
             "size_guess, size_confirmed, confidence, match_reason, sellable, shade, amazon_title, buybox, fba_low, bb_avg90, "
             "referral_pct, fba_fee, monthly_sold, offers_fba, amazon_on, roi_now, roi_avg90, watch_price, match_ok, marked_by, "
             "marked_at, wrong_tags, wrong_note, correct_asin, active, extra, created_at, updated_at")
@@ -318,7 +318,7 @@ CAND_SQL = """
 SELECT s.id, s.asin, s.product_id, s.found_on, s.reason, s.cost, s.price_basis, s.buybox, s.roi_now, s.lead_score_band,
        s.lead_score_pred_roi, s.lead_score_notes, s.note, s.status, s.reject_reason, s.decided_by, s.decided_at, s.lead_id,
        s.created_at, s.updated_at,
-       c.brand, c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.price_lo, c.price_hi, c.sale_price, c.on_sale,
+       c.store, c.brand, c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.price_lo, c.price_hi, c.sale_price, c.on_sale,
        c.needs_size, c.size_guess, c.size_confirmed, c.confidence, c.match_reason, c.sellable, c.fba_low, c.bb_avg90,
        c.monthly_sold, c.offers_fba, c.amazon_on, c.roi_avg90, c.watch_price, c.match_ok, c.wrong_tags, c.wrong_note, c.correct_asin,
        c.active AS catalog_active,
@@ -507,6 +507,8 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
         a += [q] * 6
     if f.get("brand"):
         w.append("lower(brand) = lower(%s)"); a.append(f["brand"].strip())
+    if f.get("store"):
+        w.append("store = %s"); a.append(f["store"].strip())
     if f.get("confidence"):
         w.append("confidence = %s"); a.append(f["confidence"])
     if f.get("sellable"):
@@ -541,7 +543,9 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
             "SELECT brand, count(*) n, count(*) FILTER (WHERE match_ok IS NULL) unchecked, count(*) FILTER (WHERE match_ok) ok, "
             "count(*) FILTER (WHERE match_ok IS FALSE) wrong FROM sephora_catalog WHERE active GROUP BY brand ORDER BY count(*) DESC, brand")
         brands = [jsonable(dict(r)) for r in await cur.fetchall()]
-    return {"rows": rows, "total": total, "offset": offset, "limit": limit, "brands": brands}
+        cur = await conn.execute("SELECT store, count(*) n FROM sephora_catalog WHERE active GROUP BY store ORDER BY count(*) DESC")
+        stores = [jsonable(dict(r)) for r in await cur.fetchall()]
+    return {"rows": rows, "total": total, "offset": offset, "limit": limit, "brands": brands, "stores": stores}
 
 
 # ---------------------------------------------------------------- Nick's actions
@@ -671,7 +675,7 @@ async def approve(actor: Actor, cid: str, size: str | None = None) -> dict:
             bits.append("full size" if c["size_confirmed"] == "hi" else "mini / smaller size")
         if cost_note:
             bits.append(cost_note)
-        data = {"lead_date": day, "asin": c["asin"], "stores": ["Sephora"], "brands": [c["brand"]] if c.get("brand") else [],
+        data = {"lead_date": day, "asin": c["asin"], "stores": [c.get("store") or "Sephora"], "brands": [c["brand"]] if c.get("brand") else [],
                 "store_link": c.get("sephora_url"), "cost": cost, "promo_code": (sale or {}).get("code"),
                 "sourced_by": "Claude", "va_notes": " · ".join(bits)}
         lead = await L.create_lead(actor, {k: v for k, v in data.items() if v not in (None, "", [])})

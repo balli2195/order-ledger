@@ -208,12 +208,19 @@ async def timeclock_page(request: Request):
 
 @app.get("/relist", include_in_schema=False)
 async def relist_page(request: Request):
-    return await _page(request, "relist", "relist.html")
+    """Lead DB -> Archived lists: the one-off re-priced lists (relist/* docs). Part of the Lead DB tab since Nov 11, 2026."""
+    return await _page(request, "sephora_leads", "relist.html")
+
+
+@app.get("/lead-db", include_in_schema=False)
+async def lead_db_page(request: Request):
+    """Lead DB (formerly Sephora leads): store products matched to ASINs, the daily buy queue, archived lists."""
+    return await _page(request, "sephora_leads", "sephora-leads.html")
 
 
 @app.get("/sephora-leads", include_in_schema=False)
-async def sephora_leads_page(request: Request):
-    return await _page(request, "sephora_leads", "sephora-leads.html")
+async def sephora_leads_old(request: Request):
+    return RedirectResponse("/lead-db", 301)
 
 
 @app.get("/reimbursements", include_in_schema=False)
@@ -487,7 +494,7 @@ async def api_brand_sellers_sourced(request: Request, since: str = "2026-10-30")
 @app.get("/api/relist/current")
 async def api_relist_current(request: Request, since: str = "2026-10-30"):
     """ASINs with a lead on or after `since` (any store), for the Sephora relist page's "In current sale" column."""
-    await auth.require(request, tab="relist")
+    await auth.require(request, tab="sephora_leads")
     try:
         d = date.fromisoformat(since[:10])
     except ValueError:
@@ -505,20 +512,20 @@ async def api_relist_current(request: Request, since: str = "2026-10-30"):
 @app.get("/api/relist/wrong")
 async def api_relist_wrong_list(request: Request, path: str):
     """Wrong-match marks made on one relist list."""
-    await auth.require(request, tab="relist")
+    await auth.require(request, tab="sephora_leads")
     return {"marks": await sephora.wrong_matches(list_path=path)}
 
 
 @app.post("/api/relist/wrong")
 async def api_relist_wrong(request: Request, body: dict = Body(...)):
     """{path, asin, sephora_url, product, brand, tags, note, correct_asin} -> match_feedback (+ Sephora catalog when the pair is there)."""
-    user = await auth.require(request, "editor", tab="relist")
+    user = await auth.require(request, "editor", tab="sephora_leads")
     return await sephora.relist_wrong(web_actor(user), body)
 
 
 @app.delete("/api/relist/wrong/{fid}")
 async def api_relist_unwrong(fid: str, request: Request):
-    user = await auth.require(request, "editor", tab="relist")
+    user = await auth.require(request, "editor", tab="sephora_leads")
     return await sephora.relist_unwrong(web_actor(user), fid)
 
 
@@ -1446,7 +1453,7 @@ async def api_sephora_candidates(request: Request, status: str = "new", since: s
 @app.get("/api/sephora/catalog")
 async def api_sephora_catalog(request: Request, limit: int = 300, offset: int = 0):
     await auth.require(request, tab="sephora_leads")
-    f = {k: request.query_params.get(k) for k in ("q", "brand", "confidence", "sellable", "needs_size", "match", "active")
+    f = {k: request.query_params.get(k) for k in ("q", "store", "brand", "confidence", "sellable", "needs_size", "match", "active")
          if request.query_params.get(k) not in (None, "")}
     return await sephora.page_catalog(f, limit, offset)
 

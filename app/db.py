@@ -904,6 +904,66 @@ MIGRATIONS: list[str] = [
     ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS wrong_note text;
     ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS correct_asin text;
     """,
+    """
+    -- Lead DB (Nov 11, 2026): the Sephora leads tab became Lead DB and will hold more stores. Every catalog pair and
+    -- candidate says which store it's from (existing rows are Sephora). New stores use product ids like 'ulta:123'
+    -- so they can't collide with Sephora's P-numbers. Indexes for a much bigger catalog.
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store text NOT NULL DEFAULT 'Sephora';
+    ALTER TABLE sephora_candidates ADD COLUMN IF NOT EXISTS store text NOT NULL DEFAULT 'Sephora';
+    CREATE INDEX IF NOT EXISTS sephora_catalog_store_brand_idx ON sephora_catalog (store, lower(brand)) WHERE active;
+    CREATE INDEX IF NOT EXISTS sephora_catalog_asin_idx ON sephora_catalog (asin);
+    CREATE INDEX IF NOT EXISTS sephora_catalog_unchecked_idx ON sephora_catalog (lower(brand)) WHERE active AND match_ok IS NULL;
+    CREATE INDEX IF NOT EXISTS sephora_candidates_store_idx ON sephora_candidates (store, status, found_on DESC);
+    """,
+    """
+    -- catalog_history (Nov 11, 2026): every change to a Lead DB pair's store price, sale flag or Amazon numbers, so
+    -- the store price on any past date can be rebuilt for Lead Score training (store prices can't be pulled later).
+    -- Written by a trigger, so every code path that changes sephora_catalog is covered. One row per changed pair.
+    CREATE TABLE IF NOT EXISTS catalog_history (
+      id            bigserial PRIMARY KEY,
+      at            timestamptz NOT NULL DEFAULT now(),
+      store         text NOT NULL,
+      asin          text NOT NULL,
+      product_id    text NOT NULL,
+      price_lo      numeric(10,2),
+      price_hi      numeric(10,2),
+      sale_price    numeric(10,2),
+      on_sale       boolean,
+      buybox        numeric(10,2),
+      fba_low       numeric(10,2),
+      bb_avg90      numeric(10,2),
+      offers_fba    int,
+      monthly_sold  int,
+      amazon_on     boolean,
+      roi_now       numeric(8,4),
+      active        boolean
+    );
+    CREATE INDEX IF NOT EXISTS catalog_history_pair_idx ON catalog_history (asin, product_id, at);
+    CREATE INDEX IF NOT EXISTS catalog_history_at_idx ON catalog_history (at);
+    CREATE OR REPLACE FUNCTION catalog_history_log() RETURNS trigger AS $$
+    BEGIN
+      IF TG_OP = 'INSERT' OR
+         (NEW.price_lo, NEW.price_hi, NEW.sale_price, NEW.on_sale, NEW.buybox, NEW.fba_low, NEW.bb_avg90, NEW.offers_fba,
+          NEW.monthly_sold, NEW.amazon_on, NEW.roi_now, NEW.active)
+         IS DISTINCT FROM
+         (OLD.price_lo, OLD.price_hi, OLD.sale_price, OLD.on_sale, OLD.buybox, OLD.fba_low, OLD.bb_avg90, OLD.offers_fba,
+          OLD.monthly_sold, OLD.amazon_on, OLD.roi_now, OLD.active) THEN
+        INSERT INTO catalog_history (store, asin, product_id, price_lo, price_hi, sale_price, on_sale, buybox, fba_low, bb_avg90,
+                                     offers_fba, monthly_sold, amazon_on, roi_now, active)
+        VALUES (NEW.store, NEW.asin, NEW.product_id, NEW.price_lo, NEW.price_hi, NEW.sale_price, NEW.on_sale, NEW.buybox,
+                NEW.fba_low, NEW.bb_avg90, NEW.offers_fba, NEW.monthly_sold, NEW.amazon_on, NEW.roi_now, NEW.active);
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql;
+    DROP TRIGGER IF EXISTS catalog_history_trg ON sephora_catalog;
+    CREATE TRIGGER catalog_history_trg AFTER INSERT OR UPDATE ON sephora_catalog FOR EACH ROW EXECUTE FUNCTION catalog_history_log();
+    -- starting point: today's values for every pair
+    INSERT INTO catalog_history (store, asin, product_id, price_lo, price_hi, sale_price, on_sale, buybox, fba_low, bb_avg90,
+                                 offers_fba, monthly_sold, amazon_on, roi_now, active)
+    SELECT store, asin, product_id, price_lo, price_hi, sale_price, on_sale, buybox, fba_low, bb_avg90, offers_fba, monthly_sold,
+           amazon_on, roi_now, active FROM sephora_catalog
+     WHERE NOT EXISTS (SELECT 1 FROM catalog_history);
+    """,
 ]
 
 

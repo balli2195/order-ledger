@@ -135,3 +135,8 @@ Result: 9,607 of 9,653 cards dated; 46 cards (29 orders) are still blank, each k
 - Stored in table `match_feedback` (one row per mark; cleared when the pair is later marked OK or the relist mark is undone) and on the catalog pair (`wrong_tags`, `wrong_note`, `correct_asin`). Relist marks also flag the pair in the Sephora catalog when it's there.
 - Plain Reject on a candidate now shows quick reasons (ROI too low, historical price too low, too many sellers, can't sell / gated, not in stock at Sephora) plus a text box.
 - The Sephora jobs read the marks (`GET /api/engine/sephora/feedback` → `wrong_matches`) and turn them into match rules (`jobs/sephora/catalog/match_rules.py`, RUNBOOK step 4b). Chats can read them with the connector tool `list_match_feedback`.
+
+## Lead DB (Nov 11, 2026)
+- The Sephora leads tab is now **Lead DB** (`/lead-db`; `/sephora-leads` redirects; tab key stays `sephora_leads` so per-person access is unchanged). The separate Sephora relist tab is gone: its lists are under Lead DB → **Archived lists** (`/relist`, same `relist/*` docs).
+- Built to hold more stores: `store` column on `sephora_catalog` and `sephora_candidates` (existing rows = Sephora); new stores use product ids like `ulta:123`. A store filter appears once there are 2+ stores. When a 2nd store is added, change the candidates' unique key from (asin, found_on) to (asin, found_on, store).
+- `catalog_history`: a trigger logs every change to a pair's store price, sale flag and Amazon numbers, so the store price on any past date can be rebuilt for Lead Score training.

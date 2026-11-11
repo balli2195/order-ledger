@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sephora leads · Myrddin Hub</title>
+<title>Lead DB · Myrddin Hub</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/style.css">
 <style>
@@ -89,15 +89,16 @@
       </div>
     </div>
   </header>
-  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/relist" data-tab="relist">Sephora relist</a><a href="/sephora-leads" data-tab="sephora_leads" class="on">Sephora leads</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/gift-cards" data-tab="gift_cards">Gift cards</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/brand-sellers" data-tab="brand_sellers">Sephora brands</a><a href="/lead-db" data-tab="sephora_leads" class="on">Lead DB</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/gift-cards" data-tab="gift_cards">Gift cards</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
 
-  <h2 class="sl-title">Sephora leads <span class="live-dot" id="live" title="Live updates"></span></h2>
+  <h2 class="sl-title">Lead DB <span class="live-dot" id="live" title="Live updates"></span></h2>
   <p class="sl-sub" id="runs">Loading…</p>
   <div id="sale" class="sl-sale hidden"></div>
   <div class="sl-stats" id="stats"></div>
 
   <div class="toolbar">
     <div class="sl-seg" id="viewSeg"><button data-v="queue" class="on">To review</button><button data-v="decided">Decided</button><button data-v="catalog">Catalog</button></div>
+    <a class="btn small ghost" href="/relist" title="One-off re-priced lists (spring sale, Chanel), priced on the date shown">Archived lists</a>
     <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Search brand, product, shade or ASIN…" autocomplete="off"></div>
     <span class="muted" id="count" style="font-size:13px"></span>
@@ -110,6 +111,7 @@
 
   <section id="catalogView" hidden>
     <div class="toolbar sl-filters" style="margin-top:0">
+      <select id="fStore" hidden><option value="">All stores</option></select>
       <select id="fConf"><option value="">Any confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
       <select id="fSell"><option value="">Any sellable status</option><option value="open">Open</option><option value="approval_required">Approval required</option><option value="restricted">Restricted</option></select>
       <select id="fSize"><option value="">Any size</option><option value="open">Needs size, not set</option><option value="1">Needs size</option></select>
@@ -147,6 +149,7 @@
   const when = (iso) => iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
   const roiCls = (v) => v == null ? '' : v >= 0.3 ? 'good' : v < 0.15 ? 'badv' : '';
   const editor = () => LG.can('editor') && !LG.st.me?.viewed_by;
+  const multiStore = () => (S.stores || []).length > 1;
 
   // ---------------------------------------------------------------- header: runs, sale, counts
   function renderOverview() {
@@ -210,7 +213,7 @@
       ? `<span class="sl-tag good">Approved</span> by ${esc(c.decided_by || '')} ${esc(when(c.decided_at))}${c.lead_id ? ` · <a href="/leads#lead=${esc(c.lead_id)}">open lead</a>` : ''}${c.lead_qty_ordered != null ? ` · ordered ${num(c.lead_qty_ordered)}` : ''}`
       : `<span class="sl-tag ${c.status === 'rejected' ? 'warn' : ''}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span>${c.decided_by ? ` by ${esc(c.decided_by)} ${esc(when(c.decided_at))}` : ''}${c.reject_reason ? ` · ${esc(c.reject_reason)}` : ''}`}</div>` : '';
     return `<div class="sl-card" data-card="${esc(c.id)}"><div>
-      <div class="sl-brand">${esc(c.brand || '—')}</div>
+      <div class="sl-brand">${multiStore() || (c.store && c.store !== 'Sephora') ? `${esc(c.store)} · ` : ''}${esc(c.brand || '—')}</div>
       <div><span class="sl-name">${esc(c.sephora_name || c.product_id)}</span>${c.shade ? ` <span class="sl-shade">· ${esc(c.shade)}</span>` : ''}</div>
       ${c.amazon_title ? `<div class="sl-amz">Amazon: ${esc(c.amazon_title)}</div>` : ''}
       <div class="sl-figs">
@@ -261,7 +264,7 @@
       if (r.open_candidates) flags.push(['reason', `${r.open_candidates} to review`]);
       const list = r.price_lo != null && r.price_hi != null && Number(r.price_lo) !== Number(r.price_hi) ? `${money(r.price_lo)}–${money(r.price_hi)}` : money(r.price_hi ?? r.price_lo);
       return `<tr>
-        <td>${esc(r.brand || '')}</td>
+        <td>${esc(r.brand || '')}${multiStore() ? `<div class="muted" style="font-size:11px">${esc(r.store || '')}</div>` : ''}</td>
         <td class="prod">${link(r.sephora_url, r.sephora_name || r.product_id) || esc(r.sephora_name || r.product_id)}${r.shade ? ` <span class="muted">· ${esc(r.shade)}</span>` : ''}
           ${r.amazon_title ? `<div class="muted" style="font-size:12px">${esc(r.amazon_title)}</div>` : ''}
           ${r.match_reason ? `<div class="muted" style="font-size:11.5px">${esc(r.match_reason)}</div>` : ''}</td>
@@ -283,12 +286,16 @@
     const p = new URLSearchParams({ limit: 300, offset });
     const q = $('#q').value.trim(); if (q) p.set('q', q);
     if (S.brand) p.set('brand', S.brand);
-    [['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
     const r = await api('GET', '/api/sephora/catalog?' + catParams(more ? S.cat.rows.length : 0));
     S.cat = { rows: more ? S.cat.rows.concat(r.rows) : r.rows, total: r.total, brands: r.brands };
+    S.stores = r.stores || [];
+    const fs = $('#fStore'), keep = fs.value;   // store filter shows once Lead DB holds more than one store
+    fs.innerHTML = '<option value="">All stores</option>' + S.stores.map((x) => `<option value="${esc(x.store)}">${esc(x.store)} (${num(x.n)})</option>`).join('');
+    fs.value = keep; fs.hidden = !multiStore();
     renderCatalog();
   }
 
@@ -376,7 +383,7 @@
       renderCatalog(); loadOverview().catch(() => {}); } catch (err) { fail(err); }
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
-  ['#fConf', '#fSell', '#fSize', '#fMatch', '#fActive'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   $('#catMore').addEventListener('click', () => loadCatalog(true).catch(fail));
   let qt; $('#q').addEventListener('input', () => { if (S.view === 'catalog') { clearTimeout(qt); qt = setTimeout(() => loadCatalog().catch(fail), 300); } else renderQueue(); });
   $('#viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });

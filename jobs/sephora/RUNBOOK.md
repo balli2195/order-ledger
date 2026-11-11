@@ -1,6 +1,6 @@
 # Sephora → Amazon lead jobs: runbook
 
-This runbook is for a fresh Claude session with no memory of earlier runs. The jobs find Sephora products worth buying for Nick's Amazon FBA account and post them to Myrddin Hub (https://order-ledger-3mt6.onrender.com, page /sephora-leads). Nick approves or rejects them there.
+This runbook is for a fresh Claude session with no memory of earlier runs. The jobs find Sephora products worth buying for Nick's Amazon FBA account and post them to Myrddin Hub (https://order-ledger-3mt6.onrender.com, page /lead-db, "Lead DB"; it was "Sephora leads"). Nick approves or rejects them there.
 
 The jobs are read-only against Sephora, Keepa and SP-API. They write only to the Hub's Sephora engine endpoints. Never touch Seller Central, Seller Snap, Airtable or the Hub's leads table.
 
@@ -108,7 +108,7 @@ Every stage logs into the summary's **Problems** list and the run carries on.
 
 A short message built from `daily_summary.md`, for example:
 
-> Sephora leads today: **N new** on the Sephora leads page.
+> Sephora leads today: **N new** on the Lead DB page (Hub tab "Lead DB").
 > Top 3: <Sephora name (shade)>, $cost → Buy Box $X, ROI Y%, Lead Score band B (pred P%) · …
 > Sale: <text, code, ends> (or "no site-wide sale").
 > Problems: <one line each, or "none">.
