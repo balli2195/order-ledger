@@ -1484,6 +1484,22 @@ async def api_sephora_mark(request: Request, body: dict = Body(...)):
                                       {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin") if k in body})
 
 
+@app.get("/api/engine/training/summary")
+async def engine_training_summary(request: Request):
+    """Keepa store + Lead DB sizes and the Keepa collector's heartbeat."""
+    from . import training
+    auth.require_engine_key(request)
+    return await training.summary()
+
+
+@app.get("/api/engine/training/{kind}")
+async def engine_training_export(kind: str, request: Request, after: str | None = None, since: str | None = None, limit: int = 1000):
+    """Pages of Lead DB / Keepa data for Lead Score training (app/training.py; tools/export_training.py)."""
+    from . import training
+    auth.require_engine_key(request)
+    return await training.export(kind, after, since, limit)
+
+
 @app.post("/api/engine/sephora/catalog")
 async def engine_sephora_catalog(request: Request, body: dict = Body(...)):
     """Upsert catalog pairs: {rows: [{asin, product_id, ...}]} (up to 1000). Never touches match_ok / size_confirmed."""

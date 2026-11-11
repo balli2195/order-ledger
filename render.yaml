@@ -27,3 +27,24 @@ services:
         generateValue: true
       - key: ADMIN_KEY
         generateValue: true
+
+  # Keepa collector (Nov 11, 2026): always-on background worker, jobs/keepa_collector/collector.py.
+  # Writes keepa_raw / keepa_snapshots / keepa_collector_status in the Hub database.
+  - type: worker
+    name: keepa-collector
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 jobs/keepa_collector/collector.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DATABASE_URL
+        fromDatabase:
+          name: order-ledger-db
+          property: connectionString
+      - key: KEEPA_KEY
+        sync: false

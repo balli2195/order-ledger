@@ -964,6 +964,51 @@ MIGRATIONS: list[str] = [
            amazon_on, roi_now, active FROM sephora_catalog
      WHERE NOT EXISTS (SELECT 1 FROM catalog_history);
     """,
+    """
+    -- Keepa store for Lead Score training (Nov 11, 2026), written by the always-on collector (jobs/keepa_collector):
+    -- keepa_raw: the latest full Keepa /product object per ASIN (history, Buy Box, offers with stock), gzipped JSON.
+    --   Keepa history builds on itself, so only the latest copy is kept; it is replaced on every pull.
+    -- keepa_snapshots: what Keepa can't give back later: who was selling, at what price, with how much stock, on the day.
+    --   Small columns + the offers list (current price/stock per seller, no histories) gzipped. Split by month.
+    CREATE TABLE IF NOT EXISTS keepa_raw (
+      asin        text PRIMARY KEY,
+      pulled_at   timestamptz NOT NULL,
+      tokens      int,
+      bytes       int,
+      raw_gz      bytea NOT NULL
+    );
+    ALTER TABLE keepa_raw ALTER COLUMN raw_gz SET STORAGE EXTERNAL;   -- already gzipped: don't recompress
+    CREATE INDEX IF NOT EXISTS keepa_raw_pulled_idx ON keepa_raw (pulled_at);
+    CREATE TABLE IF NOT EXISTS keepa_snapshots (
+      asin          text NOT NULL,
+      pulled_at     timestamptz NOT NULL,
+      buybox        numeric(10,2),
+      buybox_seller text,
+      buybox_fba    boolean,
+      fba_low       numeric(10,2),
+      new_low       numeric(10,2),
+      amazon        numeric(10,2),
+      offers_new    int,
+      offers_fba    int,
+      monthly_sold  int,
+      sales_rank    int,
+      rating        numeric(3,1),
+      reviews       int,
+      offers_gz     bytea,
+      PRIMARY KEY (asin, pulled_at)
+    ) PARTITION BY RANGE (pulled_at);
+    CREATE INDEX IF NOT EXISTS keepa_snapshots_at_idx ON keepa_snapshots (pulled_at);
+    CREATE TABLE IF NOT EXISTS keepa_snapshots_2026_11 PARTITION OF keepa_snapshots FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
+    CREATE TABLE IF NOT EXISTS keepa_snapshots_2026_12 PARTITION OF keepa_snapshots FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
+    -- the collector's heartbeat and counters (one row), for the System map and the Lead DB page
+    CREATE TABLE IF NOT EXISTS keepa_collector_status (
+      id          int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      beat_at     timestamptz,
+      started_at  timestamptz,
+      state       text,
+      detail      jsonb NOT NULL DEFAULT '{}'
+    );
+    """,
 ]
 
 

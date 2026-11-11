@@ -174,6 +174,7 @@ async def table_activity() -> dict:
         "bank_txns": "SELECT max(loaded_at) FROM bank_txns", "fin_days": "SELECT max(pulled_at) FROM fin_days",
         "transparency_notices": "SELECT max(added_at) FROM transparency_notices",
         "inbound_shipments": "SELECT max(updated_at) FROM inbound_shipments",
+        "keepa_raw": "SELECT max(pulled_at) FROM keepa_raw", "keepa_collector": "SELECT max(beat_at) FROM keepa_collector_status",
     }
     out = {}
     async with db.pool.connection() as conn:
