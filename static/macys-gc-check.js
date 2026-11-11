@@ -36,7 +36,26 @@
   };
 
   // ---------- helpers
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  // Chrome slows a hidden or covered tab's timers to about one tick a minute, so waits are timed by a background
+  // worker (whose timers Chrome doesn't slow) and checked against the real clock.
+  let W = null, wseq = 0; const wake = new Map();
+  try {
+    W = new Worker(URL.createObjectURL(new Blob(['onmessage=e=>setTimeout(()=>postMessage(e.data.id),e.data.ms)'], { type: 'text/javascript' })));
+    W.onmessage = (e) => { const f = wake.get(e.data); if (f) { wake.delete(e.data); f(); } };
+  } catch (e) { W = null; }
+  const sleep = (ms) => new Promise(r => { if (!W) return setTimeout(r, ms); const id = ++wseq; wake.set(id, r); W.postMessage({ id, ms }); });
+  const mmss = (sec) => `${Math.floor(sec / 60)}:${String(Math.max(0, Math.round(sec % 60))).padStart(2, '0')}`;
+  // Count down to a real-clock deadline (pausing pushes the deadline back); label(t) gives the panel text.
+  const countdown = async (secs, label, warn) => {
+    let end = Date.now() + secs * 1000;
+    while (!S.stop && Date.now() < end) {
+      if (S.paused) { const p0 = Date.now(); while (S.paused && !S.stop) await sleep(1000); end += Date.now() - p0; continue; }
+      st(label((end - Date.now()) / 1000), warn); await sleep(1000);
+    }
+  };
+  // Holding a Web Lock tells Chrome not to freeze this tab while the check runs.
+  let unlock = null;
+  try { navigator.locks && navigator.locks.request('myrddin-macys-balance-check', () => new Promise(r => { unlock = r; })); } catch (e) {}
   const hub = (path, opt = {}) => fetch(HUB + path, { ...opt, headers: { 'Content-Type': 'application/json', 'X-GC-Key': KEY, ...(opt.headers || {}) } })
     .then(async r => { if (!r.ok) throw new Error(`Hub ${r.status}: ${await r.text()}`); return r.json(); });
   const save = (row) => hub('/api/engine/giftcards/check-results', { method: 'POST', body: JSON.stringify({ rows: [row], who: "Macy's balance check" }) });
@@ -114,15 +133,12 @@
         const before = area().innerText;
         $btn().click();
         let ans = null;
-        for (let i = 0; i < RESULT_WAIT * 4 && !ans; i++) { await sleep(250); ans = readAnswer(before); }
+        for (const end = Date.now() + RESULT_WAIT * 1000; Date.now() < end && !ans;) { await sleep(250); ans = readAnswer(before); }
         if (!ans && !c._retried) {
           // No answer: wait 3–5 minutes, then try this card once more.
           c._retried = true; setv($num(), ''); setv($cid(), '');
           const back = RETRY[0] + Math.random() * (RETRY[1] - RETRY[0]);
-          for (let t = Math.round(back); t > 0 && !S.stop; t--) {
-            if (!S.paused) st(`No answer from Macy's for card ending ${c.n.slice(-4)}. Trying it again in ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}…`, true);
-            await sleep(1000); while (S.paused && !S.stop) await sleep(1000);
-          }
+          await countdown(back, (t) => `No answer from Macy's for card ending ${c.n.slice(-4)}. Trying it again in ${mmss(t)}…`, true);
           if (S.stop) break;
           cards.splice(cards.indexOf(c) + 1, 0, c); continue;
         }
@@ -149,7 +165,8 @@
         S.log.push({ id: c.id, last4: c.n.slice(-4), balance: ans.v }); ct();
         setv($num(), ''); setv($cid(), '');
         const wait = PACE[0] + Math.random() * (PACE[1] - PACE[0]);
-        for (let t = Math.round(wait); t > 0 && !S.stop; t--) { if (!S.paused) st(`Next card in ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}…`); await sleep(1000); while (S.paused && !S.stop) await sleep(1000); }
+        const lastAt = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        await countdown(wait, (t) => `Next card in ${mmss(t)}… (last check ${lastAt})`);
       }
     }
     if (S.stop && !/Stopped|locked|rejected/.test(box.querySelector('#mgc-st').textContent)) st('Stopped.');
@@ -157,5 +174,6 @@
     st('Error: ' + e.message, true); console.error(e);
   } finally {
     S.running = false; window.fetch = ofetch; XMLHttpRequest.prototype.open = oopen; ct();
+    try { W && W.terminate(); } catch (e) {} try { unlock && unlock(); } catch (e) {}
   }
 })();

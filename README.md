@@ -117,6 +117,8 @@ checked in the last 7 days, or shown at $0 by Arbitrage Card; oldest card first 
 and posts `{id, balance}` / `{id, error}` to `POST /api/engine/giftcards/check-results` (balance, checked time, status used/partial/active;
 a rejected card becomes `invalid` with Macy's message in notes). It stops at the first rejected card (Macy's locks the form after
 3 rejections) and pauses on any visible CAPTCHA for Nick to solve himself — it never solves or bypasses one.
+Nov 11: waits are timed by a small Web Worker and the real clock (Chrome slows a hidden tab's own timers to about once a
+minute), and the script holds a Web Lock so Chrome doesn't freeze the tab while it runs.
 
 ### Gift card order dates (Nov 10, 2026)
 Arbitrage Card's export has no dates, so `order_date` was filled from the "Your Arbitrage Card order is now complete" emails in
