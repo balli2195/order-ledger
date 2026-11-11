@@ -219,6 +219,20 @@ async def lead_db_page(request: Request):
     return await _page(request, "sephora_leads", "sephora-leads.html")
 
 
+@app.get("/lead-db/guide", include_in_schema=False)
+async def lead_db_guide_page(request: Request):
+    """How the Lead DB works: tables, jobs, the Keepa collector and the Lead Score training plan (Nov 11, 2026)."""
+    return await _page(request, "sephora_leads", "lead-db-guide.html")
+
+
+@app.get("/api/lead-db/stats")
+async def api_lead_db_stats(request: Request):
+    """Live counts for the Lead DB guide page."""
+    await auth.require(request, tab="sephora_leads")
+    from . import training
+    return await training.guide_stats()
+
+
 @app.get("/sephora-leads", include_in_schema=False)
 async def sephora_leads_old(request: Request):
     return RedirectResponse("/lead-db", 301)

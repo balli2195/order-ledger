@@ -95,3 +95,32 @@ async def summary() -> dict:
             "(SELECT count(*) FROM sephora_catalog) catalog_pairs")).fetchone()
         st = await (await conn.execute("SELECT beat_at, started_at, state, detail FROM keepa_collector_status WHERE id = 1")).fetchone()
     return jsonable({**dict(r), "collector": dict(st) if st else None})
+
+
+async def guide_stats() -> dict:
+    """Live counts for the Lead DB guide page (/lead-db/guide)."""
+    async with db.pool.connection() as conn:
+        r = await (await conn.execute(
+            """SELECT (SELECT count(*) FROM sephora_catalog) pairs,
+                      (SELECT count(*) FROM sephora_catalog WHERE active) active_pairs,
+                      (SELECT count(DISTINCT asin) FROM sephora_catalog WHERE active) asins,
+                      (SELECT count(DISTINCT lower(brand)) FROM sephora_catalog WHERE active) brands,
+                      (SELECT count(DISTINCT store) FROM sephora_catalog) stores,
+                      (SELECT count(*) FROM sephora_catalog WHERE active AND sellable = 'open' AND match_ok IS NOT FALSE
+                          AND (confidence IN ('high', 'medium') OR match_ok IS TRUE)) watched,
+                      (SELECT count(*) FROM sephora_catalog WHERE match_ok IS TRUE) marked_ok,
+                      (SELECT count(*) FROM match_feedback) wrong_marks,
+                      (SELECT count(*) FROM sephora_candidates) candidates,
+                      (SELECT count(*) FROM sephora_candidates WHERE status = 'approved') approved,
+                      (SELECT count(*) FROM sephora_candidates WHERE status = 'rejected') rejected,
+                      (SELECT count(*) FROM catalog_history) history_rows,
+                      (SELECT count(*) FROM keepa_raw WHERE bytes > 0) raw_asins,
+                      (SELECT COALESCE(sum(octet_length(raw_gz)), 0) FROM keepa_raw) raw_gz_bytes,
+                      (SELECT count(*) FROM keepa_snapshots) snapshots,
+                      (SELECT count(DISTINCT asin) FROM keepa_snapshots) snapshot_asins,
+                      (SELECT min(pulled_at) FROM keepa_snapshots) snapshots_since,
+                      (SELECT count(*) FROM leads) leads,
+                      (SELECT count(*) FROM leads WHERE COALESCE(lead_date, created_at::date) < current_date - 80) leads_gradable""")).fetchone()
+        st = await (await conn.execute("SELECT beat_at, state, detail FROM keepa_collector_status WHERE id = 1")).fetchone()
+        db_bytes = (await (await conn.execute("SELECT pg_database_size(current_database()) b")).fetchone())["b"]
+    return jsonable({**dict(r), "db_bytes": db_bytes, "collector": dict(st) if st else None})

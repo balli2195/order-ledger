@@ -140,3 +140,6 @@ Result: 9,607 of 9,653 cards dated; 46 cards (29 orders) are still blank, each k
 - The Sephora leads tab is now **Lead DB** (`/lead-db`; `/sephora-leads` redirects; tab key stays `sephora_leads` so per-person access is unchanged). The separate Sephora relist tab is gone: its lists are under Lead DB → **Archived lists** (`/relist`, same `relist/*` docs).
 - Built to hold more stores: `store` column on `sephora_catalog` and `sephora_candidates` (existing rows = Sephora); new stores use product ids like `ulta:123`. A store filter appears once there are 2+ stores. When a 2nd store is added, change the candidates' unique key from (asin, found_on) to (asin, found_on, store).
 - `catalog_history`: a trigger logs every change to a pair's store price, sale flag and Amazon numbers, so the store price on any past date can be rebuilt for Lead Score training.
+
+### Lead DB guide (Nov 11, 2026)
+`/lead-db/guide` ("How it works" on the Lead DB page): the tables, jobs, wrong-match learning, the Lead Score training plan, sizing and upgrade triggers, and local/cloud training. Live counts come from `GET /api/lead-db/stats` (`app/training.py` `guide_stats`). Page: `static/lead-db-guide.html`; update its figures when the design changes.

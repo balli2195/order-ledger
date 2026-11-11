@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How the Lead DB works · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .g { max-width: 980px; }
+  .g-back { margin: 22px 0 4px; font-size: 13px; }
+  .g h2 { margin: 6px 0 2px; font-size: 22px; font-weight: 600; }
+  .g .lede { margin: 6px 0 0; color: var(--muted); font-size: 14px; max-width: 72ch; }
+  .g h3 { margin: 34px 0 6px; font-size: 16px; font-weight: 600; }
+  .g h4 { margin: 18px 0 4px; font-size: 14px; font-weight: 600; }
+  .g p, .g li { font-size: 14px; line-height: 1.55; max-width: 78ch; }
+  .g ul, .g ol { padding-left: 20px; margin: 6px 0; }
+  .g li { margin: 3px 0; }
+  .g code { font-family: var(--mono); font-size: 12.5px; background: var(--line-2); border-radius: 5px; padding: 0 5px; }
+  .g-toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
+  .g-toc a { font-size: 12.5px; border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px; background: var(--panel); text-decoration: none; }
+  .g-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 14px; }
+  .g-stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 12px; }
+  .g-stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .g-stat .v { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .g-stat .n { font-size: 12px; color: var(--muted); }
+  .g-asof { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .g-fig { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 10px 0 0; overflow-x: auto; }
+  .g-fig svg { display: block; width: 100%; min-width: 720px; height: auto; }
+  .g-fig figcaption { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  .g-fig .h { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); }
+  .g-fig rect { stroke-width: 1.2; }
+  .g-fig .src rect { fill: var(--panel-2); stroke: var(--line); }
+  .g-fig .job rect { fill: var(--accent-soft); stroke: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .g-fig .tbl rect { fill: var(--panel); stroke: var(--ink); stroke-opacity: .35; }
+  .g-fig .use rect { fill: color-mix(in srgb, var(--ok) 10%, var(--panel)); stroke: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+  .g-fig .plan rect { stroke-dasharray: 5 4; }
+  .g-fig .t { font-size: 13px; font-weight: 600; fill: var(--ink); }
+  .g-fig .tbl .t { font-family: var(--mono); font-size: 12.5px; }
+  .g-fig .s { font-size: 11.5px; fill: var(--muted); }
+  .g-fig .a { fill: none; stroke: var(--muted); stroke-opacity: .55; stroke-width: 1.2; }
+  .g-fig .a.d { stroke-dasharray: 3 3; }
+  .g-fig .ahp { fill: var(--muted); }
+  .g-tbl { overflow-x: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  .g-tbl table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .g-tbl th, .g-tbl td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line-2); }
+  .g-tbl th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; background: var(--panel-2); }
+  .g-tbl tr:last-child td { border-bottom: 0; }
+  .g-tbl td.num, .g-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .g-tbl td code { white-space: nowrap; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+  .pill.built { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .pill.plan { background: var(--accent-soft); color: var(--accent); }
+  .g-note { border-left: 3px solid var(--accent); background: var(--panel); padding: 9px 13px; border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 13.5px; max-width: 78ch; }
+  .g-tl { list-style: none; padding: 0 !important; margin: 10px 0 !important; border-left: 2px solid var(--line); }
+  .g-tl li { position: relative; padding: 0 0 10px 18px; margin: 0; }
+  .g-tl li::before { content: ""; position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--accent); }
+  .g-tl li.done::before { background: var(--accent); }
+  .g-tl b { font-variant-numeric: tabular-nums; }
+  @media (max-width: 760px) { .g h2 { font-size: 19px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div id="toasts" class="toasts"></div>
+  <header class="top">
+    <div><h1 class="brand">Myrddin Hub</h1></div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/stores" data-tab="stores">Stores &amp; brands</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/lead-db" data-tab="sephora_leads" class="on">Lead DB</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/gift-cards" data-tab="gift_cards">Gift cards</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+
+<main class="g">
+  <p class="g-back"><a href="/lead-db">← Lead DB</a></p>
+  <h2>How the Lead DB works</h2>
+  <p class="lede">The Lead DB is the list of store products we have matched to an Amazon ASIN, plus everything we learn about them over time: store prices, Amazon prices, competitors' offers and stock, and your decisions. It feeds the daily buy queue today. It is also being built up as training data for the next Lead Score model. Written Nov 11, 2026; the numbers below are live.</p>
+  <nav class="g-toc" aria-label="On this page">
+    <a href="#numbers">Numbers</a><a href="#flow">Data flow</a><a href="#tables">Tables</a><a href="#jobs">Jobs</a><a href="#page">Using the page</a><a href="#learning">Wrong matches</a><a href="#training">Training</a><a href="#enough">Enough data?</a><a href="#size">Size &amp; upgrades</a><a href="#local">Local or cloud</a>
+  </nav>
+
+  <section id="numbers">
+    <div class="g-stats" id="stats">
+      <div class="g-stat"><div class="k">Matched pairs</div><div class="v" data-k="active_pairs">6,037</div><div class="n"><span data-k="asins">6,035</span> ASINs · <span data-k="brands">70</span> brands</div></div>
+      <div class="g-stat"><div class="k">Watched daily</div><div class="v" data-k="watched">3,528</div><div class="n">sellable, likely right match</div></div>
+      <div class="g-stat"><div class="k">Candidates</div><div class="v" data-k="candidates">60</div><div class="n"><span data-k="approved">0</span> approved · <span data-k="rejected">2</span> rejected</div></div>
+      <div class="g-stat"><div class="k">Wrong-match marks</div><div class="v" data-k="wrong_marks">2</div><div class="n"><span data-k="marked_ok">2</span> pairs marked OK</div></div>
+      <div class="g-stat"><div class="k">Keepa products stored</div><div class="v" data-k="raw_asins">680</div><div class="n"><span data-k="raw_gb">0.20</span> GB compressed</div></div>
+      <div class="g-stat"><div class="k">Offer/stock snapshots</div><div class="v" data-k="snapshots">760</div><div class="n">since <span data-k="snap_since">Nov 11, 2026</span></div></div>
+      <div class="g-stat"><div class="k">Past leads</div><div class="v" data-k="leads">14,046</div><div class="n"><span data-k="leads_gradable">12,884</span> old enough to grade</div></div>
+      <div class="g-stat"><div class="k">Database size</div><div class="v" data-k="db_gb">—</div><div class="n">of 50 GB disk</div></div>
+    </div>
+    <p class="g-asof" id="collector">Keepa collector: loading…</p>
+  </section>
+
+  <section id="flow">
+    <h3>Data flow</h3>
+    <figure class="g-fig">
+      <svg viewBox="0 0 960 420" role="img" aria-labelledby="dfT"><title id="dfT">How data moves through the Lead DB</title><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ahp"/></marker></defs><text x="20" y="14" class="h">Sources</text><text x="220" y="14" class="h">Jobs and you</text><text x="450" y="14" class="h">Tables (Postgres on Render)</text><text x="740" y="14" class="h">Uses</text><path class="a" d="M840,300 L840,338" marker-end="url(#ah)"/><path class="a" d="M680,388 C710,388 710,293 738,293" marker-end="url(#ah)"/><path class="a" d="M680,322 C710,322 710,287 738,287" marker-end="url(#ah)"/><path class="a" d="M680,268 C710,268 710,281 738,281" marker-end="url(#ah)"/><path class="a" d="M680,204 C710,204 710,275 738,275" marker-end="url(#ah)"/><path class="a" d="M680,150 C710,150 710,269 738,269" marker-end="url(#ah)"/><path class="a" d="M680,96 C710,96 710,263 738,263" marker-end="url(#ah)"/><path class="a" d="M680,42 C710,42 710,257 738,257" marker-end="url(#ah)"/><path class="a" d="M680,150 C710,150 710,155 738,155" marker-end="url(#ah)"/><path class="a" d="M680,150 C710,150 710,77 738,77" marker-end="url(#ah)"/><path class="a" d="M680,42 C710,42 710,65 738,65" marker-end="url(#ah)"/><path class="a d" d="M565,64 L565,72" marker-end="url(#ah)"/><path class="a" d="M410,383 C430,383 430,388 448,388" marker-end="url(#ah)"/><path class="a" d="M410,355 C430,355 430,160 448,160" marker-end="url(#ah)"/><path class="a" d="M410,361 C430,361 430,204 448,204" marker-end="url(#ah)"/><path class="a" d="M410,265 C430,265 430,322 448,322" marker-end="url(#ah)"/><path class="a" d="M410,265 C430,265 430,268 448,268" marker-end="url(#ah)"/><path class="a" d="M410,155 C430,155 430,150 448,150" marker-end="url(#ah)"/><path class="a" d="M410,155 C430,155 430,50 448,50" marker-end="url(#ah)"/><path class="a" d="M410,65 C430,65 430,42 448,42" marker-end="url(#ah)"/><path class="a" d="M180,251 C200,251 200,77 218,77" marker-end="url(#ah)"/><path class="a" d="M180,239 C200,239 200,165 218,165" marker-end="url(#ah)"/><path class="a" d="M180,155 C200,155 200,265 218,265" marker-end="url(#ah)"/><path class="a" d="M180,155 C200,155 200,155 218,155" marker-end="url(#ah)"/><path class="a" d="M180,149 C200,149 200,65 218,65" marker-end="url(#ah)"/><path class="a" d="M180,65 C200,65 200,155 218,155" marker-end="url(#ah)"/><path class="a" d="M180,65 C200,65 200,65 218,65" marker-end="url(#ah)"/><g class="src"><rect x="20" y="40" width="160" height="50" rx="8"/><text x="32" y="61" class="t">Sephora site</text><text x="32" y="78" class="s">prices, sales, new items</text></g><g class="src"><rect x="20" y="130" width="160" height="50" rx="8"/><text x="32" y="151" class="t">Keepa API</text><text x="32" y="168" class="s">prices, offers, stock</text></g><g class="src"><rect x="20" y="220" width="160" height="50" rx="8"/><text x="32" y="241" class="t">Amazon SP-API</text><text x="32" y="258" class="s">fees, gating, offers</text></g><g class="src"><rect x="220" y="350" width="190" height="50" rx="8"/><text x="232" y="371" class="t">You, on the Lead DB page</text><text x="232" y="388" class="s">approve, reject, mark wrong</text></g><g class="job"><rect x="220" y="40" width="190" height="50" rx="8"/><text x="232" y="61" class="t">Weekly new products</text><text x="232" y="78" class="s">Sun 2:13 am CT</text></g><g class="job"><rect x="220" y="130" width="190" height="50" rx="8"/><text x="232" y="151" class="t">Daily watch</text><text x="232" y="168" class="s">every day 4:47 am CT</text></g><g class="job"><rect x="220" y="240" width="190" height="50" rx="8"/><text x="232" y="261" class="t">Keepa collector</text><text x="232" y="278" class="s">24/7 Render worker</text></g><g class="tbl"><rect x="450" y="20" width="230" height="44" rx="8"/><text x="462" y="41" class="t">sephora_catalog</text><text x="462" y="58" class="s">1 row per store item ↔ ASIN</text></g><g class="tbl"><rect x="450" y="74" width="230" height="44" rx="8"/><text x="462" y="95" class="t">catalog_history</text><text x="462" y="112" class="s">every change to a row</text></g><g class="tbl"><rect x="450" y="128" width="230" height="44" rx="8"/><text x="462" y="149" class="t">sephora_candidates</text><text x="462" y="166" class="s">daily buy queue + decisions</text></g><g class="tbl"><rect x="450" y="182" width="230" height="44" rx="8"/><text x="462" y="203" class="t">match_feedback</text><text x="462" y="220" class="s">wrong-match reasons</text></g><g class="tbl"><rect x="450" y="246" width="230" height="44" rx="8"/><text x="462" y="267" class="t">keepa_raw</text><text x="462" y="284" class="s">latest full Keepa product</text></g><g class="tbl"><rect x="450" y="300" width="230" height="44" rx="8"/><text x="462" y="321" class="t">keepa_snapshots</text><text x="462" y="338" class="s">dated offers + stock</text></g><g class="tbl"><rect x="450" y="366" width="230" height="44" rx="8"/><text x="462" y="387" class="t">leads</text><text x="462" y="404" class="s">every lead since Apr 2024</text></g><g class="use"><rect x="740" y="40" width="200" height="50" rx="8"/><text x="752" y="61" class="t">Lead DB page</text><text x="752" y="78" class="s">review queue, catalog</text></g><g class="use"><rect x="740" y="130" width="200" height="50" rx="8"/><text x="752" y="151" class="t">Lead Score</text><text x="752" y="168" class="s">scores candidates</text></g><g class="use"><rect x="740" y="250" width="200" height="50" rx="8"/><text x="752" y="271" class="t">Training export</text><text x="752" y="288" class="s">Parquet files</text></g><g class="use plan"><rect x="740" y="340" width="200" height="50" rx="8"/><text x="752" y="361" class="t">Model training</text><text x="752" y="378" class="s">planned: Lead Score v2</text></g></svg>
+      <figcaption>Orange boxes are the scheduled jobs; grey boxes are where data comes from, including your clicks. Every table sits in the same Postgres database as orders and leads. The dashed line is a database trigger: each change to a catalog row is copied into <code>catalog_history</code> automatically. Model training (dashed box) is planned, not built.</figcaption>
+    </figure>
+  </section>
+
+  <section id="tables">
+    <h3>The tables</h3>
+    <p>Each row of the Lead DB page's <b>Catalog</b> view is one row of <code>sephora_catalog</code>. The other tables keep what that row can't: its past, the competitor picture on each day, and your answers.</p>
+    <div class="g-tbl"><table>
+      <thead><tr><th>Table</th><th>One row is</th><th>Written by</th><th>What it holds</th><th>Kept</th></tr></thead>
+      <tbody>
+        <tr><td><code>sephora_catalog</code></td><td>One store product (and size) matched to one ASIN. Key: ASIN + store product ID.</td><td>Weekly and daily jobs; you (OK / wrong / size)</td><td><code>store</code> (Sephora today), brand, store name, URL and price (low/high, sale price), the Amazon title, Buy Box, lowest FBA, 90-day Buy Box average, fees, monthly sold, FBA offer count, Amazon on the listing, ROI now and at the 90-day average, match confidence, whether you can sell it, and your answers (<code>match_ok</code>, <code>size_confirmed</code>, wrong-match tags and note, correct ASIN). The jobs never overwrite your answers.</td><td>Current state only</td></tr>
+        <tr><td><code>catalog_history</code></td><td>One change to one catalog row, with the time.</td><td>A database trigger on every insert or update</td><td>The values at that moment: store price low/high, sale price, on sale, Buy Box, lowest FBA, 90-day average, FBA offers, monthly sold, Amazon on, ROI now, active. This is how we know what the store charged on any past day.</td><td>Forever</td></tr>
+        <tr><td><code>sephora_candidates</code></td><td>One buy suggestion for one ASIN on one day.</td><td>Daily watch; you (approve / reject)</td><td>Cost, the price basis (sale, event code), Buy Box, ROI now, Lead Score band and predicted ROI, status (new, approved, rejected, expired), your reject reason, who decided and when, and the lead created on approve.</td><td>Forever</td></tr>
+        <tr><td><code>match_feedback</code></td><td>One "wrong match" mark.</td><td>You, from a card, the catalog or an archived list</td><td>The ASIN and store product, the reason tags (size, shade, concentration, set, bonus, multi-pack, version, product, other), your note, the correct ASIN if you know it, and who marked it.</td><td>Until you undo it</td></tr>
+        <tr><td><code>keepa_raw</code></td><td>The latest full Keepa product for one ASIN.</td><td>Keepa collector</td><td>Everything Keepa returns: full price, rank and offer-count histories, Buy Box history, 20 offers with seller stock, rating, fees. Gzipped JSON, the same format the Lead Score training used. Replaced on each pull, because Keepa's histories already include the past.</td><td>Latest pull per ASIN</td></tr>
+        <tr><td><code>keepa_snapshots</code></td><td>One ASIN on one pull.</td><td>Keepa collector</td><td>Buy Box price and seller, whether the Buy Box is FBA, lowest FBA and new price, Amazon's price, new and FBA offer counts, monthly sold, sales rank, rating, reviews, plus each seller's price and stock that day (gzipped). Keepa does not keep seller stock history, so this is the only record of it. Split into one partition per month.</td><td>Forever (see <a href="#size">size</a>)</td></tr>
+        <tr><td><code>leads</code></td><td>One lead you or a VA added.</td><td>Leads tab; approving a candidate</td><td>ASIN, date, cost, store link, quantities. These are the 14k rows Lead Score v1 was trained on.</td><td>Forever</td></tr>
+        <tr><td><code>sephora_runs</code>, <code>keepa_collector_status</code></td><td>One job run; the collector's heartbeat.</td><td>The jobs</td><td>The sale seen on each run (text, code, end date), counts and problems; the collector's state, tokens used today and ASINs due.</td><td>Forever; one row</td></tr>
+      </tbody>
+    </table></div>
+    <h4>Built for a much bigger table</h4>
+    <ul>
+      <li><b>One table for every store.</b> Each catalog and candidate row carries a <code>store</code> column. A second store adds rows, not tables. The page shows a store filter as soon as there are 2 stores.</li>
+      <li><b>Indexes on what the page and jobs ask for:</b> store + brand, ASIN, unchecked matches, and candidates by store and status. A page of the catalog reads one index range, not the whole table, so it stays fast at 100,000+ rows.</li>
+      <li><b>The biggest data lives apart from the catalog.</b> Keepa products (about 0.3 MB each compressed) sit in <code>keepa_raw</code>, stored as-is without recompression. Snapshots are split by month, so old months can be moved out to files without touching recent ones.</li>
+      <li><b>Same database as orders and leads.</b> Joins between your leads, the catalog and Keepa data are one query, with no copying between systems.</li>
+    </ul>
+  </section>
+
+  <section id="jobs">
+    <h3>Jobs and when they run</h3>
+    <div class="g-tbl"><table>
+      <thead><tr><th>Job</th><th>When</th><th>What it does</th><th class="num">Keepa tokens</th></tr></thead>
+      <tbody>
+        <tr><td>Weekly Sephora new products + brands</td><td>Sundays 2:13 am CT</td><td>Re-reads every brand's Sephora listing (prices, sales, items gone), reads New Arrivals and the brand list, adds your new Sephora leads, builds new brands, matches new products to ASINs (title search, size/shade/set checks, your wrong-match rules), checks gating and offers, and downgrades existing matches that break a rule.</td><td class="num">≤ 4,000 a week</td></tr>
+        <tr><td>Daily Sephora leads</td><td>Every day 4:47 am CT</td><td>Reads the Sephora sale and promo pages, refreshes watched ASINs, keeps rows at 15%+ ROI, checks live offers, scores the top 60 with Lead Score, and posts the ones at 21%+ predicted ROI to the review queue. Multi-size items wait for your size check.</td><td class="num">≤ 2,500 a day</td></tr>
+        <tr><td>Keepa collector</td><td>24/7 (Render worker <code>keepa-collector</code>)</td><td>Pulls every Lead DB ASIN: "hot" ones (watched, on sale, open candidates, your leads from the last 30 days) every 22 hours, the rest every 72 hours. Writes <code>keepa_raw</code> and one <code>keepa_snapshots</code> row per pull. It only spends spare tokens: never below 3,000 left on the shared key and at most 90 a minute, so the other jobs always have room.</td><td class="num">≈ 42,000 a day</td></tr>
+        <tr><td>Training export</td><td>On demand</td><td><code>tools/export_training.py</code> downloads everything above into Parquet files for training (see <a href="#local">Local or cloud</a>).</td><td class="num">0</td></tr>
+      </tbody>
+    </table></div>
+    <p>Collector math: about 8.6 Keepa tokens per ASIN. 3,814 hot ASINs every 22 hours is 4,161 pulls a day; 2,403 cold ASINs every 72 hours is 801 a day. 4,962 pulls × 8.6 ≈ 42,700 tokens a day, out of the key's 180,000 (125 a minute). The first pass over all 6,217 ASINs takes about 10 hours.</p>
+  </section>
+
+  <section id="page">
+    <h3>Using the Lead DB page</h3>
+    <ul>
+      <li><b>To review</b>: today's candidates. <b>Approve</b> creates a lead on the Leads tab. <b>Reject</b> asks for a reason (ROI too low, historical price too low, too many sellers, can't sell / gated, not in stock, or your own words). Reasons are kept with the candidate and used in training (below).</li>
+      <li><b>Decided</b>: what was approved or rejected, and by whom.</li>
+      <li><b>Catalog</b>: every matched pair, filterable by store and brand. <b>OK</b> confirms a match (the jobs then never doubt it). <b>Wrong match</b> asks why. Multi-size items take a size answer.</li>
+      <li><b>Archived lists</b>: one-off re-priced lists (spring 2026 Sephora sale, Chanel). Each row shows whether the ASIN is already a lead in the current sale, and can be marked wrong.</li>
+    </ul>
+  </section>
+
+  <section id="learning">
+    <h3>How it learns from wrong matches</h3>
+    <ol>
+      <li>You mark a pair wrong and tick why: <b>size</b>, <b>shade</b>, <b>concentration</b> (EDT vs EDP), <b>set</b>, <b>bonus</b> item, <b>multi-pack</b>, <b>version</b>, <b>product</b>, or <b>other</b>, with an optional note and the correct ASIN.</li>
+      <li>The first six reasons are automatic checks. One mark turns that check on for that brand. When the same reason shows up in 3 or more brands, it turns on for every brand.</li>
+      <li>Every run then applies them: new matches that break a check are kept at low confidence (never proposed), the weekly run downgrades existing unconfirmed pairs that break one, and the daily run holds them back. A pair you marked OK is never held back.</li>
+      <li><b>Version, product and other</b> have no automatic check. The weekly run lists their notes for Claude, which adds a word rule (for example "block <i>tester</i> in Amazon titles for Chanel") only when several marks show the same pattern, and tells you in the weekly message.</li>
+      <li>For training, every pair marked wrong is dropped, so a bad match can't teach the model a fake price.</li>
+    </ol>
+  </section>
+
+  <section id="training">
+    <h3>Training: how the Lead DB feeds Lead Score</h3>
+    <h4>Today: Lead Score v1 <span class="pill built">built</span></h4>
+    <p>v1 predicts the ROI you'd get selling at the <b>average Buy Box price on days 18–78 after the lead date</b> (lowest FBA price on days with no Buy Box). It learned from 12.5k of your past leads (Apr 2024 – Aug 2026). Its inputs are price history (32% of its weight), competitor offers and stock (29%), brand track record (17%) and smaller families. Its weakest input is competitor stock: Keepa only returns the offers and stock as of the day we pull, so for older leads the model sees today's competitors replayed back to the lead day (model card caveat 7).</p>
+
+    <h4>What the Lead DB adds</h4>
+    <div class="g-tbl"><table>
+      <thead><tr><th>Addition</th><th>Where it comes from</th><th>What it fixes</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>Real competitor stock on the day</b></td><td><code>keepa_snapshots</code>, one row per ASIN every 22–72 hours from Nov 11, 2026</td><td>Caveat 7. Competitor inputs carry 29% of v1's weight but are reconstructed; from now on they are recorded on the day. The Sales Model's stock and cover inputs use the same data.</td><td><span class="pill built">collecting</span></td></tr>
+        <tr><td><b>"Could-have-bought" rows</b></td><td><code>catalog_history</code> (store price on each day) + <code>keepa_raw</code> (later Buy Box)</td><td>v1 only learns from leads a VA chose. Every watched pair, on every week, is a lead we could have made at the store price that day. That adds unpicked items, full-price days and sale days, which is the exact choice the daily job makes.</td><td><span class="pill built">collecting</span> <span class="pill plan">builder planned</span></td></tr>
+        <tr><td><b>Your decisions</b></td><td><code>sephora_candidates</code> status and reject reasons</td><td>Lets us check whether the model agrees with your judgment, and which reasons ("too many sellers", "historical price too low") it misses. Too few so far to train on alone (60 candidates).</td><td><span class="pill built">collecting</span></td></tr>
+        <tr><td><b>Clean matches</b></td><td><code>match_feedback</code>, <code>match_ok</code></td><td>Rows from wrong matches are dropped; rows you marked OK are trusted first.</td><td><span class="pill built">built</span></td></tr>
+        <tr><td><b>Store sale context</b></td><td><code>sephora_runs</code>, <code>catalog_history.on_sale</code></td><td>Whether the store was on sale that day and the discount, as inputs.</td><td><span class="pill built">collecting</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <h4>What one training row looks like</h4>
+    <ul>
+      <li><b>Key:</b> ASIN, date, cost, store (the same kit Lead Score already takes: asin, date, cost, store URL).</li>
+      <li><b>Cost:</b> for real leads, the lead cost. For could-have-bought rows, the store price on that date from <code>catalog_history</code> (the item's own sale price when it has one), × the event discount when a store-wide sale was on (0.75, or 0.65 for Sephora Collection; 1.0 otherwise), × 1.05 tax.</li>
+      <li><b>Inputs:</b> v1's inputs, computed only from data dated on or before that day (Keepa histories are dated, so this is exact), plus new ones from the nearest snapshot on or before that day: each competitor's stock, total competitor stock, days of cover, and Buy Box seller.</li>
+      <li><b>Label:</b> the same as v1, the average Buy Box price on days 18–78 after the date, from the latest <code>keepa_raw</code>. A row can be graded once 78 days have passed.</li>
+      <li><b>Sampling:</b> one could-have-bought row per pair per week, plus a row on any day the store price or sale status changed. Rows of the same ASIN are near-copies, so tests split by ASIN and by date, never at random.</li>
+    </ul>
+
+    <h4>Timeline</h4>
+    <ul class="g-tl">
+      <li class="done"><b>Nov 11, 2026</b>: catalog history, snapshots and the collector start.</li>
+      <li><b>Nov 12, 2026</b>: first full pass of all 6,217 ASINs done (about 10 hours).</li>
+      <li><b>Jan 28, 2027</b>: the first rows (from Nov 11) reach day 78 and can be graded.</li>
+      <li><b>Apr 19, 2027</b>: every row from Nov 11 – Jan 31 is graded. That is the first full test quarter: train v2 on everything before it and compare v2 with v1 on the same quarter, walk-forward, exactly as v1 was tested.</li>
+      <li><b>After that</b>: retrain each quarter, once the previous quarter's rows are graded.</li>
+    </ul>
+    <div class="g-note"><b>Still to build:</b> the feature builder that turns snapshots and history into training rows, the could-have-bought row generator, and the v2 training and test script. Those can only be checked once rows are graded (from Jan 28, 2027). Everything they need is being recorded now, and the export already reads it.</div>
+  </section>
+
+  <section id="enough">
+    <h3>Is there enough data?</h3>
+    <div class="g-tbl"><table>
+      <thead><tr><th>Source</th><th class="num">Rows today</th><th class="num">Rows by Apr 19, 2027 (graded)</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Your real leads (v1's training set)</td><td class="num" data-k="leads_gradable">12,884</td><td class="num">≈ 15,200</td><td>Today's 12,884, plus the 1,162 leads from the last 80 days, plus about 1,150 more leads added by Jan 29 (at the recent 14.5 a day).</td></tr>
+        <tr><td>Could-have-bought rows (weekly)</td><td class="num">0 graded</td><td class="num">≈ 41,000</td><td>3,528 watched pairs × 11.7 weeks (Nov 11 – Jan 31). About 3,500 different ASINs, so it adds breadth more than depth.</td></tr>
+        <tr><td>Leads with recorded competitor stock</td><td class="num">0 graded</td><td class="num">≈ 1,200</td><td>Your leads from Nov 11 – Jan 31 (82 days × 14.5 a day). Every lead of the last 30 days is a hot ASIN, so each gets a snapshot within 22 hours.</td></tr>
+        <tr><td>Your candidate decisions</td><td class="num" data-k="candidates">60</td><td class="num">depends on sales</td><td>60 came in 3 sale days (Nov 9–11); far fewer arrive outside a sale. Enough to measure agreement with the model, not to train a separate one.</td></tr>
+      </tbody>
+    </table></div>
+    <p>v1's learning curve (deep-learning benchmark, Nov 2026) showed that more leads of the same kind give only modest gains. The Lead DB's value is different data, not just more of it: day-of competitor stock and the unpicked items. The Apr 2027 test will say how much that is worth; until then, v1 stays the live model.</p>
+  </section>
+
+  <section id="size">
+    <h3>Size and when to upgrade</h3>
+    <p>The database is on Render (<code>order-ledger-db</code>): 0.5 CPU, 1 GB RAM, 50 GB disk ($34 a month), upgraded Nov 11, 2026.</p>
+    <div class="g-tbl"><table>
+      <thead><tr><th>Data</th><th>Size per unit</th><th class="num">At today's 6,217 ASINs</th><th class="num">At 30,000 ASINs (several stores)</th></tr></thead>
+      <tbody>
+        <tr><td><code>keepa_raw</code> (replaced, doesn't grow per day)</td><td>≈ 0.29 MB per ASIN</td><td class="num">≈ 1.8 GB</td><td class="num">≈ 8.7 GB</td></tr>
+        <tr><td><code>keepa_snapshots</code> (grows every day)</td><td>≈ 5 KB per pull</td><td class="num">≈ 25 MB a day · 9 GB a year</td><td class="num">≈ 120 MB a day · 44 GB a year</td></tr>
+        <tr><td>Catalog, history, candidates, feedback</td><td>&lt; 1 KB per row</td><td class="num">&lt; 0.1 GB</td><td class="num">&lt; 1 GB a year</td></tr>
+      </tbody>
+    </table></div>
+    <ul>
+      <li><b>Disk:</b> at today's size, 50 GB lasts about 4 years. At 30,000 ASINs it lasts about a year. When the disk passes 80% (40 GB), either add disk on Render (about $0.30 per GB a month) or move snapshot months older than 12 months to Parquet files in Dropbox and drop those partitions. The export already writes them as Parquet, so nothing is lost.</li>
+      <li><b>Keepa tokens:</b> at 30,000 ASINs on the same schedule the collector would need about 200,000 tokens a day, more than the key's 180,000. Before adding a big store: pull cold ASINs every 7 days instead of 3, or move to a larger Keepa plan.</li>
+      <li><b>CPU / RAM:</b> the Lead DB page and jobs use indexes, so 0.5 CPU / 1 GB is enough. Upgrade if pages start taking more than 2 seconds or the System map shows the database near its memory limit. Training never runs on the database.</li>
+    </ul>
+  </section>
+
+  <section id="local">
+    <h3>Training locally or in the cloud</h3>
+    <p>Either works the same way, because training reads files, not the live database:</p>
+    <ol>
+      <li>Run <code>ENGINE_KEY=… python3 tools/export_training.py --out "~/Dropbox/Keepa data/lead_db"</code> from the repo. The first run downloads everything (about 2 GB today, mostly Keepa products); each later run only downloads what changed since the last one.</li>
+      <li>It writes <code>catalog</code>, <code>candidates</code>, <code>feedback</code> and <code>runs</code> as Parquet files (replaced each run), <code>history/</code> and <code>snapshots/</code> as add-only Parquet parts, and <code>keepa_raw/</code> as chunk files of 80 Keepa products in the same format as past Lead Score pulls.</li>
+      <li>Training code reads them with pandas or DuckDB (<code>SELECT * FROM 'lead_db/snapshots/*.parquet'</code>).</li>
+    </ol>
+    <ul>
+      <li><b>Locally</b> (your computer): needs Python with pandas and pyarrow, and about 3 GB of free disk now, growing about 9 GB a year. v1-size models train in minutes on a laptop.</li>
+      <li><b>In the cloud</b> (a Claude session): the same script runs there; the session downloads in a few minutes and can save the model to the Lead Score server as before.</li>
+      <li>Neither slows the Hub: the export reads in pages of up to 5,000 rows, and the model is trained on the files.</li>
+    </ul>
+  </section>
+  <p class="g-asof" style="margin:30px 0 40px">Code: <code>app/training.py</code>, <code>jobs/keepa_collector/</code>, <code>jobs/sephora/</code>, <code>tools/export_training.py</code> in balli2195/order-ledger. Model card: project doc <code>claude/lead-score-run/LEAD_SCORE_V1_MODEL_CARD.md</code>.</p>
+</main>
+</div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/bonus.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(async () => {
+  try { await LG.header(); } catch (e) { /* header is optional here */ }
+  const f = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US'));
+  const gb = (b) => (b == null ? '—' : (b / 1e9).toFixed(b >= 1e10 ? 0 : 2) + ' GB');
+  try {
+    const s = await LG.api('GET', '/api/lead-db/stats');
+    const v = { ...s, raw_gb: s.raw_gz_bytes != null ? (s.raw_gz_bytes / 1e9).toFixed(2) : null, db_gb: gb(s.db_bytes),
+      snap_since: s.snapshots_since ? new Date(s.snapshots_since).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—' };
+    document.querySelectorAll('[data-k]').forEach((el) => {
+      const k = el.dataset.k; if (!(k in v)) return;
+      el.textContent = typeof v[k] === 'number' ? f(v[k]) : v[k];
+    });
+    const c = s.collector;
+    if (c) {
+      const d = c.detail || {}, beat = c.beat_at ? new Date(c.beat_at) : null;
+      const mins = beat ? Math.round((Date.now() - beat) / 60000) : null;
+      document.getElementById('collector').textContent = `Keepa collector: ${c.state || '—'} · last heartbeat ${mins == null ? '—' : mins + ' min ago'} · `
+        + `${f(d.asins)} ASINs tracked (${f(d.hot)} hot) · ${f(d.never_pulled)} not pulled yet · ${f(d.pulled_today)} pulled today using ${f(d.tokens_today)} tokens`
+        + (d.errors ? ` · ${f(d.errors)} errors` : '');
+    }
+  } catch (e) {
+    document.getElementById('collector').textContent = 'Live numbers unavailable (' + (e.message || e) + '); figures shown are from Nov 11, 2026.';
+  }
+})();
+</script>
+</body>
+</html>
