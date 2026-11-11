@@ -210,7 +210,7 @@
       if (!r.ok) throw new Error(await r.text());
       await navigator.clipboard.writeText(await r.text());
       alert("Copied. Open https://www.macys.com/account/giftcardbalance in Chrome, open the console (Cmd+Option+J), paste and press Enter.\n\n" +
-        "It checks one card every 12-20 seconds, oldest card first, and saves each balance here. It stops at the first card Macy's rejects " +
+        "It checks one card every 90-120 seconds, oldest card first, and saves each balance here. If Macy's doesn't answer, it retries that card once 3-5 minutes later. It stops at the first card Macy's rejects " +
         "(Macy's locks the form after 3 rejections) and pauses if a verification challenge appears - solve it yourself, then press Resume.");
     } catch (e) { alert('Could not copy the script: ' + e.message); }
   });

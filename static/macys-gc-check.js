@@ -6,10 +6,12 @@
 //  * Macy's locks the form after 3 rejected tries, so the script STOPS at the first card Macy's rejects.
 //  * It never solves or works around a CAPTCHA. If one appears, or Macy's stops answering, it pauses and waits
 //    for you: solve it in this tab yourself, then press Resume.
-//  * One card every 12–20 seconds.
+//  * One card every 90–120 seconds. If Macy's doesn't answer, it waits 3–5 minutes and tries that card once more,
+//    then pauses for you if there's still no answer.
 (async () => {
   const HUB = '__HUB__', KEY = '__KEY__';
-  const PACE = [12, 20];            // seconds between cards
+  const PACE = [90, 120];           // seconds between cards (at least 1.5 minutes)
+  const RETRY = [180, 300];         // seconds before the one automatic retry when Macy's doesn't answer
   const RESULT_WAIT = 20;           // seconds to wait for Macy's answer
   const FETCH = 25;                 // cards fetched from the Hub per batch
   if (window.__mgc && window.__mgc.running) { alert('The balance check is already running in this tab.'); return; }
@@ -113,10 +115,21 @@
         $btn().click();
         let ans = null;
         for (let i = 0; i < RESULT_WAIT * 4 && !ans; i++) { await sleep(250); ans = readAnswer(before); }
-        if (!ans) {
-          await pauseFor(`No answer from Macy's for card ending ${c.n.slice(-4)}. If there's a challenge, solve it, then press Resume (the card is retried).`);
+        if (!ans && !c._retried) {
+          // No answer: wait 3–5 minutes, then try this card once more.
+          c._retried = true; setv($num(), ''); setv($cid(), '');
+          const back = RETRY[0] + Math.random() * (RETRY[1] - RETRY[0]);
+          for (let t = Math.round(back); t > 0 && !S.stop; t--) {
+            if (!S.paused) st(`No answer from Macy's for card ending ${c.n.slice(-4)}. Trying it again in ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}…`, true);
+            await sleep(1000); while (S.paused && !S.stop) await sleep(1000);
+          }
           if (S.stop) break;
           cards.splice(cards.indexOf(c) + 1, 0, c); continue;
+        }
+        if (!ans) {
+          await pauseFor(`Still no answer from Macy's for card ending ${c.n.slice(-4)} after a retry. If there's a challenge, solve it, then press Resume (the card is tried again).`);
+          if (S.stop) break;
+          c._retried = false; cards.splice(cards.indexOf(c) + 1, 0, c); continue;
         }
         if (ans.k === 'challenge') {
           await pauseFor(ans.api ? 'Macy\'s turned down this try at its reCAPTCHA check. Wait a few minutes (or solve any challenge it shows you in this tab), then press Resume to retry the same card.'
@@ -136,7 +149,7 @@
         S.log.push({ id: c.id, last4: c.n.slice(-4), balance: ans.v }); ct();
         setv($num(), ''); setv($cid(), '');
         const wait = PACE[0] + Math.random() * (PACE[1] - PACE[0]);
-        for (let t = Math.round(wait); t > 0 && !S.stop; t--) { if (!S.paused) st(`Next card in ${t}s…`); await sleep(1000); while (S.paused && !S.stop) await sleep(1000); }
+        for (let t = Math.round(wait); t > 0 && !S.stop; t--) { if (!S.paused) st(`Next card in ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}…`); await sleep(1000); while (S.paused && !S.stop) await sleep(1000); }
       }
     }
     if (S.stop && !/Stopped|locked|rejected/.test(box.querySelector('#mgc-st').textContent)) st('Stopped.');
