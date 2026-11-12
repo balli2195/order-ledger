@@ -35,11 +35,28 @@
   h3.sec .tag { font-family: var(--sans, inherit); font-size: 12px; vertical-align: middle; }
   table.rp td.st { white-space: normal; min-width: 180px; max-width: 280px; font-size: 12px; }
   .sup-dot { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #c27a12; color: #fff; font-size: 10.5px; font-weight: 800; line-height: 1; flex: 0 0 auto; cursor: default; }
-  .live-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
-  .live-bar .rp-sub { flex: 1 1 420px; margin: 0; }
-  .live-bar .sku-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-  .live-bar .sku-tools.hidden { display: none; }
-  .live-bar .sku-add .list { right: 0; }
+  .sku-filters { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; margin-top: 10px; }
+  .sku-filters .states, .sku-filters .quick { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .sku-filters .lbl { font-size: 13.5px; font-weight: 600; }
+  .sku-filters input[type=search] { width: 260px; }
+  .dot-opt { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; cursor: pointer; user-select: none; }
+  .dot-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .dot-opt i { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--panel); flex: 0 0 auto; }
+  .dot-opt input:checked + i { background: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--panel); }
+  .dot-opt input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dot-opt .n { color: var(--muted); font-size: 12px; }
+  table.rp th.sort { cursor: pointer; } table.rp th.sort:hover { color: var(--ink); } table.rp th .arw { font-size: 10px; margin-left: 2px; }
+  .st-pill { font-size: 11px; border-radius: 99px; padding: 1px 8px; font-weight: 600; white-space: nowrap; }
+  .st-pill.active { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+  .st-pill.out_of_stock { background: color-mix(in srgb, var(--muted) 14%, transparent); }
+  .st-pill.deactivated { color: #b3261e; background: color-mix(in srgb, #b3261e 11%, transparent); }
+  .st-pill.archived { color: var(--muted); border: 1px solid var(--line); }
+  .sw { position: relative; display: inline-block; width: 34px; height: 20px; flex: 0 0 auto; }
+  .sw input { opacity: 0; width: 0; height: 0; }
+  .sw span { position: absolute; inset: 0; border-radius: 99px; background: color-mix(in srgb, var(--muted) 30%, transparent); transition: .15s; cursor: pointer; }
+  .sw span::before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: .15s; }
+  .sw input:checked + span { background: var(--accent); } .sw input:checked + span::before { transform: translateX(14px); }
+  .sw input:disabled + span { opacity: .4; cursor: not-allowed; }
   .filters label > input[type=checkbox] { width: 16px; height: 16px; appearance: auto; -webkit-appearance: checkbox; padding: 0; }
   .switch span { flex: 1; white-space: normal; }
   .warn { color: #b3261e; }
@@ -144,19 +161,26 @@
     </div>
   </div>
 
-  <h3 class="sec">Live SKUs</h3>
-  <div class="live-bar">
-    <p class="rp-sub">Only these SKUs can be repriced live. Turn <b>Seller Snap repricing off</b> for each one first — the repricer refuses any SKU Seller Snap is still repricing, so the two can't fight.</p>
-    <div class="sku-tools owner-only hidden">
-      <div class="sku-add"><input type="search" id="skuSearch" placeholder="Add a SKU: search SKU, ASIN or title" style="width:360px"><div class="list" id="skuList"></div></div>
-      <span class="tag" id="skuCount"></span>
+  <h3 class="sec">SKUs <span class="tag" id="skuCount"></span></h3>
+  <div class="sku-filters">
+    <div class="states"><span class="lbl">Listing states:</span>
+      <label class="dot-opt"><input type="checkbox" data-state="active"><i></i>Active <span class="n" data-n="active"></span></label>
+      <label class="dot-opt"><input type="checkbox" data-state="out_of_stock"><i></i>Out of stock <span class="n" data-n="out_of_stock"></span></label>
+      <label class="dot-opt"><input type="checkbox" data-state="deactivated"><i></i>Deactivated <span class="n" data-n="deactivated"></span></label>
+      <label class="dot-opt"><input type="checkbox" data-state="archived"><i></i>Archived <span class="n" data-n="archived"></span></label>
+    </div>
+    <div class="quick">
+      <input type="search" id="tq" placeholder="SKU, ASIN or title">
+      <label class="dot-opt"><input type="checkbox" data-f="live"><i></i>Live</label>
+      <label class="dot-opt"><input type="checkbox" data-f="ssoff"><i></i>Seller Snap off</label>
+      <label class="dot-opt"><input type="checkbox" data-f="sup"><i></i>Buy Box suppressed</label>
+      <label class="dot-opt"><input type="checkbox" data-f="bo"><i></i>Backordered</label>
+      <label class="dot-opt"><input type="checkbox" data-f="chg"><i></i>Would change</label>
     </div>
   </div>
-  <div class="table-wrap"><table class="rp" id="liveTbl"></table></div>
-
-  <h3 class="sec">Buy Box suppressed <span class="tag" id="supCount"></span></h3>
-  <p class="rp-sub">Listings where Amazon shows no Buy Box because every offer is above the price it sees at other retailers (Amazon's <b>competitive price</b>). The repricer matches the lowest offer on these. To get the Buy Box back, the price has to come down to the competitive price — compare it with your min and your break-even (Amazon fees + cost + $1.40 prep). Min changes go through the approvals sheet as usual.</p>
-  <div class="table-wrap"><table class="rp" id="supTbl"></table></div>
+  <p class="rp-sub" style="margin-top:6px">The <b>Live</b> switch lets the repricer change that SKU's price once live pricing is on (Settings). Turn <b>Seller Snap repricing off</b> for it first — the repricer refuses any SKU Seller Snap is still repricing, so the two can't fight.</p>
+  <div class="table-wrap"><table class="rp" id="skuTbl"></table></div>
+  <div class="row"><button class="btn ghost" id="skuMore" hidden>Show more</button><span class="tag" id="tblAt"></span></div>
 
   <h3 class="sec">Decisions</h3>
   <div class="filters">
@@ -166,6 +190,10 @@
     <span class="tag" id="decCount"></span>
   </div>
   <div class="table-wrap"><table class="rp" id="decTbl"></table></div>
+
+  <h3 class="sec">Buy Box suppressed <span class="tag" id="supCount"></span></h3>
+  <p class="rp-sub">Listings where Amazon shows no Buy Box because every offer is above the price it sees at other retailers (Amazon's <b>competitive price</b>). The repricer matches the lowest offer on these. To get the Buy Box back, the price has to come down to the competitive price — compare it with your min and your break-even (Amazon fees + cost + $1.40 prep). Min changes go through the approvals sheet as usual.</p>
+  <div class="table-wrap"><table class="rp" id="supTbl"></table></div>
 
   <h3 class="sec">Live price changes</h3>
   <div class="table-wrap"><table class="rp" id="logTbl"></table></div>
@@ -317,22 +345,58 @@ if p is a new cut below every rival:
     renderLive();
   }
 
-  function renderLive() {
-    if (!S.ov || !S.ov.connected) { $('#liveTbl').innerHTML = ''; return; }
-    const set = new Set(S.ov.live.config.skus), by = Object.fromEntries(S.skus.map((s) => [s.sku, s]));
-    const rows = [...set].map((k) => by[k] || { sku: k });
-    $('#skuCount').textContent = `${rows.length} live SKU${rows.length === 1 ? '' : 's'}`;
-    $('#liveTbl').innerHTML = '<thead><tr><th>Product</th><th>Seller Snap</th><th class="num">Min</th><th class="num">Max</th><th class="num">Stock</th><th>Latest decision</th><th></th></tr></thead><tbody>' +
-      (rows.length ? rows.map((s) => { const d = s.decision;
-        return `<tr>${prodCell(s.title, s.asin, s.sku, d && d.suppressed, d && d.backordered)}
-        <td>${s.ss_repricing == null ? '<span class="muted">?</span>' : s.ss_repricing ? '<span class="warn">⚠ still repricing — turn off</span>' : '<span class="okc">off ✓</span>'}</td>
-        <td class="num">${money(s.min)}</td><td class="num">${money(s.max)}</td><td class="num">${s.fulfillable ?? '—'}</td>
-        <td>${d ? `${pill(d.action)} ${money(d.my_price)} → ${money(d.rec_price)} <span class="tag">${when(d.t)}</span>` : '<span class="muted">none yet</span>'}</td>
-        <td>${owner() ? `<button class="btn small ghost" data-rm="${esc(s.sku)}">Remove</button>` : ''}</td></tr>`; }).join('')
-        : '<tr><td colspan="7" class="empty">No live SKUs. Add one above once Seller Snap repricing is off for it.</td></tr>') + '</tbody>';
-  }
+  // ------------------------------------------------------------ SKUs table (every SKU, Seller Snap-style states)
+  const STATE_LBL = { active: 'Active', out_of_stock: 'Out of stock', deactivated: 'Deactivated', archived: 'Archived' };
+  const PREF = 'rp_sku_filters';
+  const T = { rows: [], at: null, shown: 200, sort: { k: 'fulfillable', d: -1 }, states: new Set(['active', 'out_of_stock']), f: new Set() };
+  try { const p = JSON.parse(localStorage.getItem(PREF) || 'null'); if (p) { T.states = new Set(p.states || []); T.f = new Set(p.f || []); if (p.sort) T.sort = p.sort; } } catch { /* storage off */ }
+  const savePrefs = () => { try { localStorage.setItem(PREF, JSON.stringify({ states: [...T.states], f: [...T.f], sort: T.sort })); } catch { /* storage off */ } };
+  document.querySelectorAll('[data-state]').forEach((el) => { el.checked = T.states.has(el.dataset.state); });
+  document.querySelectorAll('.quick [data-f]').forEach((el) => { el.checked = T.f.has(el.dataset.f); });
 
-  async function loadSkus() { S.skus = await api('GET', '/api/repricer/skus'); renderLive(); }
+  async function loadTable() {
+    const j = await api('GET', '/api/repricer/table');
+    T.rows = j.rows || []; T.at = j.catalog_at; S.skus = T.rows;
+    renderSkus();
+  }
+  function liveSet() { return new Set((S.ov && S.ov.live && S.ov.live.config.skus) || []); }
+  function renderLive() { renderSkus(); }
+  function renderSkus() {
+    if (!S.ov || !S.ov.connected) { $('#skuTbl').innerHTML = ''; return; }
+    const live = liveSet(), q = $('#tq').value.trim().toLowerCase();
+    const cnt = { active: 0, out_of_stock: 0, deactivated: 0, archived: 0 };
+    for (const r of T.rows) cnt[r.state] = (cnt[r.state] || 0) + 1;
+    document.querySelectorAll('[data-n]').forEach((el) => { el.textContent = (cnt[el.dataset.n] || 0).toLocaleString(); });
+    let V = T.rows.filter((r) => T.states.has(r.state)
+      && (!T.f.has('live') || live.has(r.sku)) && (!T.f.has('ssoff') || (r.in_seller_snap && !r.ss_repricing))
+      && (!T.f.has('sup') || (r.decision && r.decision.suppressed)) && (!T.f.has('bo') || (r.decision && r.decision.backordered))
+      && (!T.f.has('chg') || (r.decision && r.decision.action && r.decision.action !== 'hold'))
+      && (!q || [r.sku, r.asin, r.title].some((x) => String(x || '').toLowerCase().includes(q))));
+    const key = { title: (r) => (r.title || '').toLowerCase(), price: (r) => r.price ?? -1, fulfillable: (r) => (r.fulfillable || 0) * 1e3 + (r.inbound || 0),
+      bb_share: (r) => r.bb_share ?? -1, v30: (r) => r.v30 ?? -1, roi: (r) => r.roi ?? -1e9, state: (r) => r.state }[T.sort.k] || ((r) => 0);
+    V.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * T.sort.d; });
+    const n = V.length; V = V.slice(0, T.shown);
+    $('#skuCount').textContent = `${n.toLocaleString()} shown of ${T.rows.length.toLocaleString()} · ${live.size} live`;
+    $('#skuMore').hidden = n <= T.shown; $('#skuMore').textContent = `Show ${Math.min(200, n - T.shown)} more`;
+    $('#tblAt').textContent = T.at ? `Listing states from Amazon's listing report, ${when(T.at)}` : '';
+    const th = (k, label, cls = '') => `<th class="sort ${cls}" data-sort="${k}">${label}${T.sort.k === k ? `<span class="arw">${T.sort.d > 0 ? '▲' : '▼'}</span>` : ''}</th>`;
+    $('#skuTbl').innerHTML = '<thead><tr><th title="Let the repricer change this SKU when live pricing is on">Live</th>' + th('title', 'Product') + th('state', 'State') +
+      '<th>Seller Snap</th>' + th('price', 'Price', 'num') + '<th class="num">Min</th><th class="num">Max</th>' + th('fulfillable', 'Stock', 'num') +
+      th('bb_share', 'Buy Box', 'num') + th('v30', 'Sales/day', 'num') + th('roi', 'ROI', 'num') + '<th>Latest decision</th></tr></thead><tbody>' +
+      (V.length ? V.map((r) => { const d = r.decision; const can = owner() && r.priced;
+        const why = !r.priced ? (r.priced_sku ? `The repricer prices SKU ${r.priced_sku} for this ASIN` : 'Not priced by the repricer (not in Seller Snap or no stock)') : (r.ss_repricing ? 'Seller Snap is still repricing this SKU: the repricer won\'t touch it until that\'s off' : '');
+        return `<tr><td><label class="sw" title="${esc(why || (live.has(r.sku) ? 'Live' : 'Not live'))}"><input type="checkbox" data-live="${esc(r.sku)}" ${live.has(r.sku) ? 'checked' : ''} ${can || live.has(r.sku) && owner() ? '' : 'disabled'}><span></span></label></td>
+        ${prodCell(r.title, r.asin, r.sku, d && d.suppressed, d && d.backordered)}
+        <td><span class="st-pill ${esc(r.state)}" title="${esc(r.search_suppressed ? 'Amazon hides it from search: ' + r.search_suppressed : r.amazon_status ? 'Amazon: ' + r.amazon_status : '')}">${STATE_LBL[r.state] || esc(r.state)}</span>${r.channel === 'MFN' ? ' <span class="tag">MFN</span>' : ''}</td>
+        <td>${!r.in_seller_snap ? '<span class="muted">not in Seller Snap</span>' : r.ss_repricing ? `<span class="warn">on</span>${r.preset ? ` <span class="tag">${esc(r.preset)}</span>` : ''}` : '<span class="okc">off ✓</span>'}</td>
+        <td class="num">${money(r.price)}</td><td class="num">${money(r.min)}</td><td class="num">${money(r.max)}</td>
+        <td class="num">${(r.fulfillable || 0).toLocaleString()}${r.inbound ? `<span class="tag">+${r.inbound} inbound</span>` : ''}${r.reserved ? `<span class="tag">${r.reserved} reserved</span>` : ''}</td>
+        <td class="num">${r.bb_share == null ? '—' : Math.round(r.bb_share) + '%'}</td><td class="num">${r.v30 == null ? '—' : Number(r.v30).toFixed(2)}</td>
+        <td class="num">${r.roi == null ? '—' : `<span class="${r.roi < 0 ? 'neg' : ''}">${Math.round(r.roi)}%</span>`}</td>
+        <td>${d ? `${pill(d.action)} ${d.action !== 'hold' ? `${money(d.my_price)} → <b>${money(d.rec_price)}</b>` : ''} <span class="tag">${when(d.t)}</span>` : '<span class="muted">—</span>'}</td></tr>`; }).join('')
+        : '<tr><td colspan="12" class="empty">No SKUs match these filters.</td></tr>') + '</tbody>';
+  }
+  async function loadSkus() { await loadTable(); }
 
   async function loadDecisions() {
     S.dec = await api('GET', '/api/repricer/decisions?n=1500');
@@ -343,7 +407,7 @@ if p is a new cut below every rival:
 
   function renderDec() {
     const q = $('#q').value.trim().toLowerCase(), a = $('#act').value, ch = $('#changes').checked;
-    const titles = Object.fromEntries(S.skus.map((s) => [s.sku, s.title]));
+    const titles = Object.fromEntries((S.skus || []).map((s) => [s.sku, s.title]));
     const V = S.dec.slice().reverse().filter((d) => (!a || d.action === a) && (!ch || d.action !== 'hold') &&
       (!q || [d.asin, d.sku, titles[d.sku]].some((x) => String(x || '').toLowerCase().includes(q)))).slice(0, 400);
     $('#decCount').textContent = `${V.length} shown of ${S.dec.length} recent decisions`;
@@ -376,7 +440,7 @@ if p is a new cut below every rival:
   async function loadLog() {
     S.log = await api('GET', '/api/repricer/log?days=7');
     $('#logTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">From</th><th class="num">To</th><th class="num">Recommended</th><th>Amazon</th></tr></thead><tbody>' +
-      (S.log.length ? S.log.map((r) => `<tr><td>${when(r.t)}</td>${prodCell((S.skus.find((x) => x.sku === r.sku) || {}).title, r.asin, r.sku)}<td>${pill(r.action)}</td><td class="num">${money(r.from)}</td><td class="num"><b>${money(r.to)}</b></td><td class="num">${money(r.target_rec)}</td>
+      (S.log.length ? S.log.map((r) => `<tr><td>${when(r.t)}</td>${prodCell(((S.skus || []).find((x) => x.sku === r.sku) || {}).title, r.asin, r.sku)}<td>${pill(r.action)}</td><td class="num">${money(r.from)}</td><td class="num"><b>${money(r.to)}</b></td><td class="num">${money(r.target_rec)}</td>
         <td>${r.error ? `<span class="warn">${esc(r.error)}</span>` : esc(r.response_status || r.status_code || '')}${(r.issues || []).length ? ` <span class="warn" title="${esc(JSON.stringify(r.issues))}">issues</span>` : ''}</td></tr>`).join('')
         : '<tr><td colspan="7" class="empty">No live price changes. In shadow mode nothing is changed.</td></tr>') + '</tbody>';
   }
@@ -388,7 +452,7 @@ if p is a new cut below every rival:
       decay_per_day: Number($('#decay_pct').value) / 100, decay_auto: $('#decay_auto').checked, chase_cuts: Number($('#chase_cuts').value),
       chase_window_min: Number($('#chase_window_min').value), freeze_h: Number($('#freeze_h').value), max_drop_pct: Number($('#max_drop_pct').value), skus: cfg.skus }, extra || {});
     if (body.enabled && !cfg.enabled) {
-      const bad = body.skus.filter((k) => (S.skus.find((s) => s.sku === k) || {}).ss_repricing !== false);
+      const bad = body.skus.filter((k) => ((S.skus || []).find((s) => s.sku === k) || {}).ss_repricing);
       if (!confirm(`Turn on live pricing for ${body.skus.length} SKU${body.skus.length === 1 ? '' : 's'}? The repricer will change these prices on Amazon within your Seller Snap min/max.` +
         (bad.length ? `\n\n${bad.length} of them still show Seller Snap repricing on (or unknown); those stay untouched until it's off.` : ''))) { $('#enabled').checked = false; return; }
     }
@@ -410,17 +474,21 @@ if p is a new cut below every rival:
     try { await api('POST', '/api/repricer/unfreeze', { sku: b.dataset.unfreeze }); toast('Cuts allowed again for ' + b.dataset.unfreeze); await loadOverview(); } catch (err) { fail(err); } });
   $('#stop').addEventListener('click', async () => { if (!confirm('Stop live pricing now?')) return; try { await api('POST', '/api/repricer/stop'); toast('Live pricing stopped'); S.dirty = false; await loadOverview(); } catch (e) { fail(e); } });
   $('#keySave').addEventListener('click', async () => { try { await api('POST', '/api/repricer/key', { key: $('#keyIn').value }); toast('Connected'); await refresh(); } catch (e) { fail(e); } });
-  $('#liveTbl').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; save({ skus: S.ov.live.config.skus.filter((k) => k !== b.dataset.rm) }).then(loadSkus).catch(fail); });
-  $('#skuSearch').addEventListener('input', () => {
-    const q = $('#skuSearch').value.trim().toLowerCase(), L = $('#skuList'), set = new Set(S.ov?.live?.config?.skus || []);
-    if (q.length < 2) { L.style.display = 'none'; return; }
-    const hits = S.skus.filter((s) => !set.has(s.sku) && [s.sku, s.asin, s.title].some((x) => String(x || '').toLowerCase().includes(q))).slice(0, 30);
-    L.innerHTML = hits.map((s) => `<div data-add="${esc(s.sku)}"><b class="mono">${esc(s.sku)}</b> · ${esc(s.asin)} · ${esc((s.title || '').slice(0, 60))} ${s.ss_repricing ? '<span class="warn">(Seller Snap on)</span>' : ''}</div>`).join('') || '<div class="muted">No match</div>';
-    L.style.display = 'block';
+  $('#skuTbl').addEventListener('change', async (e) => {
+    const b = e.target.closest('[data-live]'); if (!b) return;
+    const sku = b.dataset.live, set = liveSet(), on = b.checked;
+    const row = T.rows.find((r) => r.sku === sku) || {};
+    if (on && S.ov.live.config.enabled && !confirm(`Live pricing is on. Let the repricer change ${sku}'s price on Amazon now, within its Seller Snap min/max?`)) { b.checked = false; return; }
+    if (on && row.ss_repricing) toast(`Seller Snap is still repricing ${sku}: the repricer won't touch it until that's off.`);
+    if (on) set.add(sku); else set.delete(sku);
+    try { await save({ skus: [...set] }); renderSkus(); } catch (err) { b.checked = !on; fail(err); }
   });
-  $('#skuList').addEventListener('click', (e) => { const d = e.target.closest('[data-add]'); if (!d) return; $('#skuList').style.display = 'none'; $('#skuSearch').value = '';
-    save({ skus: [...S.ov.live.config.skus, d.dataset.add] }).then(loadSkus).catch(fail); });
-  document.addEventListener('click', (e) => { if (!e.target.closest('.sku-add')) $('#skuList').style.display = 'none'; });
+  $('#skuTbl').addEventListener('click', (e) => { const h = e.target.closest('[data-sort]'); if (!h) return;
+    const k = h.dataset.sort; T.sort = T.sort.k === k ? { k, d: -T.sort.d } : { k, d: k === 'title' || k === 'state' ? 1 : -1 }; savePrefs(); renderSkus(); });
+  document.querySelectorAll('[data-state]').forEach((el) => el.addEventListener('change', () => { el.checked ? T.states.add(el.dataset.state) : T.states.delete(el.dataset.state); T.shown = 200; savePrefs(); renderSkus(); }));
+  document.querySelectorAll('.quick [data-f]').forEach((el) => el.addEventListener('change', () => { el.checked ? T.f.add(el.dataset.f) : T.f.delete(el.dataset.f); T.shown = 200; savePrefs(); renderSkus(); }));
+  $('#tq').addEventListener('input', () => { T.shown = 200; renderSkus(); });
+  $('#skuMore').addEventListener('click', () => { T.shown += 200; renderSkus(); });
   ['q', 'act', 'changes'].forEach((id) => $('#' + id).addEventListener('input', renderDec));
   document.addEventListener('click', async (e) => {   // copy an ASIN, as on the Leads page
     const b = e.target.closest('[data-copy]'); if (!b) return;
@@ -430,9 +498,12 @@ if p is a new cut below every rival:
     b.classList.add('done'); setTimeout(() => b.classList.remove('done'), 1200);
   });
 
+  let tableAt = 0;
   async function refresh() {
     await loadOverview();
-    if (S.ov && S.ov.connected) { await loadSkus(); await Promise.all([loadDecisions(), loadLog(), loadSuppressed()]); }
+    if (!S.ov || !S.ov.connected) return;
+    if (Date.now() - tableAt > 5 * 60 * 1000) { tableAt = Date.now(); await loadTable(); }   // ~2 MB: every 5 min, not every 30 s
+    await Promise.all([loadDecisions(), loadLog(), loadSuppressed()]);
   }
   LG.header().then((me) => { S.me = me; return refresh(); }).catch(fail);
   setInterval(() => refresh().catch(() => {}), 30000);

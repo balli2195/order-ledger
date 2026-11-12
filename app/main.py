@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import httpx
 import contextlib
 import html
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import airtable_sync, auth, db, live
@@ -1872,6 +1873,18 @@ async def api_repricer_decisions(request: Request, n: int = 300, action: str | N
 async def api_repricer_skus(request: Request):
     await auth.require(request, tab="repricer")
     return await _rp(rp.call, "GET", "/repricer/skus", timeout=60)
+
+
+@app.get("/api/repricer/table")
+async def api_repricer_table(request: Request):
+    """Every SKU (Seller Snap + Amazon's listing report) with state, stock, Seller Snap settings, live flag and latest decision.
+    About 2 MB of JSON, so it's sent gzipped."""
+    await auth.require(request, tab="repricer")
+    data = await _rp(rp.call, "GET", "/repricer/table", timeout=90)
+    raw = json.dumps(data, separators=(",", ":")).encode()
+    if "gzip" in (request.headers.get("accept-encoding") or ""):
+        return Response(gzip.compress(raw, 6), media_type="application/json", headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+    return Response(raw, media_type="application/json")
 
 
 @app.get("/api/repricer/suppressed")
