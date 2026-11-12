@@ -50,7 +50,6 @@ async def lifespan(app: FastAPI):
     await db.open_pool()
     await hubdocs.seed_missing(Path(__file__).resolve().parent / "seed")   # bundled docs, e.g. Sephora relist lists
     listener = asyncio.create_task(live.listener())
-    syncer = asyncio.create_task(airtable_sync.loop())
     prepos_task = asyncio.create_task(prepos.nightly_loop())
     brand_task = asyncio.create_task(hazmat.brand_backfill_loop())   # Keepa brands for the Transparency brand warning
     catalog_task = asyncio.create_task(catalog.loop())   # Buy qty entered -> product added to Nick's Amazon catalog
@@ -60,7 +59,6 @@ async def lifespan(app: FastAPI):
     async with mcp.session_manager.run():
         yield
     listener.cancel()
-    syncer.cancel()
     prepos_task.cancel()
     hazmat_task.cancel()
     catalog_task.cancel()
