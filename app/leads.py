@@ -651,13 +651,21 @@ async def engine_update(updates: list[dict]) -> dict:
         if len(ch) == 1:
             raise LedgerError(f"Update for {u['id']} has no fields")
         changes.append(ch)
+    # A lead deleted while it was being scored is skipped, not an error (Nick, Nov 11 2026: it turned the System map's Lead Score dot red).
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT id::text FROM leads WHERE id::text = ANY(%s)", ([str(c["id"]) for c in changes],))
+        exist = {r["id"] for r in await cur.fetchall()}
+    skipped = [c["id"] for c in changes if str(c["id"]) not in exist]
+    changes = [c for c in changes if str(c["id"]) in exist]
+    if not changes:
+        return {"updated": 0, "ids": [], "skipped_deleted": skipped}
     touched = await update_leads(ENGINE_ACTOR, changes)
     scored = [c["id"] for c in changes if {"lead_score_band", "lead_score_roi", "lead_score_notes"} & set(c)]
     if scored:   # a re-score with the same result still counts as scored today
         async with db.pool.connection() as conn:
             await conn.execute("UPDATE leads SET lead_score_at=now() WHERE id = ANY(%s::uuid[])", (scored,))
             await conn.commit()
-    return {"updated": len(touched), "ids": touched}
+    return {"updated": len(touched), "ids": touched, "skipped_deleted": skipped}
 
 
 # ---------------------------------------------------------------- lead sets (split sets grouped by hand; Nick, Nov 2 2026)
