@@ -1009,6 +1009,20 @@ MIGRATIONS: list[str] = [
       detail      jsonb NOT NULL DEFAULT '{}'
     );
     """,
+    """
+    -- Repricer price limits (Nick, Nov 12 2026): the one place min/max overrides live once Seller Snap is gone.
+    -- The normal min is worked out by the repricer (12% ROI with Amazon's fees and the Hub cost); a row here overrides it
+    -- (liquidation mins from the liquidation run, after Nick ticks them; or a manual min/max).
+    CREATE TABLE IF NOT EXISTS price_limits (
+      sku         text PRIMARY KEY,
+      min_price   numeric(12,2),
+      max_price   numeric(12,2),
+      source      text NOT NULL,          -- liquidation | manual | seller_snap_seed
+      note        text,
+      approved_by text,
+      updated_at  timestamptz NOT NULL DEFAULT now()
+    );
+    """,
 ]
 
 

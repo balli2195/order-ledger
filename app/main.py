@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI):
     hazmat_task = asyncio.create_task(sellable.backfill_loop())   # Amazon FBA eligibility (Keepa hazmat comes with title lookups)
     inbound_task = asyncio.create_task(inbound.loop())   # Reimbursements page: inbound shipments from SP-API, daily
     profit_task = asyncio.create_task(profit.loop())   # Profit page: Amazon finance events, rolling refresh + history backfill
+    limits_task = asyncio.create_task(rp.limits_loop())   # Repricer: costs and min/max overrides to the offer recorder, hourly
     async with mcp.session_manager.run():
         yield
     listener.cancel()
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI):
     catalog_task.cancel()
     inbound_task.cancel()
     profit_task.cancel()
+    limits_task.cancel()
     brand_task.cancel()
     await sysmap.flush()
     await db.close_pool()
@@ -1925,6 +1927,54 @@ async def api_repricer_unfreeze(request: Request, body: dict = Body(...)):
     r = await _rp(rp.call, "POST", "/live/unfreeze", body={"sku": sku})
     await rp.audit(user, "unfreeze", {"sku": sku}, r.get("frozen"))
     return r
+
+
+@app.get("/api/repricer/limits")
+async def api_repricer_limits(request: Request):
+    """Limit settings (min ROI, prep, max rule), the overrides, and the last push to the recorder."""
+    await auth.require(request, tab="repricer")
+    return {"settings": await rp.limit_settings(), "overrides": await rp.overrides(), "push": rp.push_status}
+
+
+@app.post("/api/repricer/limits/settings")
+async def api_repricer_limit_settings(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, role="owner", tab="repricer")
+    before = await rp.limit_settings()
+    after = await rp.save_limit_settings(body)
+    await rp.audit(user, "limit_settings", before, after)
+    await _rp(rp.push_limits)
+    return {"settings": after}
+
+
+@app.post("/api/repricer/limits/overrides")
+async def api_repricer_overrides(request: Request, body: dict = Body(...)):
+    """Owner sets or clears manual min/max overrides: {rows:[{sku, min, max, note}]} (min and max both empty = clear)."""
+    user = await auth.require(request, role="owner", tab="repricer")
+    rows = body.get("rows") or []
+    try:
+        n = await rp.set_overrides(rows, "manual", user.name or user.email)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    await rp.audit(user, "overrides", None, {"rows": rows})
+    await _rp(rp.push_limits)
+    return {"ok": True, "rows": n}
+
+
+@app.post("/api/engine/price-limits")
+async def engine_price_limits(request: Request, body: dict = Body(...)):
+    """For the liquidation run: liquidation mins Nick has approved (ticked). {rows:[{sku, min, note}], approved_by}.
+    Only rows Nick ticked may be sent here (same rule as the Seller Snap approvals sheet)."""
+    auth.require_engine_key(request)
+    rows = [{"sku": r.get("sku"), "min": r.get("min"), "max": r.get("max"), "note": r.get("note")} for r in body.get("rows") or []]
+    try:
+        n = await rp.set_overrides(rows, "liquidation", body.get("approved_by") or "Nick (approvals sheet)")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    try:
+        await rp.push_limits()
+    except Exception:
+        pass
+    return {"ok": True, "rows": n}
 
 
 @app.post("/api/repricer/key")
