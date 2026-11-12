@@ -47,6 +47,12 @@
   details.how { margin-top: 22px; font-size: 13.5px; color: var(--ink); max-width: 900px; }
   details.how summary { cursor: pointer; font-weight: 600; }
   details.how li { margin: 4px 0; }
+  details.how h4 { font-family: var(--serif); font-weight: 400; font-size: 19px; margin: 18px 0 6px; }
+  details.how h5 { font-size: 14px; margin: 14px 0 4px; }
+  details.how ul ul { margin: 4px 0; }
+  pre.fx { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; overflow-x: auto; white-space: pre; }
+  .mnow { font-size: 13px; color: var(--muted); }
+  .mnow b { color: var(--ink); }
   .sku-add { position: relative; }
   .sku-add .list { position: absolute; z-index: 5; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; max-height: 260px; overflow: auto; width: 460px; display: none; }
   .sku-add .list div { padding: 6px 10px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--line); }
@@ -141,6 +147,64 @@
       <li><b>Live only when all three are true:</b> the Render setting <code>LIVE_MODE=on</code>, "Change prices" ticked here, and the SKU is a live SKU with Seller Snap repricing off.</li>
       <li><b>Every live change:</b> within min/max, no bigger than the step limit, not sooner than the minutes between changes, within the daily cap; logged below. "Stop live pricing" switches it off at once.</li>
     </ul>
+
+    <h4>Models, algorithms and logic</h4>
+    <div id="modelNow" class="mnow"></div>
+
+    <h5>1. Buy Box model: "what's my chance of holding the Buy Box at price p?"</h5>
+    <ul>
+      <li><b>Type:</b> logistic regression (a weighted sum of inputs passed through an S-curve, giving a probability between 0 and 1). Two versions: one used when Amazon's target price for you is fresh (read in the last 45 min), one used without it.</li>
+      <li><b>Inputs</b> (all built the same way in training and in live decisions):
+        <ul>
+          <li>your price vs the lowest rival FBA offer, in %, split into "below" (capped at 1% below; going deeper buys little) and "above";</li>
+          <li>tied with the lowest rival (within 0.5%), and more than 1% above it;</li>
+          <li>number of rival FBA offers (logarithm);</li>
+          <li>your share of the competitive stock (your fulfillable units ÷ yours + rivals' within 2% of the low, from Keepa), with a flag when rival stock isn't known;</li>
+          <li>with a target: your price vs Amazon's target in % ("below", capped at 1%, and "above"), and whether you're at or below it.</li>
+        </ul></li>
+      <li><b>Training data:</b> every target-price reading from the last 7 days, matched to the offers on the listing at that moment. The answer it learns is your actual Buy Box share over the next 30 minutes (a fraction, not just yes/no).</li>
+      <li><b>Fitting:</b> maximum likelihood with mild regularisation (scikit-learn, L2, C = 1). The last 2 days are held out first to measure accuracy, then it's refit on all 7 days.</li>
+      <li><b>Accuracy</b> is shown above as AUC (how well it ranks winning vs losing moments: 0.5 = coin flip, 1.0 = perfect) and Brier score (average squared error of the probabilities; lower is better), on the held-out days.</li>
+    </ul>
+
+    <h5>2. Rival reaction model: "if I undercut, will they follow, and how fast?"</h5>
+    <ul>
+      <li><b>Events:</b> every time any seller cut below every other FBA offer, each rival that was at the low just before is checked: did it match or go below within 60 minutes?</li>
+      <li><b>Per-rival rate (empirical Bayes):</b> a rival that reacted <i>k</i> times out of <i>n</i> gets rate = (<i>k</i> + a) ÷ (<i>n</i> + a + b). The prior a, b is fitted to all rivals with 5+ events (method of moments on a Beta distribution), so a rival with little history starts near the average and moves toward its own record as events pile up.</li>
+      <li><b>Lag:</b> each rival's median minutes to react (3+ reactions), otherwise the pooled median.</li>
+      <li><b>Price-war table:</b> for undercuts with 24 h of data after them, the median % drop in the listing's lowest price a day later, grouped by how reactive the undercut rivals are; values in between are interpolated.</li>
+    </ul>
+
+    <h5>3. Demand and fees</h5>
+    <ul>
+      <li><b>Sales per Buy Box hour</b> = Seller Snap 30-day units/day ÷ 24 ÷ your Seller Snap Buy Box share (floored at 25%, so it never assumes more than 4× today's sales if you won every Buy Box).</li>
+      <li><b>Units in the next 24 h</b> at price p = sales per Buy Box hour × 24 × Buy Box chance(p), never more than your stock.</li>
+      <li><b>Fees(p)</b> = referral (15%; 8% at $10 or less) × p + a fixed part (FBA and other fees), backed out of Seller Snap's ROI for the SKU.</li>
+      <li>Not yet modelled: how much demand itself changes with price (needs small live price tests).</li>
+    </ul>
+
+    <h5>4. Value of each candidate price (the decision)</h5>
+    <pre class="fx">days to sell   = your stock ÷ today's expected daily sales            (max 180)
+value if kept  = (lowest rival − fees at that price) × (1 − cost of waiting × days to sell ÷ 2)
+value(p)       = units(p) × [(p − fees(p)) − value if kept] − price-war penalty(p)
+
+if p is a new cut below every rival:
+  Buy Box chance = (1 − r) × chance alone + r × [f × chance alone + (1 − f) × chance tied at p]
+                   r = most reactive rival's rate at the low,  f = its lag ÷ 24 h
+  penalty        = price-war drop(r) × lowest rival × (1 − referral) × min(stock, 30 days of sales)</pre>
+    <ul>
+      <li>What you paid is treated as sunk: a unit is worth its net proceeds if sold now, or the discounted value of selling it later if kept. That's why below-cost liquidation stock still sells, and why it's patient when stock will sell through soon anyway.</li>
+      <li><b>Choice:</b> the candidate with the highest value. It recommends a change only if that beats the current price by at least the minimum gain ($ per day <i>and</i> % — see "How it decides") and by 1¢ or more; otherwise <i>Hold</i>.</li>
+      <li><b>Labels:</b> Raise to target, Raise to next offer (1¢ under the next rival when you're alone at the low), Raise, Lower to target, Match lowest, Undercut.</li>
+      <li>Without a fresh target price only three moves are considered (tie, 1¢ under the lowest rival, next offer − 1¢), because the model without a target is much weaker.</li>
+    </ul>
+
+    <h5>5. Retraining and checks</h5>
+    <ul>
+      <li>Retrained nightly at 3:17 AM Central on the last 7 days (GitHub Actions in the offer-recorder repo) and uploaded to the recorder; the Model card shows when.</li>
+      <li>Scorecard (<code>tools/evaluate.py</code>): predicted vs actual Buy Box share, the action mix, and how often Seller Snap ended up at the recommended price anyway. Run before any live test.</li>
+      <li>Code: <code>shadow.py</code> (features, decision), <code>tools/train.py</code> (models), <code>live.py</code> (live executor and guardrails) in github.com/balli2195/offer-recorder.</li>
+    </ul>
   </details>
 </div>
 <div id="toasts" class="toasts"></div>
@@ -184,8 +248,14 @@
       stat('Inputs', `${(sh.foep_known || 0).toLocaleString()} targets`, `${(sh.skus_priced || 0).toLocaleString()} SKUs priced · rival stock on ${(sh.rival_stock_known || 0).toLocaleString()} listings`) +
       stat('Last decision', when(sh.last_decision), sh.last_error ? `<span class="warn">${esc(sh.last_error)}</span>` : 'no errors');
     const blocked = Object.entries(lv.stats.blocked || {}).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ');
-    $('#model').innerHTML = `Trained <b>${esc(when(sh.model_trained_at))}</b> on the last 7 days; retrained nightly at 3:17 AM.<br>` +
+    const vv = ((sh.model_info || {}).validation || {}).bb_foep || {};
+    $('#model').innerHTML = `Trained <b>${esc(when(sh.model_trained_at))}</b> on the last 7 days; retrained nightly at 3:17 AM.` + (vv.auc ? ` Held-out accuracy AUC <b>${vv.auc}</b> (details under "How it works").` : '') + `<br>` +
       `Actions so far: ${Object.entries(ba).map(([k, v]) => `${(ACT[k] || [k])[0]} ${v}`).join(' · ') || '—'}` + (blocked ? `<br>Live changes blocked: ${blocked}` : '');
+    const mi = sh.model_info || {}, v = mi.validation || {}, wf = v.bb_foep || {}, nf = v.bb_nofoep || {}, rd = mi.rival_default || {};
+    $('#modelNow').innerHTML = mi.validation ? `Current model (trained ${esc(when(sh.model_trained_at))}): ${(mi.bb_rows || 0).toLocaleString()} training moments from ${(mi.messages || 0).toLocaleString()} Amazon messages over ${mi.window_days || 7} days.
+      Held-out accuracy with target price: <b>AUC ${wf.auc ?? '—'}</b>, Brier ${wf.brier ?? '—'} (predicted ${pct(wf.mean_pred)} vs actual ${pct(wf.mean_actual)} average Buy Box share);
+      without target: AUC ${nf.auc ?? '—'}; the plain "at or below target" rule alone: AUC ${(v.rule_at_or_below_target || {}).auc ?? '—'}. Rival model: ${(mi.rivals || 0).toLocaleString()} rivals, average reaction rate ${pct(rd.rate)}, typical lag ${rd.lag_min ?? '—'} min.
+      Price-war table: ${(mi.war_table || []).map(([r, d]) => `rate ${pct(r)} → ${d.toFixed(2)}% drop`).join(' · ')}.` : '';
     renderLive();
   }
 
