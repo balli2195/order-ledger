@@ -396,6 +396,23 @@ async def engine_profit_ledger(request: Request, body: dict = Body(default={})):
     return {"started": True, "start": start.isoformat()}
 
 
+@app.get("/api/engine/sku-costs")
+async def engine_sku_costs(request: Request):
+    """Current InventoryLab unit cost per SKU, for scheduled tasks (replaces the old claude.ai Inventory Hub `costs` export, Nick Nov 11 2026).
+    Per SKU: the latest `inventorylab` snapshot cost, else the latest `il_month` cost. $0.01 placeholders are skipped.
+    rows = [sku, asin, title(null), cost, source, as_of] — the same column order the old hub's costs rows used."""
+    auth.require_engine_key(request)
+    async with db.pool.connection() as conn:
+        rows = await (await conn.execute("""
+            SELECT DISTINCT ON (c.sku) c.sku, coalesce(c.asin, m.asin) asin, c.cost, c.source, c.as_of
+            FROM sku_costs c LEFT JOIN sku_asin m ON m.sku = c.sku
+            WHERE c.source IN ('inventorylab', 'il_month') AND c.cost > 0.01
+            ORDER BY c.sku, (c.source = 'inventorylab') DESC, c.as_of DESC""")).fetchall()
+        snap = await (await conn.execute("SELECT max(as_of) d FROM sku_costs WHERE source = 'inventorylab'")).fetchone()
+    return {"snapshot_as_of": snap["d"].isoformat() if snap and snap["d"] else None, "count": len(rows),
+            "rows": [[r["sku"], r["asin"], None, float(r["cost"]), r["source"], r["as_of"].isoformat()] for r in rows]}
+
+
 @app.get("/api/engine/profit/status")
 async def engine_profit_status(request: Request):
     auth.require_engine_key(request)
