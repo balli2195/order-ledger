@@ -280,8 +280,7 @@ if p is a new cut below every rival:
     $('#frozen').innerHTML = fz.length ? '<b>Cuts paused now:</b>' + fz.map(([k, v]) => `<div class="frz"><span class="mono">${esc(k)}</span> until ${esc(when(v.until))} <span class="muted">— ${esc(v.why)}</span>${owner() ? ` <button class="btn small ghost" data-unfreeze="${esc(k)}">Allow cuts</button>` : ''}</div>`).join('') : 'No SKUs have cuts paused.';
     const ba = sh.by_action || {}, total = sh.decisions || 0, chg = sh.changes_suggested || 0;
     const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
-    $('#stats').innerHTML = stat('Mode', live ? 'Live' : 'Shadow', live ? `${cfg.skus.length} live SKUs` : 'logs only, no price changes', true) +
-      stat('Decisions', total.toLocaleString(), `since the recorder started ${when(o.recorder_started)}`) +
+    $('#stats').innerHTML = stat('Decisions', total.toLocaleString(), `since the recorder started ${when(o.recorder_started)}`) +
       stat('Would change', chg.toLocaleString(), total ? `${(chg / total * 100).toFixed(1)}% of decisions` : '') +
       stat('Live changes made', (lv.stats.applied || 0).toLocaleString(), lv.stats.last_applied ? 'last ' + when(lv.stats.last_applied) : 'none yet') +
       stat('Inputs', `${(sh.foep_known || 0).toLocaleString()} targets`, `${(sh.skus_priced || 0).toLocaleString()} SKUs priced · Amazon fees for ${(sh.fees_known || 0).toLocaleString()} · rival stock on ${(sh.rival_stock_known || 0).toLocaleString()} listings`) +
