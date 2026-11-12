@@ -13,7 +13,8 @@ import httpx
 from . import db
 
 URL = os.environ.get("RECORDER_URL", "https://offer-recorder.onrender.com").rstrip("/")
-SETTABLE = ("enabled", "skus", "max_step_pct", "min_interval_s", "max_per_day", "decay_per_day", "min_gain_abs", "min_gain_rel")
+SETTABLE = ("enabled", "skus", "max_step_pct", "min_interval_s", "max_per_day", "chase_window_min", "chase_cuts", "freeze_h", "max_drop_pct",
+            "decay_per_day", "decay_auto", "min_gain_abs", "min_gain_rel")
 
 
 async def _key() -> str:
@@ -60,6 +61,14 @@ async def overview() -> dict:
     lv = await call("GET", "/live")
     return {"recorder_started": s.get("started"), "shadow": s.get("shadow"), "live": lv, "inputs": {
         k: s.get(k) for k in ("offers", "foep", "inventory", "keepa", "listings")}, "disk": s.get("disk")}
+
+
+async def components() -> dict | None:
+    """The recorder's own list of streams and repricer parts (GET /components), for the system map. None if unreachable."""
+    try:
+        return await call("GET", "/components", timeout=8)
+    except Exception:
+        return None
 
 
 async def set_config(upd: dict) -> dict:

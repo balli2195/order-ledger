@@ -77,6 +77,8 @@
   .card .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .card .nm { font-weight: 600; font-size: 14.5px; }
   .card .what { font-size: 13px; }
+  .card .parts { font-size: 12px; display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .card .part .muted { font-size: 11.5px; }
   .card .meta { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
   .card .meta b { color: var(--ink); font-weight: 500; }
   .card .warn { font-size: 12px; color: #8a5a00; background: color-mix(in srgb, #e0a100 14%, transparent); border-radius: 6px; padding: 4px 8px; }
@@ -222,6 +224,11 @@
       if (c) { c.live = true; if (!c.what) c.what = j.code_doc; }
       else comps.push({ id: j.id, kind: 'hub_job', name: j.name, area: 'other', what: j.code_doc || 'A new background job in the Hub. Its explanation is written by tonight’s check.', when: 'Runs inside the Hub', sched: { type: 'continuous' }, isNew: true, live: true });
     }
+    for (const sv of d.live.services || []) {   // outside servers that list their own parts (the offer recorder)
+      let c = byId.get(sv.id);
+      if (!c) { c = { id: sv.id, kind: 'server', name: sv.name, area: 'other', isNew: true }; comps.push(c); byId.set(c.id, c); }
+      c.live = true; c.parts = sv.parts || []; if (sv.what) c.what = sv.what;   // the server's own description is the current one
+    }
     for (const c of comps) {
       if ((c.kind === 'page' || c.kind === 'hub_job') && !c.live && !c.removed) c.gone = true;   // removed from the code since the last check
       // Last time this part talked to the Hub (engine API), straight from the Hub's own log
@@ -247,6 +254,11 @@
       if (r.status === 'ok') return { cls: 'st-ok', text: `Last run OK · ${ago(r.at)}` };
       if (c.sched?.type === 'manual') return { cls: 'st-q', text: 'Runs when started (no schedule)' };
       return { cls: 'st-q', text: 'Hasn’t run yet' };
+    }
+    if (c.parts && c.parts.length) {
+      const bad = c.parts.filter((p) => p.last_error && p.last_error !== 'not configured');
+      const last = c.parts.map((p) => p.last).filter(Boolean).sort().pop();
+      return bad.length ? { cls: 'st-bad', text: `${bad.length} part${bad.length === 1 ? '' : 's'} reporting an error` } : { cls: 'st-ok', text: `Running · last activity ${ago(last)}` };
     }
     if (c.hub_last) return c.hub_status >= 400 ? { cls: 'st-bad', text: `Last Hub call failed (${c.hub_status}) · ${ago(c.hub_last)}` } : { cls: 'st-ok', text: `Last active ${ago(c.hub_last)}` };
     if (c.table_last) return { cls: 'st-ok', text: `Last active ${ago(c.table_last)}` };
@@ -476,6 +488,9 @@
         ${writes.length ? `<div>Changes or sends: <b>${esc(writes.join(', '))}</b></div>` : ''}
         ${c.asks ? `<div>Needs you for: <b>${esc(c.asks)}</b></div>` : ''}
       </div>
+      ${c.parts && c.parts.length ? `<div class="parts">${c.parts.map((p) => `<div class="part"><b>${esc(p.name)}</b> <span class="muted">· ${esc(p.when || '')}</span>
+        <span class="${p.last_error && p.last_error !== 'not configured' ? 'st-bad' : p.last ? 'st-ok' : 'st-q'}">· ${p.last_error ? esc(p.last_error === 'not configured' ? 'not set up' : 'error: ' + p.last_error) : p.state === 'off' ? 'off' : p.last ? 'last ' + esc(ago(p.last)) : 'not run yet'}</span>
+        <div class="muted">${esc(p.what || '')}</div></div>`).join('')}</div>` : ''}
       ${(c.warn || []).map((w) => `<div class="warn">${esc(w)}</div>`).join('')}
       ${links.length ? `<div class="links">${links.join('')}</div>` : ''}
     </div>`;

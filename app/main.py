@@ -1897,6 +1897,16 @@ async def api_repricer_stop(request: Request):
     return r
 
 
+@app.post("/api/repricer/unfreeze")
+async def api_repricer_unfreeze(request: Request, body: dict = Body(...)):
+    """Lets a SKU the chase brake paused take price cuts again (owner only)."""
+    user = await auth.require(request, role="owner", tab="repricer")
+    sku = str(body.get("sku") or "")
+    r = await _rp(rp.call, "POST", "/live/unfreeze", body={"sku": sku})
+    await rp.audit(user, "unfreeze", {"sku": sku}, r.get("frozen"))
+    return r
+
+
 @app.post("/api/repricer/key")
 async def api_repricer_key(request: Request, body: dict = Body(...)):
     user = await auth.require(request, role="owner", tab="repricer")

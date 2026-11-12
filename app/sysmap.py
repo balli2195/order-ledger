@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import auth, db
+from . import repricer as rp
 from . import docs as hubdocs
 
 REPO = Path(__file__).resolve().parent.parent
@@ -126,7 +127,8 @@ def pages() -> list[dict]:
     out = []
     for key, (label, path) in auth.TABS.items():
         mod = {"tasks": "tasks", "timeclock": "timeclock", "commissions": "commissions", "reimbursements": "inbound",
-               "profit": "profit", "sephora_leads": "sephora", "leads": "leads", "orders": "orders", "prepos": "prepos"}.get(key)
+               "profit": "profit", "sephora_leads": "sephora", "leads": "leads", "orders": "orders", "prepos": "prepos",
+               "repricer": "repricer"}.get(key)
         out.append({"id": f"page:{key}", "kind": "page", "name": label, "path": path,
                     "own_page": key in auth.PAGE_TABS or key == "system_map",
                     "code_doc": _doc_summary(mod) if mod else ""})
@@ -189,6 +191,17 @@ async def table_activity() -> dict:
     return out
 
 
+async def services() -> list[dict]:
+    """Outside servers that describe their own parts. Today: the offer recorder (GET /components), so each recording
+    stream and repricer part shows on the map with its schedule, last run and last error, and a new one appears by itself."""
+    out = []
+    rec = await rp.components()
+    if rec:
+        out.append({"id": "server:offer-recorder", "name": "Offer recorder", "what": rec.get("what"), "parts": rec.get("components") or [],
+                    "started": rec.get("started"), "url": "https://dashboard.render.com"})
+    return out
+
+
 async def build(app) -> dict:
     await flush()
     reg = await hubdocs.get("system_map/registry")
@@ -198,6 +211,7 @@ async def build(app) -> dict:
             "pages": pages(), "hub_jobs": hub_jobs(), "engine_routes": engine_routes(app),
             "repo_jobs": repo_jobs(), "doc_collections": await doc_collections(),
             "engine_calls": await call_stats(), "tables": await table_activity(),
+            "services": await services(),
         },
         "registry": (reg or {}).get("data") or {},
         "registry_version": (reg or {}).get("version", 0),

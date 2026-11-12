@@ -59,6 +59,9 @@
   .sku-add .list div:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .tag { font-size: 11px; color: var(--muted); }
   .act.live { background: var(--accent); color: var(--accent-ink); }
+  h4.sub { font-size: 13.5px; margin: 14px 0 4px; }
+  .frz { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 3px 0; }
+  .neg { color: var(--bad, #b3261e); }
 </style>
 </head>
 <body>
@@ -99,7 +102,13 @@
       <div class="toggle-row"><label class="switch"><input type="checkbox" id="enabled"><span></span></label><span>Change prices on the live SKUs below</span></div>
       <div class="field"><span>Max change per step (%)<small>Moves toward the recommended price in steps no bigger than this.</small></span><input id="max_step_pct" type="number" step="0.5" min="0.5" max="10"></div>
       <div class="field"><span>Minutes between changes<small>Per SKU, at least 2.</small></span><input id="min_interval_m" type="number" step="1" min="2"></div>
-      <div class="field"><span>Max changes per SKU per day</span><input id="max_per_day" type="number" step="1" min="1" max="96"></div>
+      <h4 class="sub">Brakes on runs of price cuts</h4>
+      <div class="field"><span>Pause cuts after this many answered cuts<small>A cut is "answered" when a rival moves to or below your new price soon after. Raises and holds still go through.</small></span><input id="chase_cuts" type="number" step="1" min="1" max="5"></div>
+      <div class="field"><span>…answered within (minutes)</span><input id="chase_window_min" type="number" step="5" min="5" max="240"></div>
+      <div class="field"><span>Pause cuts for (hours)</span><input id="freeze_h" type="number" step="0.5" min="0.5" max="48"></div>
+      <div class="field"><span>Max drop in 24 h (%)<small>Below the SKU's highest price in the last 24 hours, however many steps.</small></span><input id="max_drop_pct" type="number" step="1" min="1" max="50"></div>
+      <div class="field"><span>Max changes per SKU per day<small>Backstop against bugs; the day runs midnight to midnight Central.</small></span><input id="max_per_day" type="number" step="1" min="1" max="144"></div>
+      <div id="frozen" class="hint" style="margin:6px 0 0"></div>
       <div class="row"><button class="btn danger" id="stop" hidden>Stop live pricing</button><span class="grow"></span></div>
     </div>
     <div class="card">
@@ -107,7 +116,9 @@
       <p class="hint">These apply to shadow and live decisions alike.</p>
       <div class="field"><span>Minimum gain to change ($/day)<small>Expected extra value over the next 24 h needed before it recommends a change.</small></span><input id="min_gain_abs" type="number" step="0.25" min="0"></div>
       <div class="field"><span>…and at least (%)<small>Of the current price's expected value.</small></span><input id="min_gain_rel" type="number" step="1" min="0" max="100"></div>
-      <div class="field"><span>Cost of waiting to sell (% of price per day)<small>Capital, storage and price erosion. Higher = more eager to sell now.</small></span><input id="decay_pct" type="number" step="0.05" min="0" max="2"></div>
+      <div class="toggle-row"><label class="switch"><input type="checkbox" id="decay_auto"><span></span></label><span>Cost of waiting from my store's return on inventory</span></div>
+      <p class="hint" id="capLine" style="margin:2px 0 8px"></p>
+      <div class="field"><span>Cost of waiting to sell (% of price per day)<small>Used when the switch above is off. Higher = more eager to sell now.</small></span><input id="decay_pct" type="number" step="0.05" min="0" max="2"></div>
       <div class="row owner-only hidden"><span class="grow"></span><button class="btn" id="save">Save settings</button></div>
     </div>
     <div class="card">
@@ -146,6 +157,7 @@
       <li><b>Value</b> = units it expects to sell × (net proceeds − what the unit is worth if kept and sold later near today's low, less the cost of waiting). What you paid is treated as sunk, so below-cost liquidation listings still sell.</li>
       <li><b>Live only when all three are true:</b> the Render setting <code>LIVE_MODE=on</code>, "Change prices" ticked here, and the SKU is a live SKU with Seller Snap repricing off.</li>
       <li><b>Every live change:</b> within min/max, no bigger than the step limit, not sooner than the minutes between changes, within the daily cap; logged below. "Stop live pricing" switches it off at once.</li>
+      <li><b>Brakes on runs of cuts:</b> if a rival answers your cuts (moves to or below your new price within the window) the set number of times in a row, cuts on that SKU pause for the set hours and the SKU is listed under Live pricing. A cut also never takes the price more than the max drop below its highest point in the last 24 hours. Raises aren't braked: they're bounded by your max and correct themselves on the next offer change.</li>
     </ul>
 
     <h4>Models, algorithms and logic</h4>
@@ -179,13 +191,15 @@
     <ul>
       <li><b>Sales per Buy Box hour</b> = Seller Snap 30-day units/day ÷ 24 ÷ your Seller Snap Buy Box share (floored at 25%, so it never assumes more than 4× today's sales if you won every Buy Box).</li>
       <li><b>Units in the next 24 h</b> at price p = sales per Buy Box hour × 24 × Buy Box chance(p), never more than your stock.</li>
-      <li><b>Fees(p)</b> = referral (15%; 8% at $10 or less) × p + a fixed part (FBA and other fees), backed out of Seller Snap's ROI for the SKU.</li>
+      <li><b>Fees(p)</b> come from Amazon's own fee estimate for the SKU (Product Fees API), pulled daily at a price under $10, $10–$50 and over $50, so the steps are exact: referral 8% at $10.00 or less and 15% above (for beauty), and the FBA fee's lower rate under $10 and higher rate over $50. Until a SKU's fees are loaded it uses 8%/15% plus a typical FBA fee, and says so in "Why".</li>
+      <li><b>Profit</b> per unit = price − Amazon fees − cost − $1.40 prep; <b>ROI</b> = profit ÷ cost, the way Seller Snap figures it. Seller Snap's own ROI column is the same formula at your average sale price over about the last week, not at today's price.</li>
       <li>Not yet modelled: how much demand itself changes with price (needs small live price tests).</li>
     </ul>
 
     <h5>4. Value of each candidate price (the decision)</h5>
     <pre class="fx">days to sell   = your stock ÷ today's expected daily sales            (max 180)
 value if kept  = (lowest rival − fees at that price) × (1 − cost of waiting × days to sell ÷ 2)
+cost of waiting = profit per day ÷ money in inventory (cost + prep), across the store, when the switch is on
 value(p)       = units(p) × [(p − fees(p)) − value if kept] − price-war penalty(p)
 
 if p is a new cut below every rival:
@@ -193,7 +207,8 @@ if p is a new cut below every rival:
                    r = most reactive rival's rate at the low,  f = its lag ÷ 24 h
   penalty        = price-war drop(r) × lowest rival × (1 − referral) × min(stock, 30 days of sales)</pre>
     <ul>
-      <li>What you paid is treated as sunk: a unit is worth its net proceeds if sold now, or the discounted value of selling it later if kept. That's why below-cost liquidation stock still sells, and why it's patient when stock will sell through soon anyway.</li>
+      <li>What you paid (cost and prep) is treated as sunk: a unit is worth its net proceeds if sold now, or the discounted value of selling it later if kept. That's why below-cost liquidation stock still sells, and why it's patient when stock will sell through soon anyway.</li>
+      <li><b>Cost of waiting:</b> a sale pushed back a day costs about what that cash would have earned back in inventory for a day. With the switch on it's your store's own figure (profit a day ÷ money in inventory), updated hourly. <b>Gain/day</b> is the value difference; <b>Profit/day</b> shows the plain 24-hour profit at each price, so you can see when it gives up sales today for a better price.</li>
       <li><b>Choice:</b> the candidate with the highest value. It recommends a change only if that beats the current price by at least the minimum gain ($ per day <i>and</i> % — see "How it decides") and by 1¢ or more; otherwise <i>Hold</i>.</li>
       <li><b>Labels:</b> Raise to target, Raise to next offer (1¢ under the next rival when you're alone at the low), Raise, Lower to target, Match lowest, Undercut.</li>
       <li>Without a fresh target price only three moves are considered (tie, 1¢ under the lowest rival, next offer − 1¢), because the model without a target is much weaker.</li>
@@ -221,6 +236,8 @@ if p is a new cut below every rival:
                 lower: ['Lower to target', 'down'], match_low: ['Match lowest', 'down'], undercut: ['Undercut', 'down'] };
   const pill = (a) => { const [t, c] = ACT[a] || [a, 'hold']; return `<span class="act ${c}">${esc(t)}</span>`; };
   const pct = (v) => v == null ? '—' : Math.round(v * 100) + '%';
+  const pm = (v) => `<span class="${v < 0 ? 'neg' : ''}">${money(v)}</span>`;
+  const roi = (v) => `<span class="${v < 0 ? 'neg' : ''}">${(v * 100).toFixed(1)}%</span>`;
 
   async function loadOverview() {
     const o = await api('GET', '/api/repricer/overview'); S.ov = o;
@@ -235,17 +252,24 @@ if p is a new cut below every rival:
     if (!S.dirty) {
       $('#enabled').checked = !!cfg.enabled; $('#max_step_pct').value = cfg.max_step_pct; $('#min_interval_m').value = Math.round(cfg.min_interval_s / 60);
       $('#max_per_day').value = cfg.max_per_day; $('#min_gain_abs').value = cfg.min_gain_abs; $('#min_gain_rel').value = Math.round(cfg.min_gain_rel * 100);
-      $('#decay_pct').value = (cfg.decay_per_day * 100).toFixed(2);
+      $('#decay_pct').value = (cfg.decay_per_day * 100).toFixed(2); $('#decay_auto').checked = cfg.decay_auto !== false;
+      ['chase_cuts', 'chase_window_min', 'freeze_h', 'max_drop_pct'].forEach((k) => { $('#' + k).value = cfg[k]; });
     }
     $('#stop').hidden = !(owner() && cfg.enabled);
-    ['enabled', 'max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct'].forEach((id) => { $('#' + id).disabled = !owner(); });
+    ['enabled', 'max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct', 'decay_auto', 'chase_cuts', 'chase_window_min', 'freeze_h', 'max_drop_pct'].forEach((id) => { $('#' + id).disabled = !owner(); });
+    if ($('#decay_auto').checked) $('#decay_pct').disabled = true;
+    const cap = sh.capital;
+    $('#capLine').innerHTML = cap ? `Your store now: <b>${(cap.per_day * 100).toFixed(2)}% a day</b> = ${money(cap.profit_per_day, 0)} profit a day ÷ ${money(cap.capital, 0)} in inventory at cost + prep (on hand and inbound; ${cap.days_of_stock} days of stock, ${(cap.roi_per_turn * 100).toFixed(1)}% ROI per turn). Updated hourly from Seller Snap.`
+      : 'Worked out from the next Seller Snap snapshot.';
+    const fz = Object.entries(lv.stats.frozen || {});
+    $('#frozen').innerHTML = fz.length ? '<b>Cuts paused now:</b>' + fz.map(([k, v]) => `<div class="frz"><span class="mono">${esc(k)}</span> until ${esc(when(v.until))} <span class="muted">— ${esc(v.why)}</span>${owner() ? ` <button class="btn small ghost" data-unfreeze="${esc(k)}">Allow cuts</button>` : ''}</div>`).join('') : 'No SKUs have cuts paused.';
     const ba = sh.by_action || {}, total = sh.decisions || 0, chg = sh.changes_suggested || 0;
     const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
     $('#stats').innerHTML = stat('Mode', live ? 'Live' : 'Shadow', live ? `${cfg.skus.length} live SKUs` : 'logs only, no price changes', true) +
       stat('Decisions', total.toLocaleString(), `since the recorder started ${when(o.recorder_started)}`) +
       stat('Would change', chg.toLocaleString(), total ? `${(chg / total * 100).toFixed(1)}% of decisions` : '') +
       stat('Live changes made', (lv.stats.applied || 0).toLocaleString(), lv.stats.last_applied ? 'last ' + when(lv.stats.last_applied) : 'none yet') +
-      stat('Inputs', `${(sh.foep_known || 0).toLocaleString()} targets`, `${(sh.skus_priced || 0).toLocaleString()} SKUs priced · rival stock on ${(sh.rival_stock_known || 0).toLocaleString()} listings`) +
+      stat('Inputs', `${(sh.foep_known || 0).toLocaleString()} targets`, `${(sh.skus_priced || 0).toLocaleString()} SKUs priced · Amazon fees for ${(sh.fees_known || 0).toLocaleString()} · rival stock on ${(sh.rival_stock_known || 0).toLocaleString()} listings`) +
       stat('Last decision', when(sh.last_decision), sh.last_error ? `<span class="warn">${esc(sh.last_error)}</span>` : 'no errors');
     const blocked = Object.entries(lv.stats.blocked || {}).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ');
     const vv = ((sh.model_info || {}).validation || {}).bb_foep || {};
@@ -290,13 +314,16 @@ if p is a new cut below every rival:
     const V = S.dec.slice().reverse().filter((d) => (!a || d.action === a) && (!ch || d.action !== 'hold') &&
       (!q || [d.asin, d.sku, titles[d.sku]].some((x) => String(x || '').toLowerCase().includes(q)))).slice(0, 400);
     $('#decCount').textContent = `${V.length} shown of ${S.dec.length} recent decisions`;
-    $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>ASIN</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num">Recommended</th><th class="num">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num">Gain/day</th><th>Why</th></tr></thead><tbody>' +
+    $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>ASIN</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num">Recommended</th><th class="num">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num" title="Your profit over the next 24 h after Amazon fees, cost and $1.40 prep: at your price → at the recommended price">Profit/day</th><th class="num" title="Profit per unit ÷ cost, as Seller Snap figures it">ROI</th><th class="num" title="Expected extra value over 24 h vs keeping your price, counting units not sold today at what they would fetch later">Gain/day</th><th>Why</th></tr></thead><tbody>' +
       (V.length ? V.map((d) => `<tr><td>${when(d.t)}</td><td><a href="https://www.amazon.com/dp/${esc(d.asin)}" target="_blank" rel="noopener">${esc(d.asin)}</a><div class="tag mono">${esc(d.sku)}</div></td>
         <td class="prod" title="${esc(titles[d.sku] || '')}">${esc(titles[d.sku] || '')}</td><td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
         <td class="num">${money(d.my_price)}</td><td class="num"><b>${money(d.rec_price)}</b></td><td class="num">${money(d.low_rival)}</td><td class="num">${d.foep ? money(d.foep) : '—'}</td>
-        <td class="num">${pct(d.cur && d.cur.p_win)} → ${pct(d.best && d.best.p_win)}</td><td class="num">${d.gain_24h ? money(d.gain_24h) : '—'}</td>
+        <td class="num">${pct(d.cur && d.cur.p_win)} → ${pct(d.best && d.best.p_win)}</td>
+        <td class="num">${d.profit_day_now == null ? '—' : `${pm(d.profit_day_now)}${d.action !== 'hold' ? ' → ' + pm(d.profit_day_rec) : ''}`}</td>
+        <td class="num">${d.roi_now == null ? '—' : `${roi(d.roi_now)}${d.action !== 'hold' ? ' → ' + roi(d.roi_rec) : ''}`}</td>
+        <td class="num">${d.gain_24h ? money(d.gain_24h) : '—'}</td>
         <td class="why">${esc((d.reasons || []).join(' · '))}${d.days_to_sell != null ? ` · ${d.qty} units, ~${d.days_to_sell} days to sell` : ''}</td></tr>`).join('')
-        : '<tr><td colspan="11" class="empty">No decisions match.</td></tr>') + '</tbody>';
+        : '<tr><td colspan="13" class="empty">No decisions match.</td></tr>') + '</tbody>';
   }
 
   async function loadLog() {
@@ -311,7 +338,8 @@ if p is a new cut below every rival:
     const cfg = S.ov.live.config;
     const body = Object.assign({ enabled: $('#enabled').checked, max_step_pct: Number($('#max_step_pct').value), min_interval_s: Number($('#min_interval_m').value) * 60,
       max_per_day: Number($('#max_per_day').value), min_gain_abs: Number($('#min_gain_abs').value), min_gain_rel: Number($('#min_gain_rel').value) / 100,
-      decay_per_day: Number($('#decay_pct').value) / 100, skus: cfg.skus }, extra || {});
+      decay_per_day: Number($('#decay_pct').value) / 100, decay_auto: $('#decay_auto').checked, chase_cuts: Number($('#chase_cuts').value),
+      chase_window_min: Number($('#chase_window_min').value), freeze_h: Number($('#freeze_h').value), max_drop_pct: Number($('#max_drop_pct').value), skus: cfg.skus }, extra || {});
     if (body.enabled && !cfg.enabled) {
       const bad = body.skus.filter((k) => (S.skus.find((s) => s.sku === k) || {}).ss_repricing !== false);
       if (!confirm(`Turn on live pricing for ${body.skus.length} SKU${body.skus.length === 1 ? '' : 's'}? The repricer will change these prices on Amazon within your Seller Snap min/max.` +
@@ -322,8 +350,11 @@ if p is a new cut below every rival:
 
   $('#save').addEventListener('click', () => save().catch(fail));
   $('#enabled').addEventListener('change', () => save().catch(fail));
-  ['max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct'].forEach((id) => $('#' + id).addEventListener('input', () => { S.dirty = true; }));
-  ['max_step_pct', 'min_interval_m', 'max_per_day'].forEach((id) => $('#' + id).addEventListener('change', () => save().catch(fail)));
+  ['max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct', 'chase_cuts', 'chase_window_min', 'freeze_h', 'max_drop_pct'].forEach((id) => $('#' + id).addEventListener('input', () => { S.dirty = true; }));
+  ['max_step_pct', 'min_interval_m', 'max_per_day', 'chase_cuts', 'chase_window_min', 'freeze_h', 'max_drop_pct'].forEach((id) => $('#' + id).addEventListener('change', () => save().catch(fail)));
+  $('#decay_auto').addEventListener('change', () => save().catch(fail));
+  $('#frozen').addEventListener('click', async (e) => { const b = e.target.closest('[data-unfreeze]'); if (!b) return;
+    try { await api('POST', '/api/repricer/unfreeze', { sku: b.dataset.unfreeze }); toast('Cuts allowed again for ' + b.dataset.unfreeze); await loadOverview(); } catch (err) { fail(err); } });
   $('#stop').addEventListener('click', async () => { if (!confirm('Stop live pricing now?')) return; try { await api('POST', '/api/repricer/stop'); toast('Live pricing stopped'); S.dirty = false; await loadOverview(); } catch (e) { fail(e); } });
   $('#keySave').addEventListener('click', async () => { try { await api('POST', '/api/repricer/key', { key: $('#keyIn').value }); toast('Connected'); await refresh(); } catch (e) { fail(e); } });
   $('#liveTbl').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; save({ skus: S.ov.live.config.skus.filter((k) => k !== b.dataset.rm) }).then(loadSkus).catch(fail); });
