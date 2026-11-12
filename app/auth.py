@@ -42,9 +42,10 @@ TABS = {
     "reimbursements": ("Reimbursements", "/reimbursements"),
     "profit": ("Profit", "/profit"),
     "gift_cards": ("Gift cards", "/gift-cards"),
+    "repricer": ("Repricer", "/repricer"),
     "system_map": ("System map", "/system"),
 }
-PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "sephora_leads", "tasks", "timeclock", "commissions", "reimbursements", "profit", "gift_cards")   # tabs that are their own page, in menu order
+PAGE_TABS = ("leads", "orders", "stores", "inventory_health", "sephora_leads", "tasks", "timeclock", "commissions", "reimbursements", "profit", "gift_cards", "repricer")   # tabs that are their own page, in menu order
 
 
 @dataclass

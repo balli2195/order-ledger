@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repricer · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .rp-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 26px 0 0; }
+  .rp-head h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; margin: 0; }
+  .rp-sub { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 880px; }
+  .mode { font-size: 12px; font-weight: 700; border-radius: 99px; padding: 3px 10px; letter-spacing: .02em; }
+  .mode.shadow { background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--ink); }
+  .mode.live { background: var(--accent); color: var(--accent-ink); }
+  .stats .stat.main { border-color: var(--accent); }
+  .stats .stat .sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; margin-top: 16px; }
+  .card { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 4px; font-size: 15px; }
+  .card p.hint { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+  .field { display: grid; grid-template-columns: 1fr 110px; gap: 8px; align-items: center; margin: 7px 0; font-size: 13.5px; }
+  .field small { display: block; color: var(--muted); font-size: 11.5px; }
+  .field input { text-align: right; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .row .grow { flex: 1; }
+  .btn.danger { background: #b3261e; border-color: #b3261e; color: #fff; }
+  .toggle-row { display: flex; align-items: center; gap: 10px; font-size: 14px; margin: 6px 0 10px; }
+  .btn[hidden], .card[hidden] { display: none !important; }
+  .filters label > input[type=checkbox] { width: 16px; height: 16px; appearance: auto; -webkit-appearance: checkbox; padding: 0; }
+  .switch span { flex: 1; white-space: normal; }
+  .warn { color: #b3261e; }
+  .okc { color: var(--ok); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 8px; }
+  .filters input[type=search] { width: 260px; }
+  .filters select, .filters label { width: auto; flex: 0 0 auto; }
+  .filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+  table.rp td, table.rp th { white-space: nowrap; }
+  table.rp td.num, table.rp th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.rp td.why { white-space: normal; min-width: 260px; max-width: 420px; color: var(--muted); font-size: 12px; }
+  table.rp td.prod { max-width: 260px; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  .act { font-size: 11px; border-radius: 99px; padding: 1px 8px; font-weight: 700; }
+  .act.hold { background: color-mix(in srgb, var(--muted) 14%, transparent); }
+  .act.up { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+  .act.down { color: #b3261e; background: color-mix(in srgb, #b3261e 11%, transparent); }
+  h3.sec { font-family: var(--serif); font-weight: 400; font-size: 21px; margin: 26px 0 0; }
+  details.how { margin-top: 22px; font-size: 13.5px; color: var(--ink); max-width: 900px; }
+  details.how summary { cursor: pointer; font-weight: 600; }
+  details.how li { margin: 4px 0; }
+  .sku-add { position: relative; }
+  .sku-add .list { position: absolute; z-index: 5; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; max-height: 260px; overflow: auto; width: 460px; display: none; }
+  .sku-add .list div { padding: 6px 10px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .sku-add .list div:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .tag { font-size: 11px; color: var(--muted); }
+  .act.live { background: var(--accent); color: var(--accent-ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><h1 class="brand">Myrddin Hub</h1></div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/lead-db" data-tab="sephora_leads">Lead DB</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/repricer" data-tab="repricer" class="on">Repricer</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+
+  <div class="rp-head"><h2>Repricer</h2><span id="mode" class="mode shadow">…</span></div>
+  <p class="rp-sub">Your own repricer. It runs inside the offer recorder (not on the Hub) and, on every Amazon offer change for one of your listings, works out the price it would set:
+    your Buy Box chance at each candidate price (from Amazon's target price for you, the lowest rival, stock), how likely the rivals are to follow a cut, and the value of selling a unit now
+    versus later. In <b>shadow mode</b> it only logs what it would do. It changes a price only when live pricing is switched on for a SKU (see Settings) — and never outside that SKU's Seller Snap min/max.</p>
+
+  <div id="connect" class="card" hidden style="margin-top:16px">
+    <h3>Connect the Hub to the repricer</h3>
+    <p class="hint">Paste the offer recorder key once (it's in the project's offer-recorder README). It's stored on the Hub server and never shown in the browser. Or add <code>RECORDER_KEY</code> in Render → order-ledger → Environment.</p>
+    <div class="row"><input id="keyIn" type="password" placeholder="Recorder key" style="width:360px"><button class="btn" id="keySave">Connect</button></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="cards">
+    <div class="card">
+      <h3>Live pricing</h3>
+      <p class="hint" id="envLine"></p>
+      <div class="toggle-row"><label class="switch"><input type="checkbox" id="enabled"><span></span></label><span>Change prices on the live SKUs below</span></div>
+      <div class="field"><span>Max change per step (%)<small>Moves toward the recommended price in steps no bigger than this.</small></span><input id="max_step_pct" type="number" step="0.5" min="0.5" max="10"></div>
+      <div class="field"><span>Minutes between changes<small>Per SKU, at least 2.</small></span><input id="min_interval_m" type="number" step="1" min="2"></div>
+      <div class="field"><span>Max changes per SKU per day</span><input id="max_per_day" type="number" step="1" min="1" max="96"></div>
+      <div class="row"><button class="btn danger" id="stop" hidden>Stop live pricing</button><span class="grow"></span></div>
+    </div>
+    <div class="card">
+      <h3>How it decides</h3>
+      <p class="hint">These apply to shadow and live decisions alike.</p>
+      <div class="field"><span>Minimum gain to change ($/day)<small>Expected extra value over the next 24 h needed before it recommends a change.</small></span><input id="min_gain_abs" type="number" step="0.25" min="0"></div>
+      <div class="field"><span>…and at least (%)<small>Of the current price's expected value.</small></span><input id="min_gain_rel" type="number" step="1" min="0" max="100"></div>
+      <div class="field"><span>Cost of waiting to sell (% of price per day)<small>Capital, storage and price erosion. Higher = more eager to sell now.</small></span><input id="decay_pct" type="number" step="0.05" min="0" max="2"></div>
+      <div class="row owner-only hidden"><span class="grow"></span><button class="btn" id="save">Save settings</button></div>
+    </div>
+    <div class="card">
+      <h3>Model</h3>
+      <div id="model" class="hint" style="margin:0"></div>
+    </div>
+  </div>
+
+  <h3 class="sec">Live SKUs</h3>
+  <p class="rp-sub">Only these SKUs can be repriced live. Turn <b>Seller Snap repricing off</b> for each one first — the repricer refuses any SKU Seller Snap is still repricing, so the two can't fight.</p>
+  <div class="row owner-only hidden">
+    <div class="sku-add"><input type="search" id="skuSearch" placeholder="Add a SKU: search SKU, ASIN or title" style="width:360px"><div class="list" id="skuList"></div></div>
+    <span class="tag" id="skuCount"></span>
+  </div>
+  <div class="table-wrap"><table class="rp" id="liveTbl"></table></div>
+
+  <h3 class="sec">Decisions</h3>
+  <div class="filters">
+    <input type="search" id="q" placeholder="ASIN, SKU or title">
+    <select id="act"><option value="">Any action</option></select>
+    <label><input type="checkbox" id="changes" checked> Changes only</label>
+    <span class="tag" id="decCount"></span>
+  </div>
+  <div class="table-wrap"><table class="rp" id="decTbl"></table></div>
+
+  <h3 class="sec">Live price changes</h3>
+  <div class="table-wrap"><table class="rp" id="logTbl"></table></div>
+
+  <details class="how">
+    <summary>How it works, and the safety rules</summary>
+    <ul>
+      <li><b>When it decides:</b> within about 2 minutes of any Amazon offer change on one of your listings (at most once per listing every 2 minutes).</li>
+      <li><b>Prices it considers:</b> your current price, tie the lowest rival, 1¢ under it; when Amazon's target price for you is fresh (read in the last 45 min) also the target and ±1–2% steps. Always inside the SKU's Seller Snap min and max.</li>
+      <li><b>Buy Box chance</b> comes from a model trained nightly on the last 7 days of your own data (your price vs the target and vs the lowest rival, number of rivals, your share of stock).</li>
+      <li><b>Undercuts</b> account for how often that rival follows (learned per rival) and a price-war penalty: how far the listing's lowest price typically falls in the next 24 h.</li>
+      <li><b>Value</b> = units it expects to sell × (net proceeds − what the unit is worth if kept and sold later near today's low, less the cost of waiting). What you paid is treated as sunk, so below-cost liquidation listings still sell.</li>
+      <li><b>Live only when all three are true:</b> the Render setting <code>LIVE_MODE=on</code>, "Change prices" ticked here, and the SKU is a live SKU with Seller Snap repricing off.</li>
+      <li><b>Every live change:</b> within min/max, no bigger than the step limit, not sooner than the minutes between changes, within the daily cap; logged below. "Stop live pricing" switches it off at once.</li>
+    </ul>
+  </details>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(() => {
+  const { $, esc, money, api, fail, toast } = LG;
+  const S = { ov: null, skus: [], dec: [], log: [], me: null, dirty: false };
+  const owner = () => S.me && S.me.role === 'owner';
+  const when = (t) => t ? new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  const ACT = { hold: ['Hold', 'hold'], raise_to_target: ['Raise to target', 'up'], raise_to_next: ['Raise to next offer', 'up'], raise: ['Raise', 'up'],
+                lower: ['Lower to target', 'down'], match_low: ['Match lowest', 'down'], undercut: ['Undercut', 'down'] };
+  const pill = (a) => { const [t, c] = ACT[a] || [a, 'hold']; return `<span class="act ${c}">${esc(t)}</span>`; };
+  const pct = (v) => v == null ? '—' : Math.round(v * 100) + '%';
+
+  async function loadOverview() {
+    const o = await api('GET', '/api/repricer/overview'); S.ov = o;
+    $('#connect').hidden = o.connected || !owner();
+    if (!o.connected) { $('#mode').textContent = 'Not connected'; $('#stats').innerHTML = ''; return; }
+    const lv = o.live, cfg = lv.config, sh = o.shadow || {}, env = (lv.env_live_mode || 'off').toLowerCase() === 'on';
+    const live = env && cfg.enabled && cfg.skus.length;
+    $('#mode').className = 'mode ' + (live ? 'live' : 'shadow');
+    $('#mode').textContent = live ? `LIVE on ${cfg.skus.length} SKU${cfg.skus.length === 1 ? '' : 's'}` : 'Shadow mode';
+    $('#envLine').innerHTML = env ? '<span class="okc">Render switch is on</span> (LIVE_MODE=on). Live pricing also needs the box below ticked.'
+      : 'Render switch is <b>off</b>: nothing can be repriced live until <code>LIVE_MODE</code> = <code>on</code> is added in Render → offer-recorder → Environment.';
+    if (!S.dirty) {
+      $('#enabled').checked = !!cfg.enabled; $('#max_step_pct').value = cfg.max_step_pct; $('#min_interval_m').value = Math.round(cfg.min_interval_s / 60);
+      $('#max_per_day').value = cfg.max_per_day; $('#min_gain_abs').value = cfg.min_gain_abs; $('#min_gain_rel').value = Math.round(cfg.min_gain_rel * 100);
+      $('#decay_pct').value = (cfg.decay_per_day * 100).toFixed(2);
+    }
+    $('#stop').hidden = !(owner() && cfg.enabled);
+    ['enabled', 'max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct'].forEach((id) => { $('#' + id).disabled = !owner(); });
+    const ba = sh.by_action || {}, total = sh.decisions || 0, chg = sh.changes_suggested || 0;
+    const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    $('#stats').innerHTML = stat('Mode', live ? 'Live' : 'Shadow', live ? `${cfg.skus.length} live SKUs` : 'logs only, no price changes', true) +
+      stat('Decisions', total.toLocaleString(), `since the recorder started ${when(o.recorder_started)}`) +
+      stat('Would change', chg.toLocaleString(), total ? `${(chg / total * 100).toFixed(1)}% of decisions` : '') +
+      stat('Live changes made', (lv.stats.applied || 0).toLocaleString(), lv.stats.last_applied ? 'last ' + when(lv.stats.last_applied) : 'none yet') +
+      stat('Inputs', `${(sh.foep_known || 0).toLocaleString()} targets`, `${(sh.skus_priced || 0).toLocaleString()} SKUs priced · rival stock on ${(sh.rival_stock_known || 0).toLocaleString()} listings`) +
+      stat('Last decision', when(sh.last_decision), sh.last_error ? `<span class="warn">${esc(sh.last_error)}</span>` : 'no errors');
+    const blocked = Object.entries(lv.stats.blocked || {}).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ');
+    $('#model').innerHTML = `Trained <b>${esc(when(sh.model_trained_at))}</b> on the last 7 days; retrained nightly at 3:17 AM.<br>` +
+      `Actions so far: ${Object.entries(ba).map(([k, v]) => `${(ACT[k] || [k])[0]} ${v}`).join(' · ') || '—'}` + (blocked ? `<br>Live changes blocked: ${blocked}` : '');
+    renderLive();
+  }
+
+  function renderLive() {
+    if (!S.ov || !S.ov.connected) { $('#liveTbl').innerHTML = ''; return; }
+    const set = new Set(S.ov.live.config.skus), by = Object.fromEntries(S.skus.map((s) => [s.sku, s]));
+    const rows = [...set].map((k) => by[k] || { sku: k });
+    $('#skuCount').textContent = `${rows.length} live SKU${rows.length === 1 ? '' : 's'}`;
+    $('#liveTbl').innerHTML = '<thead><tr><th>SKU</th><th>ASIN</th><th>Product</th><th>Seller Snap</th><th class="num">Min</th><th class="num">Max</th><th class="num">Stock</th><th>Latest decision</th><th></th></tr></thead><tbody>' +
+      (rows.length ? rows.map((s) => { const d = s.decision;
+        return `<tr><td class="mono">${esc(s.sku)}</td><td>${s.asin ? `<a href="https://www.amazon.com/dp/${esc(s.asin)}" target="_blank" rel="noopener">${esc(s.asin)}</a>` : '—'}</td>
+        <td class="prod" title="${esc(s.title || '')}">${esc(s.title || '')}</td>
+        <td>${s.ss_repricing == null ? '<span class="muted">?</span>' : s.ss_repricing ? '<span class="warn">⚠ still repricing — turn off</span>' : '<span class="okc">off ✓</span>'}</td>
+        <td class="num">${money(s.min)}</td><td class="num">${money(s.max)}</td><td class="num">${s.fulfillable ?? '—'}</td>
+        <td>${d ? `${pill(d.action)} ${money(d.my_price)} → ${money(d.rec_price)} <span class="tag">${when(d.t)}</span>` : '<span class="muted">none yet</span>'}</td>
+        <td>${owner() ? `<button class="btn small ghost" data-rm="${esc(s.sku)}">Remove</button>` : ''}</td></tr>`; }).join('')
+        : '<tr><td colspan="9" class="empty">No live SKUs. Add one above once Seller Snap repricing is off for it.</td></tr>') + '</tbody>';
+  }
+
+  async function loadSkus() { S.skus = await api('GET', '/api/repricer/skus'); renderLive(); }
+
+  async function loadDecisions() {
+    S.dec = await api('GET', '/api/repricer/decisions?n=1500');
+    const acts = [...new Set(S.dec.map((d) => d.action))];
+    const sel = $('#act'), cur = sel.value; sel.innerHTML = '<option value="">Any action</option>' + acts.map((a) => `<option value="${a}">${esc((ACT[a] || [a])[0])}</option>`).join(''); sel.value = cur;
+    renderDec();
+  }
+
+  function renderDec() {
+    const q = $('#q').value.trim().toLowerCase(), a = $('#act').value, ch = $('#changes').checked;
+    const titles = Object.fromEntries(S.skus.map((s) => [s.sku, s.title]));
+    const V = S.dec.slice().reverse().filter((d) => (!a || d.action === a) && (!ch || d.action !== 'hold') &&
+      (!q || [d.asin, d.sku, titles[d.sku]].some((x) => String(x || '').toLowerCase().includes(q)))).slice(0, 400);
+    $('#decCount').textContent = `${V.length} shown of ${S.dec.length} recent decisions`;
+    $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>ASIN</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num">Recommended</th><th class="num">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num">Gain/day</th><th>Why</th></tr></thead><tbody>' +
+      (V.length ? V.map((d) => `<tr><td>${when(d.t)}</td><td><a href="https://www.amazon.com/dp/${esc(d.asin)}" target="_blank" rel="noopener">${esc(d.asin)}</a><div class="tag mono">${esc(d.sku)}</div></td>
+        <td class="prod" title="${esc(titles[d.sku] || '')}">${esc(titles[d.sku] || '')}</td><td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
+        <td class="num">${money(d.my_price)}</td><td class="num"><b>${money(d.rec_price)}</b></td><td class="num">${money(d.low_rival)}</td><td class="num">${d.foep ? money(d.foep) : '—'}</td>
+        <td class="num">${pct(d.cur && d.cur.p_win)} → ${pct(d.best && d.best.p_win)}</td><td class="num">${d.gain_24h ? money(d.gain_24h) : '—'}</td>
+        <td class="why">${esc((d.reasons || []).join(' · '))}${d.days_to_sell != null ? ` · ${d.qty} units, ~${d.days_to_sell} days to sell` : ''}</td></tr>`).join('')
+        : '<tr><td colspan="11" class="empty">No decisions match.</td></tr>') + '</tbody>';
+  }
+
+  async function loadLog() {
+    S.log = await api('GET', '/api/repricer/log?days=7');
+    $('#logTbl').innerHTML = '<thead><tr><th>When</th><th>SKU</th><th>ASIN</th><th>Action</th><th class="num">From</th><th class="num">To</th><th class="num">Recommended</th><th>Amazon</th></tr></thead><tbody>' +
+      (S.log.length ? S.log.map((r) => `<tr><td>${when(r.t)}</td><td class="mono">${esc(r.sku)}</td><td>${esc(r.asin || '')}</td><td>${pill(r.action)}</td><td class="num">${money(r.from)}</td><td class="num"><b>${money(r.to)}</b></td><td class="num">${money(r.target_rec)}</td>
+        <td>${r.error ? `<span class="warn">${esc(r.error)}</span>` : esc(r.response_status || r.status_code || '')}${(r.issues || []).length ? ` <span class="warn" title="${esc(JSON.stringify(r.issues))}">issues</span>` : ''}</td></tr>`).join('')
+        : '<tr><td colspan="8" class="empty">No live price changes. In shadow mode nothing is changed.</td></tr>') + '</tbody>';
+  }
+
+  async function save(extra) {
+    const cfg = S.ov.live.config;
+    const body = Object.assign({ enabled: $('#enabled').checked, max_step_pct: Number($('#max_step_pct').value), min_interval_s: Number($('#min_interval_m').value) * 60,
+      max_per_day: Number($('#max_per_day').value), min_gain_abs: Number($('#min_gain_abs').value), min_gain_rel: Number($('#min_gain_rel').value) / 100,
+      decay_per_day: Number($('#decay_pct').value) / 100, skus: cfg.skus }, extra || {});
+    if (body.enabled && !cfg.enabled) {
+      const bad = body.skus.filter((k) => (S.skus.find((s) => s.sku === k) || {}).ss_repricing !== false);
+      if (!confirm(`Turn on live pricing for ${body.skus.length} SKU${body.skus.length === 1 ? '' : 's'}? The repricer will change these prices on Amazon within your Seller Snap min/max.` +
+        (bad.length ? `\n\n${bad.length} of them still show Seller Snap repricing on (or unknown); those stay untouched until it's off.` : ''))) { $('#enabled').checked = false; return; }
+    }
+    const r = await api('POST', '/api/repricer/settings', body); S.ov.live.config = r.config; S.dirty = false; toast('Saved'); await loadOverview();
+  }
+
+  $('#save').addEventListener('click', () => save().catch(fail));
+  $('#enabled').addEventListener('change', () => save().catch(fail));
+  ['max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct'].forEach((id) => $('#' + id).addEventListener('input', () => { S.dirty = true; }));
+  ['max_step_pct', 'min_interval_m', 'max_per_day'].forEach((id) => $('#' + id).addEventListener('change', () => save().catch(fail)));
+  $('#stop').addEventListener('click', async () => { if (!confirm('Stop live pricing now?')) return; try { await api('POST', '/api/repricer/stop'); toast('Live pricing stopped'); S.dirty = false; await loadOverview(); } catch (e) { fail(e); } });
+  $('#keySave').addEventListener('click', async () => { try { await api('POST', '/api/repricer/key', { key: $('#keyIn').value }); toast('Connected'); await refresh(); } catch (e) { fail(e); } });
+  $('#liveTbl').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; save({ skus: S.ov.live.config.skus.filter((k) => k !== b.dataset.rm) }).then(loadSkus).catch(fail); });
+  $('#skuSearch').addEventListener('input', () => {
+    const q = $('#skuSearch').value.trim().toLowerCase(), L = $('#skuList'), set = new Set(S.ov?.live?.config?.skus || []);
+    if (q.length < 2) { L.style.display = 'none'; return; }
+    const hits = S.skus.filter((s) => !set.has(s.sku) && [s.sku, s.asin, s.title].some((x) => String(x || '').toLowerCase().includes(q))).slice(0, 30);
+    L.innerHTML = hits.map((s) => `<div data-add="${esc(s.sku)}"><b class="mono">${esc(s.sku)}</b> · ${esc(s.asin)} · ${esc((s.title || '').slice(0, 60))} ${s.ss_repricing ? '<span class="warn">(Seller Snap on)</span>' : ''}</div>`).join('') || '<div class="muted">No match</div>';
+    L.style.display = 'block';
+  });
+  $('#skuList').addEventListener('click', (e) => { const d = e.target.closest('[data-add]'); if (!d) return; $('#skuList').style.display = 'none'; $('#skuSearch').value = '';
+    save({ skus: [...S.ov.live.config.skus, d.dataset.add] }).then(loadSkus).catch(fail); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.sku-add')) $('#skuList').style.display = 'none'; });
+  ['q', 'act', 'changes'].forEach((id) => $('#' + id).addEventListener('input', renderDec));
+
+  async function refresh() {
+    await loadOverview();
+    if (S.ov && S.ov.connected) { await loadSkus(); await Promise.all([loadDecisions(), loadLog()]); }
+  }
+  LG.header().then((me) => { S.me = me; return refresh(); }).catch(fail);
+  setInterval(() => refresh().catch(() => {}), 30000);
+})();
+</script>
+</body>
+</html>

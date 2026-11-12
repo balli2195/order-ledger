@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import httpx
 import contextlib
 import html
 import json
@@ -34,6 +35,7 @@ from . import inbound
 from . import sephora
 from . import sysmap
 from . import giftcards as gc
+from . import repricer as rp
 from .mcp_server import BASE_URL, mcp, provider
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -1835,6 +1837,82 @@ async def engine_giftcard_balances(request: Request, body: dict = Body(...)):
     return await gc.engine_balances(body.get("source") or "arbitragecard", body.get("rows") or [])
 
 
+# ---------------------------------------------------------------- repricer (app/repricer.py; the repricer itself runs in the offer recorder)
+@app.get("/repricer", include_in_schema=False)
+async def repricer_page(request: Request):
+    return await _page(request, "repricer", "repricer.html")
+
+
+async def _rp(fn, *a, **kw):
+    try:
+        return await fn(*a, **kw)
+    except rp.RecorderError as e:
+        raise HTTPException(502, str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Couldn't reach the recorder: {type(e).__name__}")
+
+
+@app.get("/api/repricer/overview")
+async def api_repricer_overview(request: Request):
+    await auth.require(request, tab="repricer")
+    src = await rp.key_source()
+    if src == "missing":
+        return {"connected": False, "key_source": src}
+    return dict(await _rp(rp.overview), connected=True, key_source=src)
+
+
+@app.get("/api/repricer/decisions")
+async def api_repricer_decisions(request: Request, n: int = 300, action: str | None = None, asin: str | None = None, sku: str | None = None):
+    await auth.require(request, tab="repricer")
+    params = {k: v for k, v in dict(n=min(n, 2000), action=action, asin=asin, sku=sku).items() if v}
+    return await _rp(rp.call, "GET", "/shadow", params=params)
+
+
+@app.get("/api/repricer/skus")
+async def api_repricer_skus(request: Request):
+    await auth.require(request, tab="repricer")
+    return await _rp(rp.call, "GET", "/repricer/skus", timeout=60)
+
+
+@app.get("/api/repricer/log")
+async def api_repricer_log(request: Request, days: int = 7):
+    await auth.require(request, tab="repricer")
+    return await _rp(rp.call, "GET", "/live/log", params={"days": min(days, 30)})
+
+
+@app.post("/api/repricer/settings")
+async def api_repricer_settings(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, role="owner", tab="repricer")
+    before = (await _rp(rp.call, "GET", "/live"))["config"]
+    r = await _rp(rp.set_config, body)
+    await rp.audit(user, "update", before, r.get("config"))
+    return r
+
+
+@app.post("/api/repricer/stop")
+async def api_repricer_stop(request: Request):
+    user = await auth.require(request, role="owner", tab="repricer")
+    r = await _rp(rp.call, "POST", "/live/stop")
+    await rp.audit(user, "stop", None, r.get("config"))
+    return r
+
+
+@app.post("/api/repricer/key")
+async def api_repricer_key(request: Request, body: dict = Body(...)):
+    user = await auth.require(request, role="owner", tab="repricer")
+    key = str(body.get("key") or "").strip()
+    if len(key) < 20:
+        raise HTTPException(400, "That doesn't look like the recorder key")
+    await rp.save_key(key)
+    try:
+        await rp.call("GET", "/live")
+    except Exception as e:
+        raise HTTPException(400, f"Saved, but the recorder didn't accept it: {e}")
+    await rp.audit(user, "connect", None, {"recorder": rp.URL})
+    return {"ok": True}
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 # The connector (/mcp) and its OAuth endpoints (/authorize, /token, /register, /.well-known/...).
 app.mount("/", mcp_app)
+
