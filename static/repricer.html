@@ -36,9 +36,13 @@
   .filters select, .filters label { width: auto; flex: 0 0 auto; }
   .filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
   table.rp td, table.rp th { white-space: nowrap; }
+  table.rp th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
+  .table-wrap { overflow-x: auto; }
+  table.rp td.when { line-height: 1.25; } table.rp td.when .tag { display: block; }   /* never cut a column off: scroll sideways if the window is narrow */
+  .cards, .stats, .rp-sub, details.how { max-width: 1320px; }
   table.rp td.num, table.rp th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  table.rp td.why { white-space: normal; min-width: 260px; max-width: 420px; color: var(--muted); font-size: 12px; }
-  table.rp td.prod { max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  table.rp td.why { white-space: normal; min-width: 200px; max-width: 360px; color: var(--muted); font-size: 12px; }
+  table.rp td.prod { max-width: 240px; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
   table.rp td.prod .prod-sub .sku { font: 11.5px var(--mono); color: var(--muted); }
   .act { font-size: 11px; border-radius: 99px; padding: 1px 8px; font-weight: 700; }
   .act.hold { background: color-mix(in srgb, var(--muted) 14%, transparent); }
@@ -66,7 +70,7 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap full">
   <header class="top">
     <div><h1 class="brand">Myrddin Hub</h1></div>
     <div class="who">
@@ -243,7 +247,8 @@ if p is a new cut below every rival:
     + `<div class="prod-sub">${asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener" title="Open on Amazon">${esc(asin)}</a><button class="copy-btn" data-copy="${esc(asin)}" title="Copy ASIN" aria-label="Copy ASIN ${esc(asin)}">${COPY_ICON}</button>` : '<span class="muted">no ASIN</span>'}`
     + `${sku ? `<span class="sku" title="SKU">${esc(sku)}</span>` : ''}</div></td>`;
   const pm = (v) => `<span class="${v < 0 ? 'neg' : ''}">${money(v)}</span>`;
-  const roi = (v) => `<span class="${v < 0 ? 'neg' : ''}">${(v * 100).toFixed(1)}%</span>`;
+  const roi = (v) => `<span class="${v < 0 ? 'neg' : ''}">${Math.round(v * 100)}%</span>`;
+  const when2 = (t) => { if (!t) return '—'; const d = new Date(t); return `${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}<span class="tag">${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`; };
 
   async function loadOverview() {
     const o = await api('GET', '/api/repricer/overview'); S.ov = o;
@@ -319,8 +324,8 @@ if p is a new cut below every rival:
     const V = S.dec.slice().reverse().filter((d) => (!a || d.action === a) && (!ch || d.action !== 'hold') &&
       (!q || [d.asin, d.sku, titles[d.sku]].some((x) => String(x || '').toLowerCase().includes(q)))).slice(0, 400);
     $('#decCount').textContent = `${V.length} shown of ${S.dec.length} recent decisions`;
-    $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num">Recommended</th><th class="num">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num" title="Your profit over the next 24 h after Amazon fees, cost and $1.40 prep: at your price → at the recommended price">Profit/day</th><th class="num" title="Profit per unit ÷ cost, as Seller Snap figures it">ROI</th><th class="num" title="Expected extra value over 24 h vs keeping your price, counting units not sold today at what they would fetch later">Gain/day</th><th>Why</th></tr></thead><tbody>' +
-      (V.length ? V.map((d) => `<tr><td>${when(d.t)}</td>${prodCell(titles[d.sku], d.asin, d.sku)}<td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
+    $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num" title="Recommended price">New price</th><th class="num">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num" title="Your profit over the next 24 h after Amazon fees, cost and $1.40 prep: at your price → at the recommended price">Profit/day</th><th class="num" title="Profit per unit ÷ cost, as Seller Snap figures it">ROI</th><th class="num" title="Expected extra value over 24 h vs keeping your price, counting units not sold today at what they would fetch later">Gain/day</th><th>Why</th></tr></thead><tbody>' +
+      (V.length ? V.map((d) => `<tr><td class="when">${when2(d.t)}</td>${prodCell(titles[d.sku], d.asin, d.sku)}<td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
         <td class="num">${money(d.my_price)}</td><td class="num"><b>${money(d.rec_price)}</b></td><td class="num">${money(d.low_rival)}</td><td class="num">${d.foep ? money(d.foep) : '—'}</td>
         <td class="num">${pct(d.cur && d.cur.p_win)} → ${pct(d.best && d.best.p_win)}</td>
         <td class="num">${d.profit_day_now == null ? '—' : `${pm(d.profit_day_now)}${d.action !== 'hold' ? ' → ' + pm(d.profit_day_rec) : ''}`}</td>
