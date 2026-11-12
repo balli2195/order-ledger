@@ -30,6 +30,11 @@
   .rp-head { align-items: center; } .rp-head .grow { flex: 1; }
   #setBtn .badge { background: #b3261e; color: #fff; border-radius: 99px; font-size: 11px; padding: 0 6px; margin-left: 2px; }
   #settings { margin-top: 14px; }
+  .live-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+  .live-bar .rp-sub { flex: 1 1 420px; margin: 0; }
+  .live-bar .sku-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .live-bar .sku-tools.hidden { display: none; }
+  .live-bar .sku-add .list { right: 0; }
   .filters label > input[type=checkbox] { width: 16px; height: 16px; appearance: auto; -webkit-appearance: checkbox; padding: 0; }
   .switch span { flex: 1; white-space: normal; }
   .warn { color: #b3261e; }
@@ -135,10 +140,12 @@
   </div>
 
   <h3 class="sec">Live SKUs</h3>
-  <p class="rp-sub">Only these SKUs can be repriced live. Turn <b>Seller Snap repricing off</b> for each one first — the repricer refuses any SKU Seller Snap is still repricing, so the two can't fight.</p>
-  <div class="row owner-only hidden">
-    <div class="sku-add"><input type="search" id="skuSearch" placeholder="Add a SKU: search SKU, ASIN or title" style="width:360px"><div class="list" id="skuList"></div></div>
-    <span class="tag" id="skuCount"></span>
+  <div class="live-bar">
+    <p class="rp-sub">Only these SKUs can be repriced live. Turn <b>Seller Snap repricing off</b> for each one first — the repricer refuses any SKU Seller Snap is still repricing, so the two can't fight.</p>
+    <div class="sku-tools owner-only hidden">
+      <div class="sku-add"><input type="search" id="skuSearch" placeholder="Add a SKU: search SKU, ASIN or title" style="width:360px"><div class="list" id="skuList"></div></div>
+      <span class="tag" id="skuCount"></span>
+    </div>
   </div>
   <div class="table-wrap"><table class="rp" id="liveTbl"></table></div>
 
