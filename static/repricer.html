@@ -30,6 +30,10 @@
   .rp-head { align-items: center; } .rp-head .grow { flex: 1; }
   #setBtn .badge { background: #b3261e; color: #fff; border-radius: 99px; font-size: 11px; padding: 0 6px; margin-left: 2px; }
   #settings { margin-top: 14px; }
+  .sup-dot.bo { background: #5b6b8c; }
+  table.rp td.num .tag { display: block; margin-top: 2px; }
+  h3.sec .tag { font-family: var(--sans, inherit); font-size: 12px; vertical-align: middle; }
+  table.rp td.st { white-space: normal; min-width: 180px; max-width: 280px; font-size: 12px; }
   .sup-dot { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #c27a12; color: #fff; font-size: 10.5px; font-weight: 800; line-height: 1; flex: 0 0 auto; cursor: default; }
   .live-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
   .live-bar .rp-sub { flex: 1 1 420px; margin: 0; }
@@ -150,6 +154,10 @@
   </div>
   <div class="table-wrap"><table class="rp" id="liveTbl"></table></div>
 
+  <h3 class="sec">Buy Box suppressed <span class="tag" id="supCount"></span></h3>
+  <p class="rp-sub">Listings where Amazon shows no Buy Box because every offer is above the price it sees at other retailers (Amazon's <b>competitive price</b>). The repricer matches the lowest offer on these. To get the Buy Box back, the price has to come down to the competitive price — compare it with your min and your break-even (Amazon fees + cost + $1.40 prep). Min changes go through the approvals sheet as usual.</p>
+  <div class="table-wrap"><table class="rp" id="supTbl"></table></div>
+
   <h3 class="sec">Decisions</h3>
   <div class="filters">
     <input type="search" id="q" placeholder="ASIN, SKU or title">
@@ -173,6 +181,7 @@
       <li><b>Live only when all three are true:</b> the Render setting <code>LIVE_MODE=on</code>, "Change prices" ticked here, and the SKU is a live SKU with Seller Snap repricing off.</li>
       <li><b>Every live change:</b> within min/max, no bigger than the step limit, not sooner than the minutes between changes, within the daily cap; logged below. "Stop live pricing" switches it off at once.</li>
       <li><b>Buy Box suppressed</b> (orange <span class="sup-dot" style="display:inline-grid;vertical-align:middle">S</span> on the row): Amazon shows no Buy Box on the listing — every offer is above the price Amazon sees at other retailers. The repricer then doesn't chase Amazon's target price; it matches the lowest offer on the listing (any fulfillment, price + shipping), within your min and max, and the step limit and brakes work from there. It spots suppression from Amazon's offer-change message (no Buy Box price and no winner). Suppressed moments are left out of the Buy Box model's training.</li>
+      <li><b>Backordered</b> (grey <span class="sup-dot bo" style="display:inline-grid;vertical-align:middle">B</span>): Amazon shows your FBA offer as not yet available (units inbound, in transfer or reserved). Like Seller Snap, the repricer makes no price cuts until the stock is available; raises still go through. Rival offers that are backordered are left out of the competition — they rarely get the Buy Box (13% at the low vs 33% for offers available now, Nov 12), so matching them would only pull the price down. Backordered moments of yours are left out of the Buy Box model's training.</li>
       <li><b>Brakes on runs of cuts:</b> if a rival answers your cuts (moves to or below your new price within the window) the set number of times in a row, cuts on that SKU pause for the set hours and the SKU is listed under Live pricing. A cut also never takes the price more than the max drop below its highest point in the last 24 hours. Raises aren't braked: they're bounded by your max and correct themselves on the next offer change.</li>
     </ul>
 
@@ -255,9 +264,10 @@ if p is a new cut below every rival:
   // Title on top; ASIN (link + copy) and SKU underneath, like the Leads page (Nick, Nov 12 2026)
   const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   const SUP_TIP = 'Buy Box suppressed: Amazon shows no Buy Box on this listing, so the repricer matches the lowest offer instead of chasing the Buy Box';
-  const prodCell = (title, asin, sku, sup) => `<td class="prod" title="${esc(title || '')}"><div class="prod-title">${esc(title || '') || '<span class="muted">—</span>'}</div>`
-    + `<div class="prod-sub">${sup ? `<span class="sup-dot" title="${SUP_TIP}" aria-label="Buy Box suppressed">S</span>` : ''}${asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener" title="Open on Amazon">${esc(asin)}</a><button class="copy-btn" data-copy="${esc(asin)}" title="Copy ASIN" aria-label="Copy ASIN ${esc(asin)}">${COPY_ICON}</button>` : '<span class="muted">no ASIN</span>'}`
+  const prodCell = (title, asin, sku, sup, bo) => `<td class="prod" title="${esc(title || '')}"><div class="prod-title">${esc(title || '') || '<span class="muted">—</span>'}</div>`
+    + `<div class="prod-sub">${sup ? `<span class="sup-dot" title="${SUP_TIP}" aria-label="Buy Box suppressed">S</span>` : ''}${bo ? `<span class="sup-dot bo" title="${BO_TIP}" aria-label="Backordered">B</span>` : ''}${asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener" title="Open on Amazon">${esc(asin)}</a><button class="copy-btn" data-copy="${esc(asin)}" title="Copy ASIN" aria-label="Copy ASIN ${esc(asin)}">${COPY_ICON}</button>` : '<span class="muted">no ASIN</span>'}`
     + `${sku ? `<span class="sku" title="SKU">${esc(sku)}</span>` : ''}</div></td>`;
+  const BO_TIP = 'Your offer is backordered (units inbound, in transfer or reserved): no price cuts until the stock is available, as Seller Snap does';
   const pm = (v) => `<span class="${v < 0 ? 'neg' : ''}">${money(v)}</span>`;
   const roi = (v) => `<span class="${v < 0 ? 'neg' : ''}">${Math.round(v * 100)}%</span>`;
   const when2 = (t) => { if (!t) return '—'; const d = new Date(t); return `${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}<span class="tag">${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`; };
@@ -314,7 +324,7 @@ if p is a new cut below every rival:
     $('#skuCount').textContent = `${rows.length} live SKU${rows.length === 1 ? '' : 's'}`;
     $('#liveTbl').innerHTML = '<thead><tr><th>Product</th><th>Seller Snap</th><th class="num">Min</th><th class="num">Max</th><th class="num">Stock</th><th>Latest decision</th><th></th></tr></thead><tbody>' +
       (rows.length ? rows.map((s) => { const d = s.decision;
-        return `<tr>${prodCell(s.title, s.asin, s.sku, d && d.suppressed)}
+        return `<tr>${prodCell(s.title, s.asin, s.sku, d && d.suppressed, d && d.backordered)}
         <td>${s.ss_repricing == null ? '<span class="muted">?</span>' : s.ss_repricing ? '<span class="warn">⚠ still repricing — turn off</span>' : '<span class="okc">off ✓</span>'}</td>
         <td class="num">${money(s.min)}</td><td class="num">${money(s.max)}</td><td class="num">${s.fulfillable ?? '—'}</td>
         <td>${d ? `${pill(d.action)} ${money(d.my_price)} → ${money(d.rec_price)} <span class="tag">${when(d.t)}</span>` : '<span class="muted">none yet</span>'}</td>
@@ -338,7 +348,7 @@ if p is a new cut below every rival:
       (!q || [d.asin, d.sku, titles[d.sku]].some((x) => String(x || '').toLowerCase().includes(q)))).slice(0, 400);
     $('#decCount').textContent = `${V.length} shown of ${S.dec.length} recent decisions`;
     $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num" title="Recommended price">New price</th><th class="num" title="Lowest rival FBA offer; on a suppressed listing, the lowest offer of any kind">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num" title="Your profit over the next 24 h after Amazon fees, cost and $1.40 prep: at your price → at the recommended price">Profit/day</th><th class="num" title="Profit per unit ÷ cost, as Seller Snap figures it">ROI</th><th class="num" title="Expected extra value over 24 h vs keeping your price, counting units not sold today at what they would fetch later">Gain/day</th><th>Why</th></tr></thead><tbody>' +
-      (V.length ? V.map((d) => `<tr><td class="when">${when2(d.t)}</td>${prodCell(titles[d.sku], d.asin, d.sku, d.suppressed)}<td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
+      (V.length ? V.map((d) => `<tr><td class="when">${when2(d.t)}</td>${prodCell(titles[d.sku], d.asin, d.sku, d.suppressed, d.backordered)}<td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
         <td class="num">${money(d.my_price)}</td><td class="num"><b>${money(d.rec_price)}</b></td><td class="num">${money(d.suppressed ? d.low_any : d.low_rival)}</td><td class="num">${d.foep ? money(d.foep) : '—'}</td>
         <td class="num">${d.suppressed ? '<span class="muted">suppressed</span>' : `${pct(d.cur && d.cur.p_win)} → ${pct(d.best && d.best.p_win)}`}</td>
         <td class="num">${d.profit_day_now == null ? '—' : `${pm(d.profit_day_now)}${d.action !== 'hold' ? ' → ' + pm(d.profit_day_rec) : ''}`}</td>
@@ -346,6 +356,21 @@ if p is a new cut below every rival:
         <td class="num">${d.gain_24h ? money(d.gain_24h) : '—'}</td>
         <td class="why">${esc((d.reasons || []).join(' · '))}${d.days_to_sell != null ? ` · ${d.qty} units, ~${d.days_to_sell} days to sell` : ''}</td></tr>`).join('')
         : '<tr><td colspan="12" class="empty">No decisions match.</td></tr>') + '</tbody>';
+  }
+
+  async function loadSuppressed() {
+    let L = [];
+    try { L = await api('GET', '/api/repricer/suppressed'); } catch (e) { $('#supTbl').innerHTML = `<tbody><tr><td class="empty">${esc(e.message)}</td></tr></tbody>`; return; }
+    const inv = L.reduce((a, r) => a + (r.inventory || 0), 0), units = L.reduce((a, r) => a + (r.qty || 0), 0);
+    $('#supCount').textContent = L.length ? `${L.length} listings · ${units.toLocaleString()} units · ${money(inv, 0)} at cost + prep` : '';
+    const cls = (r) => r.status.startsWith('at or above') ? 'okc' : r.status.startsWith('below your min') ? '' : 'warn';
+    $('#supTbl').innerHTML = '<thead><tr><th>Product</th><th class="num">Your price</th><th class="num" title="Lowest offer on the listing, any fulfillment, price + shipping">Lowest offer</th><th class="num" title="Amazon\'s competitive price: the price at other retailers that the offers must come down to for the Buy Box to show">Competitive price</th><th class="num" title="Amazon\'s Buy Box target price for your offer">Target</th><th class="num">Min</th><th class="num" title="Lowest price that loses nothing after Amazon fees, cost and $1.40 prep">Break-even</th><th class="num">Cost</th><th class="num">Units</th><th class="num" title="Units × (cost + prep)">Inventory</th><th class="num" title="Seller Snap 30-day units a day">Sales/day</th><th>What it would take</th></tr></thead><tbody>' +
+      (L.length ? L.map((r) => `<tr>${prodCell(r.title, r.asin, r.sku, true, r.decision && r.decision.backordered)}<td class="num">${money(r.my_price)}</td><td class="num">${money(r.low_any)}</td>
+        <td class="num"><b>${money(r.competitive_price)}</b>${r.was_price ? `<div class="tag">was ${money(r.was_price)}</div>` : ''}</td><td class="num">${money(r.target)}</td>
+        <td class="num">${money(r.min)}</td><td class="num">${money(r.breakeven)}</td><td class="num">${money(r.cost)}</td><td class="num">${(r.qty || 0).toLocaleString()}</td>
+        <td class="num">${money(r.inventory, 0)}</td><td class="num">${r.sales_per_day == null ? '—' : Number(r.sales_per_day).toFixed(2)}</td>
+        <td class="st"><span class="${cls(r)}">${esc(r.status)}</span>${r.since ? `<div class="tag">seen since ${esc(when(r.since))}</div>` : ''}</td></tr>`).join('')
+        : '<tr><td colspan="12" class="empty">No suppressed listings right now.</td></tr>') + '</tbody>';
   }
 
   async function loadLog() {
@@ -407,7 +432,7 @@ if p is a new cut below every rival:
 
   async function refresh() {
     await loadOverview();
-    if (S.ov && S.ov.connected) { await loadSkus(); await Promise.all([loadDecisions(), loadLog()]); }
+    if (S.ov && S.ov.connected) { await loadSkus(); await Promise.all([loadDecisions(), loadLog(), loadSuppressed()]); }
   }
   LG.header().then((me) => { S.me = me; return refresh(); }).catch(fail);
   setInterval(() => refresh().catch(() => {}), 30000);

@@ -1874,6 +1874,13 @@ async def api_repricer_skus(request: Request):
     return await _rp(rp.call, "GET", "/repricer/skus", timeout=60)
 
 
+@app.get("/api/repricer/suppressed")
+async def api_repricer_suppressed(request: Request):
+    """In-stock listings with the Buy Box suppressed, with Amazon's competitive price vs min, break-even and cost."""
+    await auth.require(request, tab="repricer")
+    return await _rp(rp.call, "GET", "/repricer/suppressed", timeout=60)
+
+
 @app.get("/api/repricer/log")
 async def api_repricer_log(request: Request, days: int = 7):
     await auth.require(request, tab="repricer")
