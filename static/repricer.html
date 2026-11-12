@@ -389,7 +389,7 @@ if p is a new cut below every rival:
         ${prodCell(r.title, r.asin, r.sku, d && d.suppressed, d && d.backordered)}
         <td><span class="st-pill ${esc(r.state)}" title="${esc(r.search_suppressed ? 'Amazon hides it from search: ' + r.search_suppressed : r.amazon_status ? 'Amazon: ' + r.amazon_status : '')}">${STATE_LBL[r.state] || esc(r.state)}</span>${r.channel === 'MFN' ? ' <span class="tag">MFN</span>' : ''}</td>
         <td>${!r.in_seller_snap ? '<span class="muted">not in Seller Snap</span>' : r.ss_repricing ? `<span class="warn">on</span>${r.preset ? ` <span class="tag">${esc(r.preset)}</span>` : ''}` : '<span class="okc">off ✓</span>'}</td>
-        <td class="num">${money(r.price)}</td><td class="num">${money(r.min)}</td><td class="num">${money(r.max)}</td>
+        <td class="num">${money(r.price)}</td>${limCell(r.min, r.ss_min, r.limit_src && r.limit_src.min)}${limCell(r.max, r.ss_max, r.limit_src && r.limit_src.max)}
         <td class="num">${(r.fulfillable || 0).toLocaleString()}${r.inbound ? `<span class="tag">+${r.inbound} inbound</span>` : ''}${r.reserved ? `<span class="tag">${r.reserved} reserved</span>` : ''}</td>
         <td class="num">${r.bb_share == null ? '—' : Math.round(r.bb_share) + '%'}</td><td class="num">${r.v30 == null ? '—' : Number(r.v30).toFixed(2)}</td>
         <td class="num">${r.roi == null ? '—' : `<span class="${r.roi < 0 ? 'neg' : ''}">${Math.round(r.roi)}%</span>`}</td>
@@ -397,6 +397,11 @@ if p is a new cut below every rival:
         : '<tr><td colspan="12" class="empty">No SKUs match these filters.</td></tr>') + '</tbody>';
   }
   async function loadSkus() { await loadTable(); }
+  // own min/max (with where it came from); Seller Snap's value underneath while it still differs by more than 5% (switch-over check)
+  function limCell(v, ss, src) {
+    const diff = v && ss ? Math.abs(v / ss - 1) : 0;
+    return `<td class="num" title="${esc(src ? 'From: ' + src : '')}">${money(v)}${diff > 0.05 ? `<span class="tag" title="Seller Snap's value">SS ${money(ss)}</span>` : ''}</td>`;
+  }
 
   async function loadDecisions() {
     S.dec = await api('GET', '/api/repricer/decisions?n=1500');
