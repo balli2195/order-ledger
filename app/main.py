@@ -1962,12 +1962,16 @@ async def api_repricer_overrides(request: Request, body: dict = Body(...)):
 
 @app.post("/api/engine/price-limits")
 async def engine_price_limits(request: Request, body: dict = Body(...)):
-    """For the liquidation run: liquidation mins Nick has approved (ticked). {rows:[{sku, min, note}], approved_by}.
-    Only rows Nick ticked may be sent here (same rule as the Seller Snap approvals sheet)."""
+    """Min/max overrides from Nick-authorized runs: {rows:[{sku, min, max, note}], source, approved_by}.
+    source: liquidation (the daily liquidation run's applied liquidation / aged-exit mins; a row with min and max both
+    empty clears the override, e.g. on an out-of-stock reset) or seller_snap_seed (one-time copy of Seller Snap mins, Nick Nov 12)."""
     auth.require_engine_key(request)
+    source = body.get("source") or "liquidation"
+    if source not in ("liquidation", "seller_snap_seed"):
+        raise HTTPException(400, "source must be liquidation or seller_snap_seed")
     rows = [{"sku": r.get("sku"), "min": r.get("min"), "max": r.get("max"), "note": r.get("note")} for r in body.get("rows") or []]
     try:
-        n = await rp.set_overrides(rows, "liquidation", body.get("approved_by") or "Nick (approvals sheet)")
+        n = await rp.set_overrides(rows, source, body.get("approved_by") or "liquidation run")
     except ValueError as e:
         raise HTTPException(400, str(e))
     try:
