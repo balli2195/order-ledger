@@ -269,7 +269,7 @@ if p is a new cut below every rival:
 
     <h5>5. Retraining and checks</h5>
     <ul>
-      <li>Retrained nightly at 3:17 AM Central on the last 7 days (GitHub Actions in the offer-recorder repo) and uploaded to the recorder; the Model card shows when.</li>
+      <li>Retrained nightly at 3:17 AM Central on the last 7 days, in a separate low-priority process on the recorder. The new Buy Box model is scored next to the current one on the same held-out 2 days and replaces it only if its AUC is no more than 0.005 lower and its Brier score no more than 0.005 higher, with at least 1,000 test moments and an average prediction within 5 points of what happened. Otherwise the current model stays and the Model card says why.</li>
       <li>Scorecard (<code>tools/evaluate.py</code>): predicted vs actual Buy Box share, the action mix, and how often Seller Snap ended up at the recommended price anyway. Run before any live test.</li>
       <li>Code: <code>shadow.py</code> (features, decision), <code>tools/train.py</code> (models), <code>live.py</code> (live executor and guardrails) in github.com/balli2195/offer-recorder.</li>
     </ul>
@@ -335,7 +335,13 @@ if p is a new cut below every rival:
       stat('Last decision', when(sh.last_decision), sh.last_error ? `<span class="warn">${esc(sh.last_error)}</span>` : 'no errors');
     const blocked = Object.entries(lv.stats.blocked || {}).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ');
     const vv = ((sh.model_info || {}).validation || {}).bb_foep || {};
-    $('#model').innerHTML = `Trained <b>${esc(when(sh.model_trained_at))}</b> on the last 7 days; retrained nightly at 3:17 AM.` + (vv.auc ? ` Held-out accuracy AUC <b>${vv.auc}</b> (details under "How it works").` : '') + `<br>` +
+    const rt = o.retrain || {};
+    const rtLine = rt.state === 'running' ? 'Retraining now…'
+      : rt.state === 'failed' ? `<span class="warn">Last retrain failed ${esc(when(rt.last_error ? rt.last_error.slice(0, 20) : ''))}: ${esc((rt.last_error || '').slice(21, 160))}</span>`
+      : rt.verdict === 'replace' ? `Last retrain ${esc(when(rt.last))}: new model swapped in (AUC ${rt.new_auc ?? '—'} vs ${rt.current_auc ?? '—'} for the old one on the same days).`
+      : rt.verdict ? `<span class="warn">Last retrain ${esc(when(rt.last))}: kept the current model — ${esc((rt.reasons || []).join('; '))}.</span>`
+      : `Next retrain ${esc(when(rt.next))}.`;
+    $('#model').innerHTML = `Trained <b>${esc(when(sh.model_trained_at))}</b> on the last 7 days; retrained nightly at 3:17 AM Central on the recorder, swapped in only if it scores at least as well.` + (vv.auc ? ` Held-out accuracy AUC <b>${vv.auc}</b> (details under "How it works").` : '') + `<br>${rtLine}<br>` +
       `Actions so far: ${Object.entries(ba).map(([k, v]) => `${(ACT[k] || [k])[0]} ${v}`).join(' · ') || '—'}` + (blocked ? `<br>Live changes blocked: ${blocked}` : '');
     const mi = sh.model_info || {}, v = mi.validation || {}, wf = v.bb_foep || {}, nf = v.bb_nofoep || {}, rd = mi.rival_default || {};
     $('#modelNow').innerHTML = mi.validation ? `Current model (trained ${esc(when(sh.model_trained_at))}): ${(mi.bb_rows || 0).toLocaleString()} training moments from ${(mi.messages || 0).toLocaleString()} Amazon messages over ${mi.window_days || 7} days.

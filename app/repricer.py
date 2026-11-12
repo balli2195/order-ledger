@@ -63,7 +63,7 @@ async def overview() -> dict:
     s = await call("GET", "/status")
     lv = await call("GET", "/live")
     return {"recorder_started": s.get("started"), "shadow": s.get("shadow"), "live": lv, "inputs": {
-        k: s.get(k) for k in ("offers", "foep", "inventory", "keepa", "listings")}, "disk": s.get("disk")}
+        k: s.get(k) for k in ("offers", "foep", "inventory", "keepa", "listings")}, "disk": s.get("disk"), "retrain": s.get("retrain")}
 
 
 async def components() -> dict | None:
