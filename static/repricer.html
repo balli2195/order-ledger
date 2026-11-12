@@ -38,7 +38,8 @@
   table.rp td, table.rp th { white-space: nowrap; }
   table.rp td.num, table.rp th.num { text-align: right; font-variant-numeric: tabular-nums; }
   table.rp td.why { white-space: normal; min-width: 260px; max-width: 420px; color: var(--muted); font-size: 12px; }
-  table.rp td.prod { max-width: 260px; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  table.rp td.prod { max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  table.rp td.prod .prod-sub .sku { font: 11.5px var(--mono); color: var(--muted); }
   .act { font-size: 11px; border-radius: 99px; padding: 1px 8px; font-weight: 700; }
   .act.hold { background: color-mix(in srgb, var(--muted) 14%, transparent); }
   .act.up { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
@@ -236,6 +237,11 @@ if p is a new cut below every rival:
                 lower: ['Lower to target', 'down'], match_low: ['Match lowest', 'down'], undercut: ['Undercut', 'down'] };
   const pill = (a) => { const [t, c] = ACT[a] || [a, 'hold']; return `<span class="act ${c}">${esc(t)}</span>`; };
   const pct = (v) => v == null ? '—' : Math.round(v * 100) + '%';
+  // Title on top; ASIN (link + copy) and SKU underneath, like the Leads page (Nick, Nov 12 2026)
+  const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  const prodCell = (title, asin, sku) => `<td class="prod" title="${esc(title || '')}"><div class="prod-title">${esc(title || '') || '<span class="muted">—</span>'}</div>`
+    + `<div class="prod-sub">${asin ? `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener" title="Open on Amazon">${esc(asin)}</a><button class="copy-btn" data-copy="${esc(asin)}" title="Copy ASIN" aria-label="Copy ASIN ${esc(asin)}">${COPY_ICON}</button>` : '<span class="muted">no ASIN</span>'}`
+    + `${sku ? `<span class="sku" title="SKU">${esc(sku)}</span>` : ''}</div></td>`;
   const pm = (v) => `<span class="${v < 0 ? 'neg' : ''}">${money(v)}</span>`;
   const roi = (v) => `<span class="${v < 0 ? 'neg' : ''}">${(v * 100).toFixed(1)}%</span>`;
 
@@ -288,15 +294,14 @@ if p is a new cut below every rival:
     const set = new Set(S.ov.live.config.skus), by = Object.fromEntries(S.skus.map((s) => [s.sku, s]));
     const rows = [...set].map((k) => by[k] || { sku: k });
     $('#skuCount').textContent = `${rows.length} live SKU${rows.length === 1 ? '' : 's'}`;
-    $('#liveTbl').innerHTML = '<thead><tr><th>SKU</th><th>ASIN</th><th>Product</th><th>Seller Snap</th><th class="num">Min</th><th class="num">Max</th><th class="num">Stock</th><th>Latest decision</th><th></th></tr></thead><tbody>' +
+    $('#liveTbl').innerHTML = '<thead><tr><th>Product</th><th>Seller Snap</th><th class="num">Min</th><th class="num">Max</th><th class="num">Stock</th><th>Latest decision</th><th></th></tr></thead><tbody>' +
       (rows.length ? rows.map((s) => { const d = s.decision;
-        return `<tr><td class="mono">${esc(s.sku)}</td><td>${s.asin ? `<a href="https://www.amazon.com/dp/${esc(s.asin)}" target="_blank" rel="noopener">${esc(s.asin)}</a>` : '—'}</td>
-        <td class="prod" title="${esc(s.title || '')}">${esc(s.title || '')}</td>
+        return `<tr>${prodCell(s.title, s.asin, s.sku)}
         <td>${s.ss_repricing == null ? '<span class="muted">?</span>' : s.ss_repricing ? '<span class="warn">⚠ still repricing — turn off</span>' : '<span class="okc">off ✓</span>'}</td>
         <td class="num">${money(s.min)}</td><td class="num">${money(s.max)}</td><td class="num">${s.fulfillable ?? '—'}</td>
         <td>${d ? `${pill(d.action)} ${money(d.my_price)} → ${money(d.rec_price)} <span class="tag">${when(d.t)}</span>` : '<span class="muted">none yet</span>'}</td>
         <td>${owner() ? `<button class="btn small ghost" data-rm="${esc(s.sku)}">Remove</button>` : ''}</td></tr>`; }).join('')
-        : '<tr><td colspan="9" class="empty">No live SKUs. Add one above once Seller Snap repricing is off for it.</td></tr>') + '</tbody>';
+        : '<tr><td colspan="7" class="empty">No live SKUs. Add one above once Seller Snap repricing is off for it.</td></tr>') + '</tbody>';
   }
 
   async function loadSkus() { S.skus = await api('GET', '/api/repricer/skus'); renderLive(); }
@@ -314,24 +319,23 @@ if p is a new cut below every rival:
     const V = S.dec.slice().reverse().filter((d) => (!a || d.action === a) && (!ch || d.action !== 'hold') &&
       (!q || [d.asin, d.sku, titles[d.sku]].some((x) => String(x || '').toLowerCase().includes(q)))).slice(0, 400);
     $('#decCount').textContent = `${V.length} shown of ${S.dec.length} recent decisions`;
-    $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>ASIN</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num">Recommended</th><th class="num">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num" title="Your profit over the next 24 h after Amazon fees, cost and $1.40 prep: at your price → at the recommended price">Profit/day</th><th class="num" title="Profit per unit ÷ cost, as Seller Snap figures it">ROI</th><th class="num" title="Expected extra value over 24 h vs keeping your price, counting units not sold today at what they would fetch later">Gain/day</th><th>Why</th></tr></thead><tbody>' +
-      (V.length ? V.map((d) => `<tr><td>${when(d.t)}</td><td><a href="https://www.amazon.com/dp/${esc(d.asin)}" target="_blank" rel="noopener">${esc(d.asin)}</a><div class="tag mono">${esc(d.sku)}</div></td>
-        <td class="prod" title="${esc(titles[d.sku] || '')}">${esc(titles[d.sku] || '')}</td><td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
+    $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num">Recommended</th><th class="num">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num" title="Your profit over the next 24 h after Amazon fees, cost and $1.40 prep: at your price → at the recommended price">Profit/day</th><th class="num" title="Profit per unit ÷ cost, as Seller Snap figures it">ROI</th><th class="num" title="Expected extra value over 24 h vs keeping your price, counting units not sold today at what they would fetch later">Gain/day</th><th>Why</th></tr></thead><tbody>' +
+      (V.length ? V.map((d) => `<tr><td>${when(d.t)}</td>${prodCell(titles[d.sku], d.asin, d.sku)}<td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
         <td class="num">${money(d.my_price)}</td><td class="num"><b>${money(d.rec_price)}</b></td><td class="num">${money(d.low_rival)}</td><td class="num">${d.foep ? money(d.foep) : '—'}</td>
         <td class="num">${pct(d.cur && d.cur.p_win)} → ${pct(d.best && d.best.p_win)}</td>
         <td class="num">${d.profit_day_now == null ? '—' : `${pm(d.profit_day_now)}${d.action !== 'hold' ? ' → ' + pm(d.profit_day_rec) : ''}`}</td>
         <td class="num">${d.roi_now == null ? '—' : `${roi(d.roi_now)}${d.action !== 'hold' ? ' → ' + roi(d.roi_rec) : ''}`}</td>
         <td class="num">${d.gain_24h ? money(d.gain_24h) : '—'}</td>
         <td class="why">${esc((d.reasons || []).join(' · '))}${d.days_to_sell != null ? ` · ${d.qty} units, ~${d.days_to_sell} days to sell` : ''}</td></tr>`).join('')
-        : '<tr><td colspan="13" class="empty">No decisions match.</td></tr>') + '</tbody>';
+        : '<tr><td colspan="12" class="empty">No decisions match.</td></tr>') + '</tbody>';
   }
 
   async function loadLog() {
     S.log = await api('GET', '/api/repricer/log?days=7');
-    $('#logTbl').innerHTML = '<thead><tr><th>When</th><th>SKU</th><th>ASIN</th><th>Action</th><th class="num">From</th><th class="num">To</th><th class="num">Recommended</th><th>Amazon</th></tr></thead><tbody>' +
-      (S.log.length ? S.log.map((r) => `<tr><td>${when(r.t)}</td><td class="mono">${esc(r.sku)}</td><td>${esc(r.asin || '')}</td><td>${pill(r.action)}</td><td class="num">${money(r.from)}</td><td class="num"><b>${money(r.to)}</b></td><td class="num">${money(r.target_rec)}</td>
+    $('#logTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">From</th><th class="num">To</th><th class="num">Recommended</th><th>Amazon</th></tr></thead><tbody>' +
+      (S.log.length ? S.log.map((r) => `<tr><td>${when(r.t)}</td>${prodCell((S.skus.find((x) => x.sku === r.sku) || {}).title, r.asin, r.sku)}<td>${pill(r.action)}</td><td class="num">${money(r.from)}</td><td class="num"><b>${money(r.to)}</b></td><td class="num">${money(r.target_rec)}</td>
         <td>${r.error ? `<span class="warn">${esc(r.error)}</span>` : esc(r.response_status || r.status_code || '')}${(r.issues || []).length ? ` <span class="warn" title="${esc(JSON.stringify(r.issues))}">issues</span>` : ''}</td></tr>`).join('')
-        : '<tr><td colspan="8" class="empty">No live price changes. In shadow mode nothing is changed.</td></tr>') + '</tbody>';
+        : '<tr><td colspan="7" class="empty">No live price changes. In shadow mode nothing is changed.</td></tr>') + '</tbody>';
   }
 
   async function save(extra) {
@@ -369,6 +373,13 @@ if p is a new cut below every rival:
     save({ skus: [...S.ov.live.config.skus, d.dataset.add] }).then(loadSkus).catch(fail); });
   document.addEventListener('click', (e) => { if (!e.target.closest('.sku-add')) $('#skuList').style.display = 'none'; });
   ['q', 'act', 'changes'].forEach((id) => $('#' + id).addEventListener('input', renderDec));
+  document.addEventListener('click', async (e) => {   // copy an ASIN, as on the Leads page
+    const b = e.target.closest('[data-copy]'); if (!b) return;
+    e.preventDefault();
+    try { await navigator.clipboard.writeText(b.dataset.copy); }
+    catch { const t = document.createElement('textarea'); t.value = b.dataset.copy; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } finally { t.remove(); } }
+    b.classList.add('done'); setTimeout(() => b.classList.remove('done'), 1200);
+  });
 
   async function refresh() {
     await loadOverview();
