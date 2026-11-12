@@ -26,7 +26,10 @@
   .row .grow { flex: 1; }
   .btn.danger { background: #b3261e; border-color: #b3261e; color: #fff; }
   .toggle-row { display: flex; align-items: center; gap: 10px; font-size: 14px; margin: 6px 0 10px; }
-  .btn[hidden], .card[hidden] { display: none !important; }
+  .btn[hidden], .card[hidden], .cards[hidden], .badge[hidden] { display: none !important; }
+  .rp-head { align-items: center; } .rp-head .grow { flex: 1; }
+  #setBtn .badge { background: #b3261e; color: #fff; border-radius: 99px; font-size: 11px; padding: 0 6px; margin-left: 2px; }
+  #settings { margin-top: 14px; }
   .filters label > input[type=checkbox] { width: 16px; height: 16px; appearance: auto; -webkit-appearance: checkbox; padding: 0; }
   .switch span { flex: 1; white-space: normal; }
   .warn { color: #b3261e; }
@@ -87,7 +90,9 @@
   </header>
   <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/lead-db" data-tab="sephora_leads">Lead DB</a><a href="/repricer" data-tab="repricer" class="on">Repricer</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
 
-  <div class="rp-head"><h2>Repricer</h2><span id="mode" class="mode shadow">…</span></div>
+  <div class="rp-head"><h2>Repricer</h2><span id="mode" class="mode shadow">…</span><span class="grow"></span>
+    <button class="btn danger" id="stopTop" hidden>Stop live pricing</button>
+    <button class="btn ghost" id="setBtn" aria-expanded="false" aria-controls="settings">⚙ Settings <span id="setBadge" class="badge" hidden></span> ▾</button></div>
 
   <div id="connect" class="card" hidden style="margin-top:16px">
     <h3>Connect the Hub to the repricer</h3>
@@ -97,7 +102,7 @@
 
   <div class="stats" id="stats"></div>
 
-  <div class="cards">
+  <div class="cards" id="settings" hidden>
     <div class="card">
       <h3>Live pricing</h3>
       <p class="hint" id="envLine"></p>
@@ -264,12 +269,14 @@ if p is a new cut below every rival:
       ['chase_cuts', 'chase_window_min', 'freeze_h', 'max_drop_pct'].forEach((k) => { $('#' + k).value = cfg[k]; });
     }
     $('#stop').hidden = !(owner() && cfg.enabled);
+    $('#stopTop').hidden = !(owner() && cfg.enabled);   // the stop stays reachable with Settings closed
     ['enabled', 'max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct', 'decay_auto', 'chase_cuts', 'chase_window_min', 'freeze_h', 'max_drop_pct'].forEach((id) => { $('#' + id).disabled = !owner(); });
     if ($('#decay_auto').checked) $('#decay_pct').disabled = true;
     const cap = sh.capital;
     $('#capLine').innerHTML = cap ? `Your store now: <b>${(cap.per_day * 100).toFixed(2)}% a day</b> = ${money(cap.profit_per_day, 0)} profit a day ÷ ${money(cap.capital, 0)} in inventory at cost + prep (on hand and inbound; ${cap.days_of_stock} days of stock, ${(cap.roi_per_turn * 100).toFixed(1)}% ROI per turn). Updated hourly from Seller Snap.`
       : 'Worked out from the next Seller Snap snapshot.';
     const fz = Object.entries(lv.stats.frozen || {});
+    $('#setBadge').hidden = !fz.length; $('#setBadge').textContent = fz.length ? `${fz.length} paused` : '';
     $('#frozen').innerHTML = fz.length ? '<b>Cuts paused now:</b>' + fz.map(([k, v]) => `<div class="frz"><span class="mono">${esc(k)}</span> until ${esc(when(v.until))} <span class="muted">— ${esc(v.why)}</span>${owner() ? ` <button class="btn small ghost" data-unfreeze="${esc(k)}">Allow cuts</button>` : ''}</div>`).join('') : 'No SKUs have cuts paused.';
     const ba = sh.by_action || {}, total = sh.decisions || 0, chg = sh.changes_suggested || 0;
     const stat = (k, v, sub, main) => `<div class="stat ${main ? 'main' : ''}"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
@@ -354,6 +361,12 @@ if p is a new cut below every rival:
     const r = await api('POST', '/api/repricer/settings', body); S.ov.live.config = r.config; S.dirty = false; toast('Saved'); await loadOverview();
   }
 
+  // Settings collapsed by default; remembered per browser (Nick, Nov 12 2026)
+  const setOpen = (open) => { $('#settings').hidden = !open; $('#setBtn').setAttribute('aria-expanded', String(open)); try { localStorage.setItem('rp_settings_open', open ? '1' : '0'); } catch { /* storage off */ } };
+  let wasOpen = false; try { wasOpen = localStorage.getItem('rp_settings_open') === '1'; } catch { /* storage off */ }
+  setOpen(wasOpen);
+  $('#setBtn').addEventListener('click', () => setOpen($('#settings').hidden));
+  $('#stopTop').addEventListener('click', () => $('#stop').click());
   $('#save').addEventListener('click', () => save().catch(fail));
   $('#enabled').addEventListener('change', () => save().catch(fail));
   ['max_step_pct', 'min_interval_m', 'max_per_day', 'min_gain_abs', 'min_gain_rel', 'decay_pct', 'chase_cuts', 'chase_window_min', 'freeze_h', 'max_drop_pct'].forEach((id) => $('#' + id).addEventListener('input', () => { S.dirty = true; }));
