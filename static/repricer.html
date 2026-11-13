@@ -19,6 +19,8 @@
   .card { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 14px 16px; }
   .card h3 { margin: 0 0 4px; font-size: 15px; }
   .card p.hint { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+  .ab-box { margin: 14px 0 0; padding: 10px 14px; border: 1px solid var(--line, #ddd); border-radius: 10px; font-size: 13px; line-height: 1.5; }
+  .ab-box b.arm { padding: 1px 7px; border-radius: 999px; background: var(--chip, rgba(127,127,127,.15)); }
   .field { display: grid; grid-template-columns: 1fr 110px; gap: 8px; align-items: center; margin: 7px 0; font-size: 13.5px; }
   .field small { display: block; color: var(--muted); font-size: 11.5px; }
   .field input { text-align: right; }
@@ -160,6 +162,8 @@
       <div id="model" class="hint" style="margin:0"></div>
     </div>
   </div>
+
+  <div id="abBox" class="ab-box" hidden></div>
 
   <h3 class="sec">SKUs <span class="tag" id="skuCount"></span></h3>
   <div class="sku-filters">
@@ -335,6 +339,18 @@ if p is a new cut below every rival:
       stat('Last decision', when(sh.last_decision), sh.last_error ? `<span class="warn">${esc(sh.last_error)}</span>` : 'no errors');
     const blocked = Object.entries(lv.stats.blocked || {}).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ');
     const vv = ((sh.model_info || {}).validation || {}).bb_foep || {};
+    const ab = o.abtest || {};
+    const abEl = $('#abBox');
+    if (ab.enabled && ab.skus) {
+      const other = ab.repricer_group === 'A' ? 'B' : 'A';
+      const ls = ab.last_switch || {};
+      abEl.hidden = false;
+      abEl.innerHTML = `<b>Repricer vs Seller Snap test</b> — ${ab.dry_run ? '<span class="warn">dry run: tagging decisions only, no switching and no price changes</span>' : '<b>live</b>'}`
+        + (ab.day == null || ab.day < 0 ? ` · starts ${esc(when(ab.next_switch))}` : ` · day ${ab.day + 1}: group <b class="arm">${ab.repricer_group}</b> on your repricer, group <b class="arm">${other}</b> on Seller Snap`)
+        + ` · ${ab.skus} SKUs (A ${ab.group_sizes ? ab.group_sizes.A : '—'}, B ${ab.group_sizes ? ab.group_sizes.B : '—'}), both on Seller Snap's min/max`
+        + `${ab.washout_now ? ' · <span class="muted">first 2 h after the switch (left out of the scorecard)</span>' : ''}`
+        + `<br><span class="muted">Next switch ${esc(when(ab.next_switch))}.` + (ls.t ? ` Last switch ${esc(when(ls.t))}: ${ls.ok === false ? '<span class="warn">' + esc((ls.errors || []).join('; ')) + '</span>' : (ls.dry_run ? 'planned only (dry run)' : 'done')}.` : '') + '</span>';
+    } else abEl.hidden = true;
     const rt = o.retrain || {};
     const rtLine = rt.state === 'running' ? 'Retraining now…'
       : rt.state === 'failed' ? `<span class="warn">Last retrain failed ${esc(when(rt.last_error ? rt.last_error.slice(0, 20) : ''))}: ${esc((rt.last_error || '').slice(21, 160))}</span>`
