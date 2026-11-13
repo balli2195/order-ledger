@@ -314,7 +314,7 @@ if p is a new cut below every rival:
   <div class="px-chart" id="pxChart"></div>
   <div class="px-leg" id="pxLeg"></div>
   <div class="px-note">Every new-condition offer on the listing (price + shipping), from Amazon's offer-change messages. Solid lines are FBA, dashed are merchant-fulfilled; faded stretches are backordered.
-    The strip under the chart shows who held the Buy Box. Triangles mark your repricer's live changes. Shaded columns are times your repricer (not Seller Snap) was pricing this SKU in the test. Dotted lines are the min and max.</div>
+    The wide gold band is the Buy Box price (the winning offer), and the strip under the chart shows who held it. Triangles mark your repricer's live changes. Shaded columns are times your repricer (not Seller Snap) was pricing this SKU in the test. Dotted lines are the min and max.</div>
 </dialog>
 <script src="/static/viewas.js"></script>
 <script src="/static/clock.js"></script>
@@ -566,7 +566,7 @@ if p is a new cut below every rival:
   const CHART_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 13.5h12"/><path d="M3 11l3-3.5 2.5 2L13 4"/></svg>';
   const chartBtn = (asin, sku, title) => asin ? `<button class="chart-btn" data-chart="${esc(asin)}" data-sku="${esc(sku || '')}" data-title="${esc(title || '')}" title="Price history: every seller's price on this listing" aria-label="Price history for ${esc(asin)}">${CHART_ICON}</button>` : '';
   const PX = { asin: null, hours: 24, data: null, hide: new Set() };
-  const PAL = ['#2a9d8f', '#457b9d', '#8e5ea2', '#e9a03b', '#6a994e', '#c05299', '#3d5a80', '#9c6644', '#5e60ce', '#bc4749', '#4d908e', '#a07c00'];
+  const PAL = ['#2a9d8f', '#457b9d', '#8e5ea2', '#7b2cbf', '#6a994e', '#c05299', '#3d5a80', '#9c6644', '#5e60ce', '#bc4749', '#4d908e', '#a07c00'];
   function pxColors(sel) {
     const ids = Object.keys(sel).sort((a, b) => (sel[b].me - sel[a].me) || (sel[b].amazon - sel[a].amazon) || (sel[a].low - sel[b].low));
     const c = {}; let k = 0;
@@ -605,9 +605,16 @@ if p is a new cut below every rival:
     const { ids, c } = pxColors(D.sellers);
     const steps = Object.fromEntries(ids.map((id) => [id, stepsOf(D, id)]));
     const shown = ids.filter((id) => !PX.hide.has(id));
+    const bbSteps = [];   // Buy Box price = the winning offer's price + shipping
+    D.points.forEach((p, i) => { const o = p[2] && p[1][p[2]]; const t1 = i + 1 < D.points.length ? D.points[i + 1][0] : D.to;
+      const last = bbSteps[bbSteps.length - 1];
+      if (!o) { bbSteps.push(null); return; }
+      if (last && last[1] === p[0] && last[2] === o[0]) last[1] = t1; else bbSteps.push([p[0], t1, o[0]]); });
+    const showBB = !PX.hide.has('__bb');
     let lo = Infinity, hi = -Infinity;
     shown.forEach((id) => steps[id].forEach((s) => { lo = Math.min(lo, s[2]); hi = Math.max(hi, s[2]); }));
     (D.live || []).forEach((r) => { lo = Math.min(lo, r.from, r.to); hi = Math.max(hi, r.from, r.to); });
+    if (showBB) bbSteps.forEach((b) => { if (b) { lo = Math.min(lo, b[2]); hi = Math.max(hi, b[2]); } });
     if (D.min && D.min > lo * 0.85) lo = Math.min(lo, D.min);
     if (D.max && D.max < hi * 1.25) hi = Math.max(hi, D.max);
     if (!isFinite(lo)) { lo = 0; hi = 1; }
@@ -632,6 +639,13 @@ if p is a new cut below every rival:
     }
     // min / max
     [['min', D.min], ['max', D.max]].forEach(([k, v]) => { if (v && v >= lo && v <= hi) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="1 4" stroke-linecap="round"/><text class="ax" x="${W - R - 2}" y="${y(v) - 3}" text-anchor="end">${k} ${money(v)}</text>`; });
+    // Buy Box price: a wide band under the seller lines, gaps where nobody had it
+    if (showBB) {
+      let path = '', prev = null;
+      bbSteps.forEach((b) => { if (!b) { prev = null; return; }
+        path += (prev && prev[1] === b[0] ? `M${x(b[0]).toFixed(1)},${y(prev[2]).toFixed(1)}V${y(b[2]).toFixed(1)}` : '') + `M${x(b[0]).toFixed(1)},${y(b[2]).toFixed(1)}H${x(b[1]).toFixed(1)}`; prev = b; });
+      g += `<path d="${path}" stroke="#e9a03b" stroke-width="9" stroke-linecap="butt" fill="none" opacity=".35"/>`;
+    }
     // seller lines (others first, you on top)
     shown.slice().reverse().forEach((id) => {
       const d = D.sellers[id], col = c[id], wd = d.me ? 2.6 : d.amazon ? 2 : 1.5, dash = d.fba ? '' : ' stroke-dasharray="5 3"';
@@ -658,7 +672,10 @@ if p is a new cut below every rival:
     const bbt = {}; let tot = 0;
     D.points.forEach((p, i) => { const t1 = i + 1 < D.points.length ? D.points[i + 1][0] : D.to, dt = t1 - p[0]; tot += dt; if (p[2]) bbt[p[2]] = (bbt[p[2]] || 0) + dt; });
     const cur = D.points[D.points.length - 1][1];
-    $('#pxLeg').innerHTML = ids.map((id) => { const d = D.sellers[id];
+    const bbNow = (() => { const p = D.points[D.points.length - 1]; return p[2] && p[1][p[2]] ? p[1][p[2]][0] : null; })();
+    const bbVals = bbSteps.filter(Boolean).map((b) => b[2]);
+    $('#pxLeg').innerHTML = `<label title="The Buy Box price: the winning offer's price + shipping"><input type="checkbox" data-px="__bb" ${showBB ? 'checked' : ''}><span><span class="sw" style="background:#e9a03b;opacity:.6"></span><b>Buy Box price</b> · now <b>${bbNow ? money(bbNow) : 'none'}</b>
+        <span class="muted">${bbVals.length ? `${money(Math.min(...bbVals))}–${money(Math.max(...bbVals))}` : 'no Buy Box in this window'} · held by you ${tot ? Math.round(100 * (bbt[D.me] || 0) / tot) : 0}%</span></span></label>` + ids.map((id) => { const d = D.sellers[id];
       return `<label title="Seller ID ${esc(id)}"><input type="checkbox" data-px="${esc(id)}" ${PX.hide.has(id) ? '' : 'checked'}><span><span class="sw" style="background:${c[id]}"></span><b>${esc(pxName(id, d))}</b> · ${d.fba ? 'FBA' : 'FBM'} · now <b>${cur[id] ? money(cur[id][0]) : 'gone'}</b>
         <span class="muted">${d.low === d.high ? money(d.low) : `${money(d.low)}–${money(d.high)}`} · ${d.changes} change${d.changes === 1 ? '' : 's'} · Buy Box ${tot ? Math.round(100 * (bbt[id] || 0) / tot) : 0}%</span></span></label>`; }).join('');
     $('#pxCount').textContent = `${ids.length} sellers · ${D.points.length} offer changes · ${(D.live || []).length} by your repricer` + (D.min ? ` · limits from ${D.limits_from}` : '');
@@ -670,7 +687,9 @@ if p is a new cut below every rival:
       const t = D.from + (X - L) / (W - L - R) * (D.to - D.from);
       let i = 0; while (i + 1 < D.points.length && D.points[i + 1][0] <= t) i++;
       const p = D.points[i], rows = Object.entries(p[1]).filter(([id]) => !PX.hide.has(id)).sort((a, b) => a[1][0] - b[1][0]);
+      const bbo = p[2] && p[1][p[2]];
       tip.innerHTML = `<div class="tag">${esc(new Date(t * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</div>` +
+        `<div><span class="sw" style="background:#e9a03b;opacity:.6"></span><b>Buy Box ${bbo ? money(bbo[0]) : '—'}</b>${bbo ? ` <span class="muted">${esc(pxName(p[2], D.sellers[p[2]] || {}))}</span>` : ' <span class="muted">nobody (suppressed)</span>'}</div>` +
         rows.map(([id, o]) => `<div><span class="sw" style="background:${c[id]}"></span>${esc(pxName(id, D.sellers[id]))} ${money(o[0])}${o[1] ? ' <span class="muted">backordered</span>' : ''}${p[2] === id ? ' <b>· Buy Box</b>' : ''}</div>`).join('');
       tip.hidden = false; hv.setAttribute('x1', X); hv.setAttribute('x2', X); hv.setAttribute('opacity', 0.6);
       const px = (X / W) * r.width; tip.style.left = Math.min(px + 14, r.width - tip.offsetWidth - 4) + 'px'; tip.style.top = '8px';
