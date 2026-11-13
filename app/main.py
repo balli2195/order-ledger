@@ -1899,7 +1899,14 @@ async def api_repricer_suppressed(request: Request):
 @app.get("/api/repricer/log")
 async def api_repricer_log(request: Request, days: int = 7):
     await auth.require(request, tab="repricer")
-    return await _rp(rp.call, "GET", "/live/log", params={"days": min(days, 30)})
+    return await _rp(rp.call, "GET", "/live/log", params={"days": min(days, 30), "n": 5000})   # the recorder returns 200 unless asked
+
+
+@app.get("/api/repricer/history")
+async def api_repricer_history(request: Request, asin: str, hours: int = 48):
+    """Every new offer on one listing over the last `hours` (change points), Nick's live changes, min/max and the A/B arm, for the price chart."""
+    await auth.require(request, tab="repricer")
+    return await _rp(rp.call, "GET", "/repricer/history", params={"asin": asin, "hours": max(1, min(hours, 336))}, timeout=60)
 
 
 @app.post("/api/repricer/settings")

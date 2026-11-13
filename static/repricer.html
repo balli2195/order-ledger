@@ -19,6 +19,28 @@
   .card { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 14px 16px; }
   .card h3 { margin: 0 0 4px; font-size: 15px; }
   .card p.hint { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+  .chart-btn { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; padding: 1px 5px; margin-left: 6px; cursor: pointer; vertical-align: middle; line-height: 0; }
+  .chart-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .chart-btn svg { width: 14px; height: 14px; }
+  dialog.px { width: min(1100px, 96vw); max-height: 92vh; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 16px 18px; }
+  dialog.px::backdrop { background: rgba(0,0,0,.45); }
+  .px-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+  .px-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .px-head .sub { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .px-range { display: flex; gap: 4px; margin: 10px 0 6px; flex-wrap: wrap; align-items: center; }
+  .px-range button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; }
+  .px-range button.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .px-chart { position: relative; }
+  .px-chart svg { display: block; width: 100%; height: 380px; }
+  .px-chart .ax { fill: var(--muted); font-size: 11px; }
+  .px-chart .grid { stroke: var(--line-2); }
+  .px-tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; }
+  .px-tip .sw, .px-leg .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .px-leg { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px 16px; margin-top: 10px; font-size: 12.5px; }
+  .px-leg label { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; align-items: baseline; cursor: pointer; line-height: 1.35; }
+  .px-leg input { margin: 0; }
+  .px-leg .muted { display: block; font-size: 11.5px; }
+  .px-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
   .ab-box { margin: 14px 0 0; padding: 10px 14px; border: 1px solid var(--line, #ddd); border-radius: 10px; font-size: 13px; line-height: 1.5; }
   .ab-box b.arm { padding: 1px 7px; border-radius: 999px; background: var(--chip, rgba(127,127,127,.15)); }
   .field { display: grid; grid-template-columns: 1fr 110px; gap: 8px; align-items: center; margin: 7px 0; font-size: 13.5px; }
@@ -280,6 +302,20 @@ if p is a new cut below every rival:
   </details>
 </div>
 <div id="toasts" class="toasts"></div>
+<dialog class="px" id="pxDlg" aria-labelledby="pxTitle">
+  <div class="px-head">
+    <div><h3 id="pxTitle">Price history</h3><div class="sub" id="pxSub"></div></div>
+    <button class="btn ghost" id="pxClose" aria-label="Close">Close</button>
+  </div>
+  <div class="px-range" id="pxRange">
+    <button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="72">3 days</button><button data-h="168">7 days</button>
+    <span class="tag" id="pxCount"></span>
+  </div>
+  <div class="px-chart" id="pxChart"></div>
+  <div class="px-leg" id="pxLeg"></div>
+  <div class="px-note">Every new-condition offer on the listing (price + shipping), from Amazon's offer-change messages. Solid lines are FBA, dashed are merchant-fulfilled; faded stretches are backordered.
+    The strip under the chart shows who held the Buy Box. Triangles mark your repricer's live changes. Shaded columns are times your repricer (not Seller Snap) was pricing this SKU in the test. Dotted lines are the min and max.</div>
+</dialog>
 <script src="/static/viewas.js"></script>
 <script src="/static/clock.js"></script>
 <script src="/static/common.js"></script>
@@ -439,7 +475,7 @@ if p is a new cut below every rival:
       (!q || [d.asin, d.sku, titles[d.sku]].some((x) => String(x || '').toLowerCase().includes(q)))).slice(0, 400);
     $('#decCount').textContent = `${V.length} shown of ${S.dec.length} recent decisions`;
     $('#decTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">Price</th><th class="num" title="Recommended price">New price</th><th class="num" title="Lowest rival FBA offer; on a suppressed listing, the lowest offer of any kind">Lowest rival</th><th class="num">Target</th><th class="num">Buy Box chance</th><th class="num" title="Your profit over the next 24 h after Amazon fees, cost and $1.40 prep: at your price → at the recommended price">Profit/day</th><th class="num" title="Profit per unit ÷ cost, as Seller Snap figures it">ROI</th><th class="num" title="Expected extra value over 24 h vs keeping your price, counting units not sold today at what they would fetch later">Gain/day</th><th>Why</th></tr></thead><tbody>' +
-      (V.length ? V.map((d) => `<tr><td class="when">${when2(d.t)}</td>${prodCell(titles[d.sku], d.asin, d.sku, d.suppressed, d.backordered)}<td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}</td>
+      (V.length ? V.map((d) => `<tr><td class="when">${when2(d.t)}</td>${prodCell(titles[d.sku], d.asin, d.sku, d.suppressed, d.backordered)}<td>${pill(d.action)}${d.live && d.live.to ? ' <span class="act live">applied</span>' : ''}${chartBtn(d.asin, d.sku, titles[d.sku])}</td>
         <td class="num">${money(d.my_price)}</td><td class="num"><b>${money(d.rec_price)}</b></td><td class="num">${money(d.suppressed ? d.low_any : d.low_rival)}</td><td class="num">${d.foep ? money(d.foep) : '—'}</td>
         <td class="num">${d.suppressed ? '<span class="muted">suppressed</span>' : `${pct(d.cur && d.cur.p_win)} → ${pct(d.best && d.best.p_win)}`}</td>
         <td class="num">${d.profit_day_now == null ? '—' : `${pm(d.profit_day_now)}${d.action !== 'hold' ? ' → ' + pm(d.profit_day_rec) : ''}`}</td>
@@ -467,7 +503,7 @@ if p is a new cut below every rival:
   async function loadLog() {
     S.log = await api('GET', '/api/repricer/log?days=7');
     $('#logTbl').innerHTML = '<thead><tr><th>When</th><th>Product</th><th>Action</th><th class="num">From</th><th class="num">To</th><th class="num">Recommended</th><th>Amazon</th></tr></thead><tbody>' +
-      (S.log.length ? S.log.map((r) => `<tr><td>${when(r.t)}</td>${prodCell(((S.skus || []).find((x) => x.sku === r.sku) || {}).title, r.asin, r.sku)}<td>${pill(r.action)}</td><td class="num">${money(r.from)}</td><td class="num"><b>${money(r.to)}</b></td><td class="num">${money(r.target_rec)}</td>
+      (S.log.length ? S.log.map((r) => `<tr><td>${when(r.t)}</td>${prodCell(((S.skus || []).find((x) => x.sku === r.sku) || {}).title, r.asin, r.sku)}<td>${pill(r.action)}${chartBtn(r.asin, r.sku, ((S.skus || []).find((x) => x.sku === r.sku) || {}).title)}</td><td class="num">${money(r.from)}</td><td class="num"><b>${money(r.to)}</b></td><td class="num">${money(r.target_rec)}</td>
         <td>${r.error ? `<span class="warn">${esc(r.error)}</span>` : esc(r.response_status || r.status_code || '')}${(r.issues || []).length ? ` <span class="warn" title="${esc(JSON.stringify(r.issues))}">issues</span>` : ''}</td></tr>`).join('')
         : '<tr><td colspan="7" class="empty">No live price changes. In shadow mode nothing is changed.</td></tr>') + '</tbody>';
   }
@@ -524,6 +560,128 @@ if p is a new cut below every rival:
     catch { const t = document.createElement('textarea'); t.value = b.dataset.copy; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } finally { t.remove(); } }
     b.classList.add('done'); setTimeout(() => b.classList.remove('done'), 1200);
   });
+
+
+  // ---------- Price history dialog (Nick, Nov 13 2026): every seller's price on a listing over time
+  const CHART_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 13.5h12"/><path d="M3 11l3-3.5 2.5 2L13 4"/></svg>';
+  const chartBtn = (asin, sku, title) => asin ? `<button class="chart-btn" data-chart="${esc(asin)}" data-sku="${esc(sku || '')}" data-title="${esc(title || '')}" title="Price history: every seller's price on this listing" aria-label="Price history for ${esc(asin)}">${CHART_ICON}</button>` : '';
+  const PX = { asin: null, hours: 24, data: null, hide: new Set() };
+  const PAL = ['#2a9d8f', '#457b9d', '#8e5ea2', '#e9a03b', '#6a994e', '#c05299', '#3d5a80', '#9c6644', '#5e60ce', '#bc4749', '#4d908e', '#a07c00'];
+  function pxColors(sel) {
+    const ids = Object.keys(sel).sort((a, b) => (sel[b].me - sel[a].me) || (sel[b].amazon - sel[a].amazon) || (sel[a].low - sel[b].low));
+    const c = {}; let k = 0;
+    ids.forEach((id) => { c[id] = sel[id].me ? 'var(--accent)' : sel[id].amazon ? 'var(--ink)' : PAL[k++ % PAL.length]; });
+    return { ids, c };
+  }
+  const pxName = (id, d) => d.me ? 'You' : d.amazon ? 'Amazon' : `Seller ${id.slice(0, 6)}…`;
+  async function openChart(asin, sku, title) {
+    PX.asin = asin; PX.sku = sku; PX.title = title; PX.hide = new Set();
+    $('#pxTitle').textContent = title || asin;
+    $('#pxSub').innerHTML = `<a class="asin-btn" href="https://www.amazon.com/dp/${esc(asin)}" target="_blank" rel="noopener">${esc(asin)}</a>${sku ? ` · <span class="sku">${esc(sku)}</span>` : ''}`;
+    const dlg = $('#pxDlg'); if (!dlg.open) dlg.showModal();
+    await loadChart();
+  }
+  async function loadChart() {
+    document.querySelectorAll('#pxRange [data-h]').forEach((b) => b.classList.toggle('on', Number(b.dataset.h) === PX.hours));
+    $('#pxChart').innerHTML = '<div class="empty" style="padding:40px;text-align:center">Loading…</div>'; $('#pxLeg').innerHTML = '';
+    try { PX.data = await api('GET', `/api/repricer/history?asin=${encodeURIComponent(PX.asin)}&hours=${PX.hours}`); }
+    catch (e) { $('#pxChart').innerHTML = `<div class="empty" style="padding:40px">${esc(e.message)}</div>`; return; }
+    if (PX.data.title && !PX.title) $('#pxTitle').textContent = PX.data.title;
+    drawChart();
+  }
+  function stepsOf(D, id) {   // [[t0, t1, price, backordered]] while the seller has an offer
+    const out = []; const P = D.points;
+    for (let i = 0; i < P.length; i++) {
+      const o = P[i][1][id]; if (!o) continue;
+      const t1 = i + 1 < P.length ? P[i + 1][0] : D.to;
+      const last = out[out.length - 1];
+      if (last && last[1] === P[i][0] && last[2] === o[0] && last[3] === o[1]) last[1] = t1; else out.push([P[i][0], t1, o[0], o[1]]);
+    }
+    return out;
+  }
+  function drawChart() {
+    const D = PX.data, host = $('#pxChart');
+    if (!D || !D.points.length) { host.innerHTML = '<div class="empty" style="padding:40px;text-align:center">No offer messages for this listing in this window.</div>'; $('#pxCount').textContent = ''; return; }
+    const { ids, c } = pxColors(D.sellers);
+    const steps = Object.fromEntries(ids.map((id) => [id, stepsOf(D, id)]));
+    const shown = ids.filter((id) => !PX.hide.has(id));
+    let lo = Infinity, hi = -Infinity;
+    shown.forEach((id) => steps[id].forEach((s) => { lo = Math.min(lo, s[2]); hi = Math.max(hi, s[2]); }));
+    (D.live || []).forEach((r) => { lo = Math.min(lo, r.from, r.to); hi = Math.max(hi, r.from, r.to); });
+    if (D.min && D.min > lo * 0.85) lo = Math.min(lo, D.min);
+    if (D.max && D.max < hi * 1.25) hi = Math.max(hi, D.max);
+    if (!isFinite(lo)) { lo = 0; hi = 1; }
+    const pad = Math.max((hi - lo) * 0.08, 0.5); lo -= pad; hi += pad;
+    const W = host.clientWidth || 1000, H = 380, L = 56, R = 12, T = 10, B = 44, strip = 10;
+    const x = (t) => L + (t - D.from) / (D.to - D.from) * (W - L - R);
+    const y = (p) => T + (hi - p) / (hi - lo) * (H - T - B - strip - 8);
+    const yb = H - B - strip;
+    let g = '';
+    // repricer-in-charge bands (A/B test)
+    (D.arms || []).forEach(([a, b, arm]) => { if (arm === 'repricer') g += `<rect x="${x(a)}" y="${T}" width="${Math.max(0, x(b) - x(a))}" height="${yb - T - 4}" fill="var(--accent)" opacity=".07"/>`; });
+    // grid + y labels
+    const span = hi - lo, stepY = [0.25, 0.5, 1, 2, 5, 10, 20, 50].find((s) => span / s <= 7) || 100;
+    for (let v = Math.ceil(lo / stepY) * stepY; v <= hi; v += stepY) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">$${v.toFixed(stepY < 1 ? 2 : 0)}</text>`;
+    // x labels
+    const hrs = (D.to - D.from) / 3600, stepH = hrs <= 8 ? 1 : hrs <= 30 ? 3 : hrs <= 80 ? 12 : 24;
+    const start = new Date(D.from * 1000); start.setMinutes(0, 0, 0);
+    for (let t = start.getTime() / 1000; t <= D.to; t += 3600) {
+      const d = new Date(t * 1000); if (t < D.from || d.getHours() % stepH) continue;
+      const lab = stepH >= 12 ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + (stepH === 12 ? ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric' }) : '') : d.toLocaleTimeString('en-US', { hour: 'numeric' });
+      g += `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${yb - 4}" opacity=".5"/><text class="ax" x="${x(t)}" y="${H - B + strip + 16}" text-anchor="middle">${esc(lab)}</text>`;
+    }
+    // min / max
+    [['min', D.min], ['max', D.max]].forEach(([k, v]) => { if (v && v >= lo && v <= hi) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="1 4" stroke-linecap="round"/><text class="ax" x="${W - R - 2}" y="${y(v) - 3}" text-anchor="end">${k} ${money(v)}</text>`; });
+    // seller lines (others first, you on top)
+    shown.slice().reverse().forEach((id) => {
+      const d = D.sellers[id], col = c[id], wd = d.me ? 2.6 : d.amazon ? 2 : 1.5, dash = d.fba ? '' : ' stroke-dasharray="5 3"';
+      let path = '', prev = null;
+      steps[id].forEach((s) => {
+        const seg = `M${x(s[0]).toFixed(1)},${y(s[2]).toFixed(1)}H${x(s[1]).toFixed(1)}`;
+        const join = prev && prev[1] === s[0] ? `M${x(s[0]).toFixed(1)},${y(prev[2]).toFixed(1)}V${y(s[2]).toFixed(1)}` : '';
+        g += `<path d="${join}${seg}" stroke="${col}" stroke-width="${wd}" fill="none"${dash} opacity="${s[3] ? 0.35 : 1}"/>`;
+        prev = s;
+      });
+    });
+    // Buy Box winner strip
+    for (let i = 0; i < D.points.length; i++) {
+      const w = D.points[i][2], t1 = i + 1 < D.points.length ? D.points[i + 1][0] : D.to;
+      g += `<rect x="${x(D.points[i][0])}" y="${yb}" width="${Math.max(0, x(t1) - x(D.points[i][0]))}" height="${strip}" fill="${w ? (c[w] || 'var(--muted)') : 'transparent'}"${w ? '' : ' stroke="var(--line)"'}/>`;
+    }
+    g += `<text class="ax" x="${L - 6}" y="${yb + 9}" text-anchor="end">Buy Box</text>`;
+    // your live changes
+    (D.live || []).forEach((r) => { const t = new Date(r.t).getTime() / 1000; if (t < D.from) return; const up = r.to > r.from, X = x(t), Y = y(r.to);
+      g += `<path d="M${X - 5},${up ? Y + 5 : Y - 5}L${X + 5},${up ? Y + 5 : Y - 5}L${X},${up ? Y - 3 : Y + 3}Z" fill="var(--accent)" stroke="var(--panel)" stroke-width="1"><title>${esc(when(r.t))}: ${money(r.from)} → ${money(r.to)} (${esc(r.action || '')})</title></path>`; });
+    g += `<line id="pxHover" x1="0" x2="0" y1="${T}" y2="${yb + strip}" stroke="var(--muted)" stroke-width="1" opacity="0"/><rect id="pxHit" x="${L}" y="${T}" width="${W - L - R}" height="${yb + strip - T}" fill="transparent"/>`;
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Seller prices over time">${g}</svg><div class="px-tip" id="pxTip" hidden></div>`;
+    // Buy Box share per seller over the window
+    const bbt = {}; let tot = 0;
+    D.points.forEach((p, i) => { const t1 = i + 1 < D.points.length ? D.points[i + 1][0] : D.to, dt = t1 - p[0]; tot += dt; if (p[2]) bbt[p[2]] = (bbt[p[2]] || 0) + dt; });
+    const cur = D.points[D.points.length - 1][1];
+    $('#pxLeg').innerHTML = ids.map((id) => { const d = D.sellers[id];
+      return `<label title="Seller ID ${esc(id)}"><input type="checkbox" data-px="${esc(id)}" ${PX.hide.has(id) ? '' : 'checked'}><span><span class="sw" style="background:${c[id]}"></span><b>${esc(pxName(id, d))}</b> · ${d.fba ? 'FBA' : 'FBM'} · now <b>${cur[id] ? money(cur[id][0]) : 'gone'}</b>
+        <span class="muted">${d.low === d.high ? money(d.low) : `${money(d.low)}–${money(d.high)}`} · ${d.changes} change${d.changes === 1 ? '' : 's'} · Buy Box ${tot ? Math.round(100 * (bbt[id] || 0) / tot) : 0}%</span></span></label>`; }).join('');
+    $('#pxCount').textContent = `${ids.length} sellers · ${D.points.length} offer changes · ${(D.live || []).length} by your repricer` + (D.min ? ` · limits from ${D.limits_from}` : '');
+    // hover
+    const svg = host.querySelector('svg'), tip = $('#pxTip'), hv = svg.querySelector('#pxHover');
+    svg.addEventListener('mousemove', (e) => {
+      const r = svg.getBoundingClientRect(), X = (e.clientX - r.left) * (W / r.width);
+      if (X < L || X > W - R) { tip.hidden = true; hv.setAttribute('opacity', 0); return; }
+      const t = D.from + (X - L) / (W - L - R) * (D.to - D.from);
+      let i = 0; while (i + 1 < D.points.length && D.points[i + 1][0] <= t) i++;
+      const p = D.points[i], rows = Object.entries(p[1]).filter(([id]) => !PX.hide.has(id)).sort((a, b) => a[1][0] - b[1][0]);
+      tip.innerHTML = `<div class="tag">${esc(new Date(t * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</div>` +
+        rows.map(([id, o]) => `<div><span class="sw" style="background:${c[id]}"></span>${esc(pxName(id, D.sellers[id]))} ${money(o[0])}${o[1] ? ' <span class="muted">backordered</span>' : ''}${p[2] === id ? ' <b>· Buy Box</b>' : ''}</div>`).join('');
+      tip.hidden = false; hv.setAttribute('x1', X); hv.setAttribute('x2', X); hv.setAttribute('opacity', 0.6);
+      const px = (X / W) * r.width; tip.style.left = Math.min(px + 14, r.width - tip.offsetWidth - 4) + 'px'; tip.style.top = '8px';
+    });
+    svg.addEventListener('mouseleave', () => { tip.hidden = true; hv.setAttribute('opacity', 0); });
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-chart]'); if (!b) return; e.preventDefault(); openChart(b.dataset.chart, b.dataset.sku, b.dataset.title).catch(fail); });
+  $('#pxClose').addEventListener('click', () => $('#pxDlg').close());
+  $('#pxRange').addEventListener('click', (e) => { const b = e.target.closest('[data-h]'); if (!b) return; PX.hours = Number(b.dataset.h); loadChart(); });
+  $('#pxLeg').addEventListener('change', (e) => { const id = e.target.dataset.px; if (!id) return; e.target.checked ? PX.hide.delete(id) : PX.hide.add(id); drawChart(); });
+  window.addEventListener('resize', () => { if ($('#pxDlg').open) drawChart(); });
 
   let tableAt = 0;
   async function refresh() {
