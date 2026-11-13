@@ -17,7 +17,7 @@ from . import db
 
 URL = os.environ.get("RECORDER_URL", "https://offer-recorder.onrender.com").rstrip("/")
 SETTABLE = ("enabled", "skus", "max_step_pct", "min_interval_s", "max_per_day", "chase_window_min", "chase_cuts", "freeze_h", "max_drop_pct",
-            "decay_per_day", "decay_auto", "min_gain_abs", "min_gain_rel")
+            "decay_per_day", "decay_auto", "min_gain_abs", "min_gain_rel", "max_cut_abs", "cut_wait_min")
 
 
 async def _key() -> str:
