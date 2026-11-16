@@ -118,6 +118,9 @@
       <select id="fSize"><option value="">Any size</option><option value="open">Needs size, not set</option><option value="1">Needs size</option></select>
       <select id="fMatch"><option value="">Any match</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match</option></select>
       <select id="fActive"><option value="1">Active</option><option value="0">Inactive</option><option value="all">Active + inactive</option></select>
+      <select id="fMinRoi" title="ROI at today's Sephora price and Buy Box"><option value="">Any ROI now</option><option value="0">ROI now 0%+</option><option value="15">ROI now 15%+</option><option value="21">ROI now 21%+</option><option value="30">ROI now 30%+</option><option value="50">ROI now 50%+</option></select>
+      <select id="fMinRoi90" title="ROI at today's Sephora price and the 90-day average Buy Box"><option value="">Any ROI 90d</option><option value="0">ROI 90d 0%+</option><option value="15">ROI 90d 15%+</option><option value="21">ROI 90d 21%+</option><option value="30">ROI 90d 30%+</option></select>
+      <select id="fSort"><option value="">Sort: brand</option><option value="roi">Sort: ROI now, high first</option><option value="roi90">Sort: ROI 90d, high first</option><option value="sold">Sort: sold/mo, high first</option></select>
     </div>
     <div class="sl-brands" id="brands"></div>
     <div class="table-wrap"><table id="catTable">
@@ -287,7 +290,7 @@
     const p = new URLSearchParams({ limit: 300, offset });
     const q = $('#q').value.trim(); if (q) p.set('q', q);
     if (S.brand) p.set('brand', S.brand);
-    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['sort', '#fSort']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
@@ -384,7 +387,7 @@
       renderCatalog(); loadOverview().catch(() => {}); } catch (err) { fail(err); }
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
-  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fSort'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   $('#catMore').addEventListener('click', () => loadCatalog(true).catch(fail));
   let qt; $('#q').addEventListener('input', () => { if (S.view === 'catalog') { clearTimeout(qt); qt = setTimeout(() => loadCatalog().catch(fail), 300); } else renderQueue(); });
   $('#viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });

@@ -499,6 +499,14 @@ async def overview() -> dict:
     return {"runs": runs, "catalog": cat, "candidates": cand, "sale": sale, "today": today().isoformat()}
 
 
+CAT_SORTS = {   # Lead DB catalog sort options (whitelisted ORDER BY clauses)
+    "": "lower(brand), sephora_name, asin",
+    "roi": "roi_now DESC NULLS LAST, lower(brand), asin",
+    "roi90": "roi_avg90 DESC NULLS LAST, lower(brand), asin",
+    "sold": "monthly_sold DESC NULLS LAST, lower(brand), asin",
+}
+
+
 async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
     w, a = [], []
     if f.get("q"):
@@ -524,6 +532,12 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
         w.append("match_ok IS FALSE")
     elif m == "unchecked":
         w.append("match_ok IS NULL")
+    for key, col in (("min_roi", "roi_now"), ("min_roi90", "roi_avg90")):
+        if f.get(key):
+            try:
+                w.append(f"{col} >= %s"); a.append(float(f[key]) / 100)   # percent in, fraction stored
+            except ValueError:
+                raise LedgerError(f"{key} must be a number (percent)")
     act = f.get("active", "1")
     if act in ("1", "true"):
         w.append("active")
@@ -535,7 +549,7 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
         cur = await conn.execute(
             f"SELECT {CAT_COLS}, (SELECT count(*) FROM sephora_candidates s WHERE s.asin = c.asin AND s.product_id = c.product_id "
             f"AND s.status = 'new') AS open_candidates FROM sephora_catalog c {where} "
-            f"ORDER BY lower(brand), sephora_name, asin LIMIT %s OFFSET %s", a + [limit, offset])
+            f"ORDER BY {CAT_SORTS.get(f.get('sort') or '', CAT_SORTS[''])} LIMIT %s OFFSET %s", a + [limit, offset])
         rows = [jsonable(dict(r)) for r in await cur.fetchall()]
         total = (await (await conn.execute(f"SELECT count(*) n FROM sephora_catalog c {where}", a)).fetchone())["n"]
         # per-brand counts over everything active (not just the filtered rows), for the brand list
