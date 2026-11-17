@@ -1520,6 +1520,19 @@ async def engine_sephora_catalog(request: Request, body: dict = Body(...)):
     return await sephora.upsert_catalog(body.get("rows"))
 
 
+@app.post("/api/engine/sephora/catalog/mark")
+async def engine_sephora_mark(request: Request, body: dict = Body(...)):
+    """Claude's checked answers on a catalog pair (Nick, Nov 17, 2026: when a mismatch is found, find the correct ASIN and
+    put it in the Lead DB). Same body as /api/sephora/catalog/mark, plus {correct_asin_only: true} to add the right ASIN to a
+    pair someone already marked wrong without re-marking it. Marks show as "Claude"."""
+    auth.require_engine_key(request)
+    actor = sephora.Actor(None, "Claude", "engine")
+    if body.get("correct_asin_only"):
+        return await sephora.set_correct_asin(actor, body.get("asin"), body.get("product_id"), body.get("correct_asin"))
+    return await sephora.mark_catalog(actor, body.get("asin"), body.get("product_id"),
+                                      {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin") if k in body})
+
+
 @app.post("/api/engine/sephora/catalog/deactivate")
 async def engine_sephora_deactivate(request: Request, body: dict = Body(...)):
     """{keys: [{asin, product_id}]} -> active=false (their open candidates expire)."""

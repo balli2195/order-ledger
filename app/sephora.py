@@ -564,6 +564,32 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
 
 # ---------------------------------------------------------------- Nick's actions
 
+async def set_correct_asin(actor: Actor, asin: str, product_id: str, correct_asin: str | None) -> dict:
+    """Add (or clear) the right ASIN on a pair already marked wrong, without changing who marked it or why.
+    Updates the catalog row and its match_feedback rows (Nick, Nov 17, 2026: find the correct ASIN for every mismatch)."""
+    asin, product_id = _asin(asin), _pid(product_id)
+    ca = _asin(correct_asin) if correct_asin else None
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("SELECT match_ok, correct_asin FROM sephora_catalog WHERE asin=%s AND product_id=%s FOR UPDATE",
+                                     (asin, product_id))
+            before = await cur.fetchone()
+            if not before:
+                raise LedgerError("That catalog pair doesn't exist")
+            if before["match_ok"] is not False:
+                raise LedgerError("Only a pair marked wrong can carry a correct ASIN")
+            await conn.execute("UPDATE sephora_catalog SET correct_asin=%s, updated_at=now() WHERE asin=%s AND product_id=%s",
+                               (ca, asin, product_id))
+            cur = await conn.execute("UPDATE match_feedback SET correct_asin=%s WHERE asin=%s AND product_id=%s RETURNING id",
+                                     (ca, asin, product_id))
+            n = len(await cur.fetchall())
+            await _audit(conn, actor, "mark", "sephora", None, None,
+                         {"asin": asin, "product_id": product_id, "correct_asin": before["correct_asin"]},
+                         {"asin": asin, "product_id": product_id, "correct_asin": ca})
+            await _notify(conn)
+    return {"asin": asin, "product_id": product_id, "correct_asin": ca, "feedback_rows": n}
+
+
 async def mark_catalog(actor: Actor, asin: str, product_id: str, body: dict) -> dict:
     """Nick's answers on a catalog pair: match_ok (true / false / null to clear), size_confirmed ('lo' / 'hi' / null)."""
     asin, product_id = _asin(asin), _pid(product_id)
