@@ -474,6 +474,7 @@ def main():
             recheck.append({"id": oc["id"], "cost": round(e["entered"], 2), "price_basis": e["label"][:200], "buybox": bb,
                             "roi_now": e["roi_now"]})
     counts["open_rechecked"], counts["open_expired"] = len(recheck), len(rechecked_expired)
+    C.save_json(f"out/{day.isoformat()}/recheck.json", recheck)
 
     counts.update(brands=len(brands), products_checked=len(sp["products"]), sale_page_items=len(sp["products"]),
                   sale_page_in_catalog=len(seph_today) - len(sale_ended), sale_ended=len(sale_ended),
