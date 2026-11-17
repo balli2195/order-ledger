@@ -222,6 +222,19 @@ async def lead_db_page(request: Request):
     return await _page(request, "sephora_leads", "sephora-leads.html")
 
 
+@app.get("/lead-db/mismatches", include_in_schema=False)
+async def lead_db_mismatches_page(request: Request):
+    """Lead DB -> Mismatches: wrong-match pairs, pairs the match rules hold back, rejected candidates (Nick, Nov 17, 2026)."""
+    return await _page(request, "sephora_leads", "lead-db-mismatches.html")
+
+
+@app.get("/api/sephora/mismatches")
+async def api_sephora_mismatches(request: Request, kind: str = "wrong", limit: int = 500, offset: int = 0):
+    await auth.require(request, tab="sephora_leads")
+    f = {k: request.query_params.get(k) for k in ("brand", "q", "by", "days") if request.query_params.get(k) not in (None, "")}
+    return await sephora.mismatches(kind, f, limit, offset)
+
+
 @app.get("/lead-db/guide", include_in_schema=False)
 async def lead_db_guide_page(request: Request):
     """How the Lead DB works: tables, jobs, the Keepa collector and the Lead Score training plan (Nov 11, 2026)."""

@@ -349,6 +349,70 @@ async def list_candidates(status: str | None = None, since: str | None = None, l
     return {"candidates": rows, "count": len(rows)}
 
 
+MISMATCH_KINDS = ("wrong", "held", "rejected")
+
+
+async def mismatches(kind: str, f: dict, limit: int = 500, offset: int = 0) -> dict:
+    """Lead DB -> Mismatches page (Nick, Nov 17, 2026: one place to look for false mismatches).
+    wrong     catalog pairs marked wrong (by people or Claude), with the reason and the correct ASIN
+    held      active pairs nobody has checked that the learned match rules hold back (match_reason has "rule (")
+    rejected  candidates rejected from To review, with the reason
+    Filters: brand, q (text), by (claude | people), days (marked / decided within N days)."""
+    if kind not in MISMATCH_KINDS:
+        raise LedgerError(f"kind must be one of {', '.join(MISMATCH_KINDS)}")
+    w, a = [], []
+    who, when = ("s.decided_by", "s.decided_at") if kind == "rejected" else ("c.marked_by", "c.marked_at")
+    if kind == "wrong":
+        w.append("c.match_ok IS FALSE")
+    elif kind == "held":
+        w += ["c.match_ok IS NULL", "c.active", "c.match_reason ILIKE %s"]; a.append("%rule (%")
+    else:
+        w.append("s.status = 'rejected'")
+    if f.get("brand"):
+        w.append("lower(c.brand) = lower(%s)"); a.append(f["brand"].strip())
+    if f.get("q"):
+        q = f"%{f['q'].strip()}%"
+        w.append("(c.asin ILIKE %s OR c.sephora_name ILIKE %s OR c.amazon_title ILIKE %s OR c.brand ILIKE %s OR c.correct_asin ILIKE %s)")
+        a += [q] * 5
+    if kind != "held":
+        if f.get("by") == "claude":
+            w.append(f"{who} ILIKE %s"); a.append("claude%")
+        elif f.get("by") == "people":
+            w.append(f"{who} IS NOT NULL AND {who} NOT ILIKE %s"); a.append("claude%")
+        if f.get("days"):
+            try:
+                d = float(f["days"])
+            except ValueError:
+                raise LedgerError("days must be a number")
+            w.append(f"{when} >= now() - make_interval(secs => %s)"); a.append(d * 86400)
+    where = "WHERE " + " AND ".join(w)
+    limit = max(1, min(int(limit), 2000)); offset = max(0, int(offset))
+    if kind == "rejected":
+        base = f"{CAND_SQL.replace('SELECT s.id', 'SELECT c.extra, s.id', 1)} {where}"
+        order = "ORDER BY s.decided_at DESC NULLS LAST, s.found_on DESC"
+        count_sql = f"SELECT count(*) n FROM sephora_candidates s LEFT JOIN sephora_catalog c ON c.asin = s.asin AND c.product_id = s.product_id {where}"
+    else:
+        base = (f"SELECT {', '.join('c.' + x.strip() for x in CAT_COLS.split(','))}, "
+                f"(SELECT k.amazon_title FROM sephora_catalog k WHERE k.asin = c.correct_asin ORDER BY (k.product_id = c.product_id) DESC LIMIT 1) AS correct_title "
+                f"FROM sephora_catalog c {where}")
+        order = "ORDER BY c.marked_at DESC NULLS LAST, lower(c.brand), c.asin" if kind == "wrong" else "ORDER BY c.updated_at DESC, lower(c.brand), c.asin"
+        count_sql = f"SELECT count(*) n FROM sephora_catalog c {where}"
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(f"{base} {order} LIMIT %s OFFSET %s", a + [limit, offset])
+        rows = [jsonable(dict(r)) for r in await cur.fetchall()]
+        total = (await (await conn.execute(count_sql, a)).fetchone())["n"]
+        cur = await conn.execute(
+            "SELECT (SELECT count(*) FROM sephora_catalog WHERE match_ok IS FALSE) wrong, "
+            "(SELECT count(*) FROM sephora_catalog WHERE match_ok IS NULL AND active AND match_reason ILIKE %s) held, "
+            "(SELECT count(*) FROM sephora_candidates WHERE status = 'rejected') rejected", ("%rule (%",))
+        counts = dict(await cur.fetchone())
+        cur = await conn.execute("SELECT DISTINCT brand FROM sephora_catalog WHERE brand IS NOT NULL AND (match_ok IS FALSE OR "
+                                 "(match_ok IS NULL AND active AND match_reason ILIKE %s) OR (asin, product_id) IN "
+                                 "(SELECT asin, product_id FROM sephora_candidates WHERE status = 'rejected')) ORDER BY brand", ("%rule (%",))
+        brands = [r["brand"] for r in await cur.fetchall()]
+    return {"kind": kind, "rows": rows, "total": total, "counts": counts, "brands": brands}
+
+
 async def record_run(body: dict) -> dict:
     kind = str(body.get("kind") or "").strip()[:40]
     if not kind:

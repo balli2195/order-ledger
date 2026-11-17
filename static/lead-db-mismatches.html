@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mismatches · Lead DB · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .mm-title { margin: 4px 0 2px; font-size: 18px; font-weight: 600; }
+  .mm-sub { margin: 0; color: var(--muted); font-size: 13px; max-width: 90ch; }
+  .mm-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+  .mm-seg button { border: 0; background: none; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .mm-seg button.on { background: var(--accent); color: #fff; }
+  .mm-seg .n { margin-left: 6px; font-size: 11.5px; opacity: .75; }
+  .mm-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 10px; }
+  .mm-filters select { width: auto; min-width: 0; }
+  .mm-filters input[type=search] { width: auto; min-width: 240px; flex: 1 1 240px; max-width: 360px; }
+  #more[hidden] { display: none; }
+  .mm-help { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; max-width: 95ch; }
+  #tbl td { vertical-align: top; }
+  #tbl .prod { min-width: 220px; max-width: 320px; }
+  #tbl .amz { min-width: 240px; max-width: 340px; }
+  .mm-why { font-size: 12px; color: var(--bad); white-space: normal; max-width: 260px; }
+  .mm-small { font-size: 11.5px; color: var(--muted); }
+  .mm-act { white-space: nowrap; }
+  .mm-act .btn { margin: 0 4px 4px 0; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .mm-more { margin: 10px 0 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><h1 class="brand">Myrddin Hub</h1></div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/lead-db" data-tab="sephora_leads" class="on">Lead DB</a><a href="/repricer" data-tab="repricer">Repricer</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+
+  <p class="mm-sub" style="margin-top:22px"><a href="/lead-db">← Lead DB</a></p>
+  <h2 class="mm-title">Mismatches</h2>
+  <p class="mm-sub">Every pair that was marked wrong, held back by a match rule, or rejected from To review, so you can catch false mismatches. If a pair is actually right, click <b>It's a match</b>: the jobs will trust it and stop learning from the old mark.</p>
+
+  <div class="mm-filters">
+    <div class="mm-seg" id="seg">
+      <button data-k="wrong" class="on">Marked wrong<span class="n" id="nWrong"></span></button>
+      <button data-k="held">Held back by rules<span class="n" id="nHeld"></span></button>
+      <button data-k="rejected">Rejected leads<span class="n" id="nRejected"></span></button>
+    </div>
+    <select id="fBrand"><option value="">All brands</option></select>
+    <select id="fBy"><option value="">Anyone</option><option value="claude">Claude</option><option value="people">People</option></select>
+    <select id="fDays"><option value="">Any time</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
+    <input id="q" type="search" placeholder="Search brand, product or ASIN…" autocomplete="off">
+    <span class="muted" id="count" style="font-size:13px"></span>
+  </div>
+  <p class="mm-help" id="help"></p>
+
+  <div class="table-wrap"><table id="tbl">
+    <thead id="head"></thead>
+    <tbody id="rows"></tbody></table>
+    <div id="empty" class="empty hidden">Nothing here.</div>
+  </div>
+  <div class="mm-more"><button id="more" class="btn small" hidden>Show more</button></div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/bonus.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/wrongmatch.js"></script>
+<script>
+(async () => {
+  const { $, esc, num, pct, api, toast, fail } = LG;
+  const S = { kind: 'wrong', rows: [], total: 0 };
+  const HELP = {
+    wrong: 'Pairs someone marked as the wrong Amazon listing for the store product, newest first. Correct = the ASIN that matches what the store sells, when one exists.',
+    held: 'Pairs nobody has checked that a learned match rule (from wrong-match marks) keeps out of To review. A rule that blocks good pairs here is a rule to loosen.',
+    rejected: 'Candidates rejected from To review, newest first. A wrong-match rejection also appears under Marked wrong.',
+  };
+  const amzUrl = (a) => `https://www.amazon.com/dp/${encodeURIComponent(a)}`;
+  const keepaUrl = (a) => `https://keepa.com/#!product/1-${encodeURIComponent(a)}`;
+  const safeUrl = (u) => (u && /^https?:\/\//i.test(u) ? u : null);
+  const when = (t) => (t ? new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+  const editor = () => LG.can('editor') && !LG.st.me?.viewed_by;
+  const amzSize = (r) => { const e = r.extra || {}; return e.amazon_size ? String(e.amazon_size) : ''; };
+  const ruleWhy = (reason) => (String(reason || '').split('; ').filter((x) => x.startsWith('rule (')).join('; ') || reason || '');
+
+  function head() {
+    const cols = S.kind === 'rejected'
+      ? ['Brand', 'Store product', 'Amazon', 'Reject reason', 'ROI then', 'Rejected', 'Match']
+      : S.kind === 'held'
+        ? ['Brand', 'Store product', 'Amazon', 'Rule that holds it back', 'Confidence', 'ROI now', '']
+        : ['Brand', 'Store product', 'Amazon', 'Why wrong', 'Correct ASIN', 'Checked', ''];
+    $('#head').innerHTML = `<tr>${cols.map((c) => `<th${/ROI/.test(c) ? ' class="num"' : ''}>${esc(c)}</th>`).join('')}</tr>`;
+  }
+  function prodCell(r) {
+    const u = safeUrl(r.sephora_url);
+    return `<td class="prod">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(r.sephora_name || r.product_id)}</a>` : esc(r.sephora_name || r.product_id)}${r.shade ? ` <span class="muted">· ${esc(r.shade)}</span>` : ''}
+      <div class="mm-small">${esc(r.store || 'Sephora')} ${esc(r.product_id || '')}${r.price_lo != null ? ` · $${esc(r.price_lo)}${r.price_hi != null && Number(r.price_hi) !== Number(r.price_lo) ? '–' + esc(r.price_hi) : ''}` : ''}</div></td>`;
+  }
+  function amzCell(r) {
+    const sz = amzSize(r);
+    return `<td class="amz"><a href="${amzUrl(r.asin)}" target="_blank" rel="noopener" class="mono">${esc(r.asin)}</a> · <a href="${keepaUrl(r.asin)}" target="_blank" rel="noopener" class="mm-small">Keepa</a>
+      ${r.amazon_title ? `<div class="mm-small" style="color:var(--ink)">${esc(r.amazon_title)}</div>` : ''}${sz ? `<div class="mm-small">Amazon size: ${esc(sz)}</div>` : ''}</td>`;
+  }
+  function actCell(r) {
+    if (!editor()) return '<td></td>';
+    const k = `data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}"`;
+    if (S.kind === 'wrong') return `<td class="mm-act"><button class="btn small" data-v="ok" ${k}>It's a match</button><button class="btn small ghost" data-v="clear" ${k} title="Remove the wrong mark without saying it's right">Clear mark</button></td>`;
+    if (S.kind === 'held') return `<td class="mm-act"><button class="btn small" data-v="ok" ${k}>It's a match</button><button class="btn small danger" data-v="wrong" ${k}>Wrong</button></td>`;
+    return '<td></td>';
+  }
+  function render() {
+    head();
+    $('#rows').innerHTML = S.rows.map((r) => {
+      if (S.kind === 'rejected') {
+        const m = r.match_ok === false ? '<span class="mm-why">Marked wrong</span>' : r.match_ok ? 'OK' : '<span class="muted">not checked</span>';
+        return `<tr><td>${esc(r.brand || '')}</td>${prodCell(r)}${amzCell(r)}<td class="mm-why">${esc(r.reject_reason || '')}</td>
+          <td class="num">${pct(r.roi_now)}</td><td class="mm-small">${esc(r.decided_by || '')}<br>${esc(when(r.decided_at))}</td><td>${m}</td></tr>`;
+      }
+      if (S.kind === 'held') {
+        return `<tr><td>${esc(r.brand || '')}</td>${prodCell(r)}${amzCell(r)}<td class="mm-why">${esc(ruleWhy(r.match_reason))}</td>
+          <td>${esc(r.confidence || '')}</td><td class="num">${pct(r.roi_now)}</td>${actCell(r)}</tr>`;
+      }
+      const why = WrongMatch.text(r.wrong_tags, r.wrong_note);
+      const ca = r.correct_asin ? `<a href="${amzUrl(r.correct_asin)}" target="_blank" rel="noopener" class="mono">${esc(r.correct_asin)}</a>${r.correct_title ? `<div class="mm-small">${esc(r.correct_title)}</div>` : ''}` : '<span class="muted">—</span>';
+      return `<tr><td>${esc(r.brand || '')}</td>${prodCell(r)}${amzCell(r)}<td class="mm-why">${esc(why || '(no reason given)')}</td>
+        <td class="amz">${ca}</td><td class="mm-small">${esc(r.marked_by || '')}<br>${esc(when(r.marked_at))}</td>${actCell(r)}</tr>`;
+    }).join('');
+    $('#empty').classList.toggle('hidden', S.rows.length > 0);
+    $('#more').hidden = S.rows.length >= S.total;
+    $('#count').textContent = `${num(S.total)} pair${S.total === 1 ? '' : 's'}${S.rows.length < S.total ? ` (showing ${num(S.rows.length)})` : ''}`;
+    $('#help').textContent = HELP[S.kind];
+    $('#fBy').disabled = $('#fDays').disabled = S.kind === 'held';
+  }
+  async function load(more = false) {
+    const p = new URLSearchParams({ kind: S.kind, limit: 300, offset: more ? S.rows.length : 0 });
+    [['brand', '#fBrand'], ['by', '#fBy'], ['days', '#fDays']].forEach(([k, id]) => { const v = $(id).value; if (v && !(S.kind === 'held' && k !== 'brand')) p.set(k, v); });
+    const q = $('#q').value.trim(); if (q) p.set('q', q);
+    const r = await api('GET', '/api/sephora/mismatches?' + p);
+    S.rows = more ? S.rows.concat(r.rows) : r.rows; S.total = r.total;
+    $('#nWrong').textContent = num(r.counts.wrong); $('#nHeld').textContent = num(r.counts.held); $('#nRejected').textContent = num(r.counts.rejected);
+    const fb = $('#fBrand'), keep = fb.value;
+    fb.innerHTML = '<option value="">All brands</option>' + r.brands.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+    fb.value = r.brands.includes(keep) ? keep : '';
+    render();
+  }
+
+  $('#seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.kind = b.dataset.k; document.querySelectorAll('#seg button').forEach((x) => x.classList.toggle('on', x === b));
+    S.rows = []; load().catch(fail);
+  });
+  ['#fBrand', '#fBy', '#fDays'].forEach((id) => $(id).addEventListener('change', () => load().catch(fail)));
+  let qt; $('#q').addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(() => load().catch(fail), 300); });
+  $('#more').addEventListener('click', () => load(true).catch(fail));
+  $('#rows').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-v]'); if (!b) return;
+    const body = { asin: b.dataset.asin, product_id: b.dataset.pid };
+    if (b.dataset.v === 'ok') body.match_ok = true;
+    else if (b.dataset.v === 'clear') body.match_ok = null;
+    else {
+      const r = S.rows.find((x) => x.asin === body.asin && x.product_id === body.product_id) || {};
+      const ans = await WrongMatch.ask({ asin: body.asin, sephora: r.sephora_name });
+      if (!ans) return;
+      Object.assign(body, { match_ok: false }, ans);
+    }
+    b.disabled = true;
+    try {
+      await api('POST', '/api/sephora/catalog/mark', body);
+      toast(body.match_ok === true ? 'Marked as a match' : body.match_ok === null ? 'Mark cleared' : 'Marked wrong');
+      await load();
+    } catch (err) { b.disabled = false; fail(err); }
+  });
+
+  try { await LG.header(); await load(); } catch (e) { fail(e); }
+})();
+</script>
+</body>
+</html>
