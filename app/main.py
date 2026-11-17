@@ -1479,7 +1479,7 @@ async def api_sephora_candidates(request: Request, status: str = "new", since: s
 async def api_sephora_catalog(request: Request, limit: int = 300, offset: int = 0):
     await auth.require(request, tab="sephora_leads")
     f = {k: request.query_params.get(k) for k in ("q", "store", "brand", "confidence", "sellable", "needs_size", "match", "active",
-                                         "min_roi", "min_roi90", "sort", "checked_by", "checked_days")
+                                         "min_roi", "min_roi90", "sort", "checked_by", "checked_days", "on_sale")
          if request.query_params.get(k) not in (None, "")}
     return await sephora.page_catalog(f, limit, offset)
 

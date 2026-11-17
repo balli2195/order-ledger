@@ -53,7 +53,7 @@
   .sl-seg button.on { background: var(--accent); color: var(--accent-ink); }
   .sl-filters select { width: auto; padding: 5px 7px; }
   .sl-brands { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; }
-  .sl-brands[hidden], #fStore[hidden] { display: none; }
+  .sl-brands[hidden], #fStore[hidden], #qSale[hidden] { display: none; }
   .sl-brands button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 1px 9px; font-size: 12px; cursor: pointer; color: var(--ink); }
   .sl-brands button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .sl-brands button .n { color: var(--muted); margin-left: 3px; font-variant-numeric: tabular-nums; }
@@ -104,6 +104,7 @@
     <a class="btn small ghost" href="/lead-db/guide" title="How the Lead DB tables, jobs and model training work">How it works</a>
     <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Search brand, product, shade or ASIN…" autocomplete="off"></div>
+    <select id="qSale" title="Leads priced with a store sale, promo code or event discount"><option value="">On sale or not</option><option value="1">On sale only</option><option value="0">Not on sale</option></select>
     <span class="muted" id="count" style="font-size:13px"></span>
   </div>
 
@@ -121,6 +122,7 @@
       <select id="fSize"><option value="">Any size</option><option value="open">Needs size, not set</option><option value="1">Needs size</option></select>
       <select id="fMatch" title="Pairs marked wrong or held back by a match rule are on the Mismatches page"><option value="">Mismatches hidden</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match only</option><option value="held">Held back by rules only</option><option value="all">Everything, incl. mismatches</option></select>
       <select id="fActive"><option value="1">Active</option><option value="0">Inactive</option><option value="all">Active + inactive</option></select>
+      <select id="fSale" title="Sephora's own sale price on the product (not promo codes)"><option value="">On sale or not</option><option value="1">On sale at Sephora</option><option value="0">Not on sale</option></select>
       <select id="fMinRoi" title="ROI at today's Sephora price and Buy Box"><option value="">Any ROI now</option><option value="0">ROI now 0%+</option><option value="15">ROI now 15%+</option><option value="21">ROI now 21%+</option><option value="30">ROI now 30%+</option><option value="50">ROI now 50%+</option></select>
       <select id="fMinRoi90" title="ROI at today's Sephora price and the 90-day average Buy Box"><option value="">Any ROI 90d</option><option value="0">ROI 90d 0%+</option><option value="15">ROI 90d 15%+</option><option value="21">ROI 90d 21%+</option><option value="30">ROI 90d 30%+</option></select>
       <select id="fBy" title="Who last marked the pair OK, wrong or a size"><option value="">Checked by anyone or no one</option><option value="claude">Checked by Claude</option><option value="people">Checked by people</option><option value="any">Checked by anyone</option></select>
@@ -253,10 +255,13 @@
       <div class="sl-links">${link(storeUrl(c), 'Sephora')}<a href="${amzUrl(c.asin)}" target="_blank" rel="noopener" class="mono">${esc(c.asin)}</a><a href="${keepaUrl(c.asin)}" target="_blank" rel="noopener">Keepa</a></div>
     </div>${acts}${done}</div>`;
   }
+  // a lead is "on sale" when its cost came from the item's sale price, a promo code or a store event discount
+  const isSale = (c) => c.reason === 'sale' || !!c.on_sale || /\b(sale|code|event|% off)\b/i.test(String(c.price_basis || ''));
   function renderQueue() {
     const q = $('#q').value.trim().toLowerCase();
     const src = S.view === 'decided' ? S.decided : S.cands;
-    const rows = src.filter((c) => matches(c, q));
+    const sf = $('#qSale').value;   // on-sale filter (Nick, Nov 17, 2026)
+    const rows = src.filter((c) => matches(c, q) && (sf === '' || (sf === '1') === isSale(c)));
     const days = {};
     rows.forEach((c) => { (days[c.found_on] = days[c.found_on] || []).push(c); });
     const keys = Object.keys(days).sort().reverse();
@@ -312,7 +317,7 @@
     const p = new URLSearchParams({ limit: 300, offset });
     const q = $('#q').value.trim(); if (q) p.set('q', q);
     if (S.brand) p.set('brand', S.brand);
-    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['sort', '#fSort'], ['checked_by', '#fBy'], ['checked_days', '#fDays']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['sort', '#fSort'], ['checked_by', '#fBy'], ['checked_days', '#fDays'], ['on_sale', '#fSale']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
@@ -344,6 +349,7 @@
     S.view = v; store.set('sephView', v);
     $$('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
     $('#queueView').hidden = v === 'catalog'; $('#catalogView').hidden = v !== 'catalog';
+    $('#qSale').hidden = v === 'catalog';
     $('#q').placeholder = v === 'catalog' ? 'Search brand, product, shade, ASIN or product id…' : 'Search brand, product, shade or ASIN…';
     refresh();
   }
@@ -410,10 +416,11 @@
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
   $('#fBrand').addEventListener('change', (e) => { S.brand = e.target.value; loadCatalog().catch(fail); });
-  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fSort', '#fBy', '#fDays'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fSort', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   $('#catMore').addEventListener('click', () => loadCatalog(true).catch(fail));
   let qt; $('#q').addEventListener('input', () => { if (S.view === 'catalog') { clearTimeout(qt); qt = setTimeout(() => loadCatalog().catch(fail), 300); } else renderQueue(); });
   $('#viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });
+  $('#qSale').addEventListener('change', () => renderQueue());
 
   try {
     await LG.header();
