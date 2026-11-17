@@ -591,12 +591,17 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
     if f.get("needs_size") == "open":
         w.append("needs_size AND size_confirmed IS NULL")
     m = f.get("match")
+    held = "(match_ok IS NULL AND COALESCE(match_reason, '') ILIKE %s)"   # held back by a learned match rule (Mismatches page)
     if m == "ok":
         w.append("match_ok")
     elif m == "wrong":
         w.append("match_ok IS FALSE")
     elif m == "unchecked":
-        w.append("match_ok IS NULL")
+        w.append(f"match_ok IS NULL AND NOT {held}"); a.append("%rule (%")
+    elif m == "held":
+        w.append(held); a.append("%rule (%")
+    elif m != "all":   # default (Nick, Nov 17, 2026): mismatches live on the Mismatches page, not in the catalog
+        w.append(f"match_ok IS NOT FALSE AND NOT {held}"); a.append("%rule (%")
     by = f.get("checked_by")   # who last marked the pair OK / wrong / size (Nick, Nov 17, 2026: review Claude's recent work)
     if by == "claude":
         w.append("marked_by ILIKE 'claude%%'")
