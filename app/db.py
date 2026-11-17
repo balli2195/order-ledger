@@ -1052,6 +1052,11 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX IF NOT EXISTS sephora_stock_watch_status ON sephora_stock_watch (status, asin);
     """,
+    # Lead DB (Nick, Nov 17, 2026): open candidates are re-priced every day; when ROI drops under 15% they expire with the reason.
+    """
+    ALTER TABLE sephora_candidates ADD COLUMN IF NOT EXISTS rechecked_at timestamptz;
+    ALTER TABLE sephora_candidates ADD COLUMN IF NOT EXISTS expired_reason text;
+    """,
 ]
 
 

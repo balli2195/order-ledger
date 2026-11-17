@@ -1588,6 +1588,13 @@ async def engine_sephora_candidates(request: Request, body: dict = Body(...)):
     return await sephora.upsert_candidates(body.get("rows"))
 
 
+@app.post("/api/engine/sephora/candidates/recheck")
+async def engine_sephora_candidates_recheck(request: Request, body: dict = Body(...)):
+    """Daily re-price of open candidates: {rows: [{id, cost, price_basis, buybox, roi_now, expire, why}]}."""
+    auth.require_engine_key(request)
+    return await sephora.recheck_candidates(body.get("rows"))
+
+
 @app.get("/api/engine/sephora/candidates")
 async def engine_sephora_candidates_get(request: Request, status: str | None = None, since: str | None = None,
                                         asin: str | None = None, limit: int = 2000):

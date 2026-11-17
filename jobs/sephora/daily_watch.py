@@ -199,6 +199,20 @@ def main():
         top = max([x for x in (e["roi_now"], e["roi_avg90"]) if x is not None], default=None)
         hot = bool((seph_today.get(r["product_id"]) or {}).get("dropped")) or e["sale_applied"] or e["promo_applied"]
         pri.append((0 if hot else 1, -(top if top is not None else -9), r))
+    # open candidates on To review are re-priced every day (Nick, Nov 17, 2026): their pairs go first in the Keepa queue,
+    # even when they aren't watchable today (rule-held, thin price...), so a lead whose sale ended or whose Buy Box fell expires
+    try:
+        open_cands = C.hub("GET", "/api/engine/sephora/candidates", params={"status": "new"}).get("rows") or []
+    except Exception as e:  # noqa: BLE001
+        open_cands = []
+        problems.append(f"open candidates read failed (no recheck today): {e!r}")
+    in_pri = {(r["asin"], r["product_id"]) for _, _, r in pri}
+    by_key = {(r["asin"], r["product_id"]): r for r in active}
+    for oc in open_cands:
+        k_ = (oc["asin"], oc["product_id"])
+        if k_ in by_key and k_ not in in_pri and oc["asin"] not in {r["asin"] for _, _, r in pri}:
+            pri.append((-1, 0, by_key[k_])); in_pri.add(k_)
+    pri = [(-1 if (r["asin"], r["product_id"]) in {(o["asin"], o["product_id"]) for o in open_cands} else t, v, r) for t, v, r in pri]
     pri.sort(key=lambda x: (x[0], x[1]))
     counts["watch_rows"] = len(watch)
     counts["watch_priceable"] = len(pri)
@@ -439,6 +453,28 @@ def main():
         put(r, **fields)
     cat_rows = list(upd.values())
 
+    # ---- 5b. re-price open candidates (Nick, Nov 17, 2026); the ones posted again today were replaced by today's row
+    posted_today = {c_["asin"] for c_ in cands}
+    recheck, rechecked_expired = [], []
+    for oc in open_cands:
+        r = by_key.get((oc["asin"], oc["product_id"]))
+        if not r or oc["asin"] in posted_today or oc["asin"] not in amz:
+            continue
+        e, d, thin = evaluate(r)
+        if not e or e["roi_now"] is None:
+            continue
+        bb = amz[r["asin"]]["buybox"] or amz[r["asin"]]["fba_low"]
+        if e["roi_now"] < PREFILTER:
+            why = (f"No longer profitable on {day:%b %-d}: cost ${e['entered']:.2f} ({e['label']}), Buy Box ${bb or 0:.2f}, "
+                   f"ROI {e['roi_now'] * 100:.0f}% (was {C.fnum(oc.get('roi_now')) * 100 if C.fnum(oc.get('roi_now')) is not None else 0:.0f}% "
+                   f"at ${C.fnum(oc.get('cost')) or 0:.2f})")
+            recheck.append({"id": oc["id"], "expire": True, "why": why})
+            rechecked_expired.append((r, why))
+        else:
+            recheck.append({"id": oc["id"], "cost": round(e["entered"], 2), "price_basis": e["label"][:200], "buybox": bb,
+                            "roi_now": e["roi_now"]})
+    counts["open_rechecked"], counts["open_expired"] = len(recheck), len(rechecked_expired)
+
     counts.update(brands=len(brands), products_checked=len(sp["products"]), sale_page_items=len(sp["products"]),
                   sale_page_in_catalog=len(seph_today) - len(sale_ended), sale_ended=len(sale_ended),
                   price_drops=price_drops, new_products=len(new_products),
@@ -468,6 +504,11 @@ def main():
         except Exception as e:  # noqa: BLE001
             problems.append(f"posting candidates failed: {e!r}"[:300])
             fatal = "the day's candidates could not be posted to the Hub"
+        try:
+            if recheck:
+                C.log("open candidates recheck:", C.hub("POST", "/api/engine/sephora/candidates/recheck", {"rows": recheck}, timeout=300))
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"open candidates recheck failed: {e!r}"[:300])
         if posted_res:
             counts["hub_inserted"], counts["hub_updated"] = posted_res.get("inserted"), posted_res.get("updated")
             counts["hub_skipped"] = len(posted_res.get("skipped") or [])
@@ -488,7 +529,9 @@ def main():
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
              f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}",
              f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
-             f"- Held back by learned match rules (Nick's wrong-match marks): {len(rule_skipped)}", ""]
+             f"- Held back by learned match rules (Nick's wrong-match marks): {len(rule_skipped)}",
+             f"- Open leads on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]
+    lines += [f"  - {r['asin']} {r.get('sephora_name') or ''}: {why}" for r, why in rechecked_expired[:15]] + [""]
     if cand_view:
         lines += ["## Candidates", "", "| ASIN | Brand | Sephora product | Cost | Buy Box | ROI | Band | Pred ROI | Reason |",
                   "|---|---|---|---|---|---|---|---|---|"]

@@ -316,8 +316,46 @@ async def upsert_candidates(rows: list) -> dict:
     return {"inserted": inserted, "updated": updated, "expired": expired, "skipped": skipped}
 
 
+async def recheck_candidates(rows: list) -> dict:
+    """Daily re-price of open candidates (Nick, Nov 17, 2026): [{id, cost, price_basis, buybox, roi_now, expire, why}].
+    expire -> status expired with expired_reason; else today's cost / Buy Box / ROI replace the old ones. Only 'new' rows change."""
+    if not isinstance(rows, list) or len(rows) > 2000:
+        raise LedgerError("rows must be a list (max 2000)")
+    out = {"expired": 0, "refreshed": 0}
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            for r in rows:
+                cid = str((r or {}).get("id") or "")
+                if not re.fullmatch(r"[0-9a-f-]{36}", cid):
+                    continue
+                if r.get("expire"):
+                    cur = await conn.execute(
+                        "UPDATE sephora_candidates SET status='expired', expired_reason=%s, rechecked_at=now(), updated_at=now() "
+                        "WHERE id=%s::uuid AND status='new' RETURNING id", (_txt(r.get("why"), 500), cid))
+                    out["expired"] += len(await cur.fetchall())
+                    continue
+                vals = {}
+                for k in ("cost", "buybox", "roi_now"):
+                    if r.get(k) is not None:
+                        try:
+                            vals[k] = float(r[k])
+                        except (TypeError, ValueError):
+                            raise LedgerError(f"{k} must be a number")
+                if r.get("price_basis"):
+                    vals["price_basis"] = _txt(r["price_basis"], 200)
+                sets = ", ".join(f"{k}=%s" for k in vals)
+                cur = await conn.execute(
+                    f"UPDATE sephora_candidates SET {sets + ', ' if sets else ''}rechecked_at=now(), updated_at=now() "
+                    f"WHERE id=%s::uuid AND status='new' RETURNING id", list(vals.values()) + [cid])
+                out["refreshed"] += len(await cur.fetchall())
+            await _audit(conn, ENGINE, "recheck", "sephora", None, None, None, out)
+            await _notify(conn)
+    return out
+
+
 CAND_SQL = """
 SELECT s.id, s.asin, s.product_id, s.found_on, s.reason, s.cost, s.price_basis, s.buybox, s.roi_now, s.lead_score_band,
+       s.rechecked_at, s.expired_reason,
        s.lead_score_pred_roi, s.lead_score_notes, s.note, s.status, s.reject_reason, s.decided_by, s.decided_at, s.lead_id,
        s.created_at, s.updated_at,
        c.store, c.brand, c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.price_lo, c.price_hi, c.sale_price, c.on_sale,
