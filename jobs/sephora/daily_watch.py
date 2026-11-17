@@ -202,7 +202,7 @@ def main():
     # open candidates on To review are re-priced every day (Nick, Nov 17, 2026): their pairs go first in the Keepa queue,
     # even when they aren't watchable today (rule-held, thin price...), so a lead whose sale ended or whose Buy Box fell expires
     try:
-        open_cands = C.hub("GET", "/api/engine/sephora/candidates", params={"status": "new"}).get("rows") or []
+        open_cands = C.hub("GET", "/api/engine/sephora/candidates", params={"status": "new"}).get("candidates") or []
     except Exception as e:  # noqa: BLE001
         open_cands = []
         problems.append(f"open candidates read failed (no recheck today): {e!r}")
