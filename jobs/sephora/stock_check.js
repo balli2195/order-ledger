@@ -10,7 +10,9 @@ window.sephStock = async (items, gapMs = 8000) => {
     const p = JSON.parse(m[1]).page.product;
     const seen = {};
     return [p.currentSku, ...(p.regularChildSkus || [])].filter(Boolean).filter((s) => !seen[s.skuId] && (seen[s.skuId] = 1))
-      .map((s) => ({ sku_id: String(s.skuId), name: [s.variationValue, s.size].filter(Boolean).join(' · ') || null, in_stock: s.isOutOfStock === undefined ? null : !s.isOutOfStock }));
+      .map((s) => ({ sku_id: String(s.skuId), name: [s.variationValue, s.variationDesc, s.size].filter(Boolean).join(' · ') || null,
+        shade: p.variationType && /colou?r|shade/i.test(p.variationType) ? [s.variationValue, s.variationDesc].filter(Boolean).join(' ') : null,
+        in_stock: s.isOutOfStock === undefined ? null : !s.isOutOfStock }));
   };
   for (let i = 0; i < items.length; i++) {
     const it = items[i];

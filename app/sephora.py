@@ -884,6 +884,17 @@ def _pick_sku(watch: dict, skus: list[dict]) -> tuple[dict | None, str]:
     """The Sephora SKU a watch is about: its own sku_id, else the one SKU, else a shade match on the Amazon title."""
     if not skus:
         return None, "no SKUs on the page"
+    text0 = " ".join(x for x in (watch.get("shade"), watch.get("amazon_title")) if x).lower()
+    if any(s.get("shade") for s in skus):   # shade product: the Amazon shade must be one Sephora lists
+        want = {int(n) for n in re.findall(r"(?:#|shade\s*|\b0)(\d{1,2}(?:\.5)?)\b", text0) if "." not in n}
+        want |= {int(n) for n in re.findall(r"\b0?(\d{1,2})\b", watch.get("shade") or "")}
+        if want:
+            hits = [s for s in skus if s.get("shade") and {int(n) for n in re.findall(r"\b0?(\d{1,2})\b", s["shade"])} & want]
+            if len(hits) == 1:
+                return hits[0], f"shade '{hits[0].get('shade')}'"
+            if not hits:
+                return None, f"Sephora's page doesn't list the Amazon shade ({'/'.join(str(x) for x in sorted(want))}); it lists " + \
+                    ", ".join(str(s.get("shade")) for s in skus[:8])
     by_id = {str(s.get("sku_id")): s for s in skus}
     if watch.get("sku_id") and str(watch["sku_id"]) in by_id and len(skus) == 1:
         return by_id[str(watch["sku_id"])], "only SKU"
@@ -922,7 +933,8 @@ async def stock_results(actor: Actor, results: list) -> dict:
                 w = await cur.fetchone()
                 if not w or w["status"] != "watching":
                     continue
-                skus = [{"sku_id": str(x.get("sku_id")), "name": _txt(x.get("name"), 120), "in_stock": x.get("in_stock")}
+                skus = [{"sku_id": str(x.get("sku_id")), "name": _txt(x.get("name"), 120), "shade": _txt(x.get("shade"), 120),
+                         "in_stock": x.get("in_stock")}
                         for x in (r.get("skus") or []) if isinstance(x, dict) and x.get("sku_id")]
                 if r.get("error"):
                     sku, why, ins = None, _txt(r["error"], 200), None
