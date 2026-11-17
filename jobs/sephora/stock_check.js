@@ -9,7 +9,9 @@ window.sephStock = async (items, gapMs = 8000) => {
     if (!m) return null;
     const p = JSON.parse(m[1]).page.product;
     const seen = {};
-    return [p.currentSku, ...(p.regularChildSkus || [])].filter(Boolean).filter((s) => !seen[s.skuId] && (seen[s.skuId] = 1))
+    // Sephora splits a product's SKUs across regularChildSkus and onSaleChildSkus (and other *ChildSkus lists); read them all.
+    const lists = Object.keys(p).filter((k) => /ChildSkus$/.test(k) && Array.isArray(p[k])).map((k) => p[k]);
+    return [p.currentSku, ...[].concat(...lists)].filter(Boolean).filter((s) => !seen[s.skuId] && (seen[s.skuId] = 1))
       .map((s) => ({ sku_id: String(s.skuId), name: [s.variationValue, s.variationDesc, s.size].filter(Boolean).join(' · ') || null,
         shade: p.variationType && /colou?r|shade/i.test(p.variationType) ? [s.variationValue, s.variationDesc].filter(Boolean).join(' ') : null,
         in_stock: s.isOutOfStock === undefined ? null : !s.isOutOfStock }));
