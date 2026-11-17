@@ -120,7 +120,9 @@
       <select id="fActive"><option value="1">Active</option><option value="0">Inactive</option><option value="all">Active + inactive</option></select>
       <select id="fMinRoi" title="ROI at today's Sephora price and Buy Box"><option value="">Any ROI now</option><option value="0">ROI now 0%+</option><option value="15">ROI now 15%+</option><option value="21">ROI now 21%+</option><option value="30">ROI now 30%+</option><option value="50">ROI now 50%+</option></select>
       <select id="fMinRoi90" title="ROI at today's Sephora price and the 90-day average Buy Box"><option value="">Any ROI 90d</option><option value="0">ROI 90d 0%+</option><option value="15">ROI 90d 15%+</option><option value="21">ROI 90d 21%+</option><option value="30">ROI 90d 30%+</option></select>
-      <select id="fSort"><option value="">Sort: brand</option><option value="roi">Sort: ROI now, high first</option><option value="roi90">Sort: ROI 90d, high first</option><option value="sold">Sort: sold/mo, high first</option></select>
+      <select id="fBy" title="Who last marked the pair OK, wrong or a size"><option value="">Checked by anyone or no one</option><option value="claude">Checked by Claude</option><option value="people">Checked by people</option><option value="any">Checked by anyone</option></select>
+      <select id="fDays" title="When the pair was last marked"><option value="">Checked any time</option><option value="1">Checked in the last 24 hours</option><option value="7">Checked in the last 7 days</option><option value="30">Checked in the last 30 days</option></select>
+      <select id="fSort"><option value="">Sort: brand</option><option value="checked">Sort: recently checked first</option><option value="roi">Sort: ROI now, high first</option><option value="roi90">Sort: ROI 90d, high first</option><option value="sold">Sort: sold/mo, high first</option></select>
     </div>
     <div class="sl-brands" id="brands"></div>
     <div class="table-wrap"><table id="catTable">
@@ -279,7 +281,7 @@
         <td class="num">${pct(r.roi_avg90)}</td>
         <td class="num">${num(r.monthly_sold)}</td>
         <td><div class="sl-tags" style="margin:0">${flags.map(([c, t]) => `<span class="sl-tag ${c}">${esc(t)}</span>`).join('')}</div></td>
-        <td class="mk">${mk(r, true, 'OK')} ${mk(r, false, 'Wrong', 'danger')}${r.marked_by ? `<div class="muted" style="font-size:11px">${esc(r.marked_by)}</div>` : ''}${r.match_ok === false && (r.wrong_tags?.length || r.wrong_note) ? `<div class="sl-why">${esc(WrongMatch.text(r.wrong_tags, r.wrong_note))}</div>` : ''}</td>
+        <td class="mk">${mk(r, true, 'OK')} ${mk(r, false, 'Wrong', 'danger')}${r.marked_by ? `<div class="muted" style="font-size:11px">${esc(r.marked_by)}${r.marked_at ? ' · ' + esc(new Date(r.marked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) : ''}</div>` : ''}${r.match_ok === false && (r.wrong_tags?.length || r.wrong_note) ? `<div class="sl-why">${esc(WrongMatch.text(r.wrong_tags, r.wrong_note))}</div>` : ''}${r.match_ok === false && r.correct_asin ? `<div style="font-size:11.5px">Correct: <a href="${amzUrl(r.correct_asin)}" target="_blank" rel="noopener" class="mono">${esc(r.correct_asin)}</a></div>` : ''}</td>
         <td class="mk">${r.needs_size ? `${sz(r, 'lo')} ${sz(r, 'hi')}${!r.size_confirmed && r.size_guess && r.size_guess !== 'unknown' ? `<div class="muted" style="font-size:11px">guess: ${r.size_guess === 'lo' ? 'mini' : 'full'}</div>` : ''}` : '<span class="muted">—</span>'}</td></tr>`;
     }).join('');
     $('#catEmpty').classList.toggle('hidden', rows.length > 0);
@@ -290,7 +292,7 @@
     const p = new URLSearchParams({ limit: 300, offset });
     const q = $('#q').value.trim(); if (q) p.set('q', q);
     if (S.brand) p.set('brand', S.brand);
-    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['sort', '#fSort']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['sort', '#fSort'], ['checked_by', '#fBy'], ['checked_days', '#fDays']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
@@ -387,7 +389,7 @@
       renderCatalog(); loadOverview().catch(() => {}); } catch (err) { fail(err); }
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
-  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fSort'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fSort', '#fBy', '#fDays'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   $('#catMore').addEventListener('click', () => loadCatalog(true).catch(fail));
   let qt; $('#q').addEventListener('input', () => { if (S.view === 'catalog') { clearTimeout(qt); qt = setTimeout(() => loadCatalog().catch(fail), 300); } else renderQueue(); });
   $('#viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });

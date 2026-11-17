@@ -504,6 +504,7 @@ CAT_SORTS = {   # Lead DB catalog sort options (whitelisted ORDER BY clauses)
     "roi": "roi_now DESC NULLS LAST, lower(brand), asin",
     "roi90": "roi_avg90 DESC NULLS LAST, lower(brand), asin",
     "sold": "monthly_sold DESC NULLS LAST, lower(brand), asin",
+    "checked": "marked_at DESC NULLS LAST, lower(brand), asin",
 }
 
 
@@ -532,6 +533,19 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
         w.append("match_ok IS FALSE")
     elif m == "unchecked":
         w.append("match_ok IS NULL")
+    by = f.get("checked_by")   # who last marked the pair OK / wrong / size (Nick, Nov 17, 2026: review Claude's recent work)
+    if by == "claude":
+        w.append("marked_by ILIKE 'claude%%'")
+    elif by == "people":
+        w.append("marked_by IS NOT NULL AND marked_by NOT ILIKE 'claude%%'")
+    elif by == "any":
+        w.append("marked_by IS NOT NULL")
+    if f.get("checked_days"):
+        try:
+            days = float(f["checked_days"])
+        except ValueError:
+            raise LedgerError("checked_days must be a number of days")
+        w.append("marked_at >= now() - make_interval(secs => %s)"); a.append(days * 86400)
     for key, col in (("min_roi", "roi_now"), ("min_roi90", "roi_avg90")):
         if f.get(key):
             try:
