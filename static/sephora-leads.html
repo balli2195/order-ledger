@@ -262,7 +262,7 @@
     const fb = $('#fBrand');
     const opts = [...S.cat.brands].filter((b) => b.brand).sort((x, y) => String(x.brand).localeCompare(String(y.brand), undefined, { sensitivity: 'base' }));
     fb.innerHTML = '<option value="">All brands</option>' + opts.map((b) =>
-      `<option value="${esc(b.brand)}" title="${num(b.unchecked)} not checked · ${num(b.ok)} OK · ${num(b.wrong)} wrong">${esc(b.brand)} (${num(b.n)})</option>`).join('');
+      `<option value="${esc(b.brand)}" title="${num(b.unchecked)} not checked · ${num(b.ok)} OK · ${num(b.wrong)} on the Mismatches page">${esc(b.brand)} (${num(b.n)}${b.wrong ? ` · ${num(b.wrong)} mismatched` : ''})</option>`).join('');
     const cur = opts.find((b) => S.brand && b.brand.toLowerCase() === S.brand.toLowerCase());
     fb.value = cur ? cur.brand : '';
     const ed = editor();

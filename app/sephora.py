@@ -637,8 +637,11 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
         total = (await (await conn.execute(f"SELECT count(*) n FROM sephora_catalog c {where}", a)).fetchone())["n"]
         # per-brand counts over everything active (not just the filtered rows), for the brand list
         cur = await conn.execute(
-            "SELECT brand, count(*) n, count(*) FILTER (WHERE match_ok IS NULL) unchecked, count(*) FILTER (WHERE match_ok) ok, "
-            "count(*) FILTER (WHERE match_ok IS FALSE) wrong FROM sephora_catalog WHERE active GROUP BY brand ORDER BY count(*) DESC, brand")
+            # n = pairs the catalog shows by default: mismatches (marked wrong, or held back by a rule) are counted apart
+            "SELECT brand, count(*) FILTER (WHERE match_ok IS NOT FALSE AND NOT (match_ok IS NULL AND COALESCE(match_reason, '') ILIKE %s)) n, "
+            "count(*) FILTER (WHERE match_ok IS NULL AND COALESCE(match_reason, '') NOT ILIKE %s) unchecked, count(*) FILTER (WHERE match_ok) ok, "
+            "count(*) FILTER (WHERE match_ok IS FALSE OR (match_ok IS NULL AND COALESCE(match_reason, '') ILIKE %s)) wrong "
+            "FROM sephora_catalog WHERE active GROUP BY brand ORDER BY count(*) DESC, brand", ("%rule (%",) * 3)
         brands = [jsonable(dict(r)) for r in await cur.fetchall()]
         cur = await conn.execute("SELECT store, count(*) n FROM sephora_catalog WHERE active GROUP BY store ORDER BY count(*) DESC")
         stores = [jsonable(dict(r)) for r in await cur.fetchall()]
