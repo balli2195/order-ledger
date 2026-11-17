@@ -150,6 +150,14 @@
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
   const safeUrl = (u) => u && /^https?:\/\//i.test(u) ? u : null;
   const link = (u, t) => safeUrl(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : '';
+  // the store size this ASIN matches (Nick, Nov 17, 2026): link to that size's SKU and show its own price, not the range
+  const storeUrl = (r) => {
+    if (!safeUrl(r.sephora_url) || !r.store_sku_id) return r.sephora_url;
+    try { const u = new URL(r.sephora_url); u.searchParams.set('skuId', r.store_sku_id); return u.toString(); } catch (e) { return r.sephora_url; }
+  };
+  const listPrice = (r) => r.store_size_price != null
+    ? `${money(r.store_size_price)}${r.store_size ? ` <span class="muted" style="font-size:11.5px">(${esc(r.store_size)})</span>` : ''}`
+    : (r.price_lo != null && r.price_hi != null && Number(r.price_lo) !== Number(r.price_hi) ? `${money(r.price_lo)}–${money(r.price_hi)}` : money(r.price_hi ?? r.price_lo));
   const amzUrl = (a) => `https://www.amazon.com/dp/${encodeURIComponent(a)}`;
   const keepaUrl = (a) => `https://keepa.com/#!product/1-${encodeURIComponent(a)}`;
   const REASON = { price_watch: 'Price drop', sale: 'Sale', new_product: 'New product' };
@@ -199,8 +207,7 @@
     const tags = [['reason', REASON[c.reason] || c.reason], [c.confidence === 'high' ? 'good' : '', `${c.confidence || '?'} confidence`],
       ...(c.sellable === 'open' ? [['good', 'Open to sell']] : c.sellable ? [] : [['', 'Sellable ?']]), ...warnings(c)];   // not open: shown as a warning below
     if (c.match_ok === true) tags.push(['good', 'Match OK']);
-    const list = c.price_lo != null && c.price_hi != null && Number(c.price_lo) !== Number(c.price_hi)
-      ? `${money(c.price_lo)}–${money(c.price_hi)}` : money(c.price_hi ?? c.price_lo);
+    const list = listPrice(c);
     const salePart = c.on_sale && c.sale_price != null ? `<span class="sl-strike">${list}</span>${money(c.sale_price)}` : list;
     const decided = c.status !== 'new';
     let acts = '';
@@ -238,7 +245,7 @@
       <div class="sl-tags">${tags.map(([cls, t]) => `<span class="sl-tag ${cls}">${esc(t)}</span>`).join('')}</div>
       ${c.note || c.price_basis ? `<div class="sl-note">${esc([c.price_basis, c.note].filter(Boolean).join(' · '))}</div>` : ''}
       ${c.lead_score_notes ? `<details class="sl-note"><summary>Lead Score notes</summary><div style="white-space:pre-wrap">${esc(c.lead_score_notes)}</div></details>` : ''}
-      <div class="sl-links">${link(c.sephora_url, 'Sephora')}<a href="${amzUrl(c.asin)}" target="_blank" rel="noopener" class="mono">${esc(c.asin)}</a><a href="${keepaUrl(c.asin)}" target="_blank" rel="noopener">Keepa</a></div>
+      <div class="sl-links">${link(storeUrl(c), 'Sephora')}<a href="${amzUrl(c.asin)}" target="_blank" rel="noopener" class="mono">${esc(c.asin)}</a><a href="${keepaUrl(c.asin)}" target="_blank" rel="noopener">Keepa</a></div>
     </div>${acts}${done}</div>`;
   }
   function renderQueue() {
@@ -276,10 +283,10 @@
       if (r.on_sale) flags.push(['reason', 'On sale']);
       if (!r.active) flags.push(['', 'Inactive']);
       if (r.open_candidates) flags.push(['reason', `${r.open_candidates} to review`]);
-      const list = r.price_lo != null && r.price_hi != null && Number(r.price_lo) !== Number(r.price_hi) ? `${money(r.price_lo)}–${money(r.price_hi)}` : money(r.price_hi ?? r.price_lo);
+      const list = listPrice(r);
       return `<tr>
         <td>${esc(r.brand || '')}${multiStore() ? `<div class="muted" style="font-size:11px">${esc(r.store || '')}</div>` : ''}</td>
-        <td class="prod">${link(r.sephora_url, r.sephora_name || r.product_id) || esc(r.sephora_name || r.product_id)}${r.shade ? ` <span class="muted">· ${esc(r.shade)}</span>` : ''}
+        <td class="prod">${link(storeUrl(r), r.sephora_name || r.product_id) || esc(r.sephora_name || r.product_id)}${r.shade ? ` <span class="muted">· ${esc(r.shade)}</span>` : ''}
           ${r.amazon_title ? `<div class="muted" style="font-size:12px">${esc(r.amazon_title)}</div>` : ''}
           ${r.match_reason ? `<div class="muted" style="font-size:11.5px">${esc(r.match_reason)}</div>` : ''}</td>
         <td><a href="${amzUrl(r.asin)}" target="_blank" rel="noopener" class="mono">${esc(r.asin)}</a><br><a href="${keepaUrl(r.asin)}" target="_blank" rel="noopener" style="font-size:12px">Keepa</a></td>

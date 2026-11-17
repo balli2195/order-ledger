@@ -1507,7 +1507,7 @@ async def api_sephora_mark(request: Request, body: dict = Body(...)):
     (tags / note / correct_asin say what was wrong when match_ok is false)."""
     user = await auth.require(request, "editor", tab="sephora_leads")
     return await sephora.mark_catalog(web_actor(user), body.get("asin"), body.get("product_id"),
-                                      {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin") if k in body})
+                                      {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin", "store_size") if k in body})
 
 
 @app.get("/api/engine/training/summary")
@@ -1543,7 +1543,7 @@ async def engine_sephora_mark(request: Request, body: dict = Body(...)):
     if body.get("correct_asin_only"):
         return await sephora.set_correct_asin(actor, body.get("asin"), body.get("product_id"), body.get("correct_asin"))
     return await sephora.mark_catalog(actor, body.get("asin"), body.get("product_id"),
-                                      {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin") if k in body})
+                                      {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin", "store_size") if k in body})
 
 
 @app.post("/api/engine/sephora/catalog/deactivate")

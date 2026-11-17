@@ -1023,6 +1023,15 @@ MIGRATIONS: list[str] = [
       updated_at  timestamptz NOT NULL DEFAULT now()
     );
     """,
+    # Lead DB (Nick, Nov 17, 2026): the store size an ASIN matches. A multi-size product (1.2 / 1.7 / 3.4 oz) pairs with one
+    # Amazon size; the pair keeps that size's SKU, label and price, so the link opens that size and ROI uses its price.
+    """
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store_sku_id text;
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store_size text;
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store_size_price numeric(12,2);
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store_size_by text;
+    ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store_size_at timestamptz;
+    """,
 ]
 
 

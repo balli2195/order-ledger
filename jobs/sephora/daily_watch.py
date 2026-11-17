@@ -150,6 +150,9 @@ def main():
           f"{len(sale_ended)} sales ended, {len(new_products)} sale items not in the catalog")
 
     def seph(r):
+        sp = C.fnum(r.get("store_size_price"))
+        if sp:   # the store size this ASIN matches was read from the product page (Nick, Nov 17, 2026): price that size only
+            return sp, sp, None
         t = seph_today.get(r["product_id"])
         if t:
             return t["lo"], t["hi"], t["sale"]
@@ -292,7 +295,7 @@ def main():
         problems.append(f"feedback read failed (no recent-decision filter): {e!r}")
     pool, skipped_decided, size_check = [], [], []
     for roi_, r, e in passed:
-        if r.get("needs_size") and r.get("size_confirmed") not in ("lo", "hi"):
+        if r.get("needs_size") and r.get("size_confirmed") not in ("lo", "hi") and not r.get("store_size_price"):
             if roi_ >= CAND_MIN:   # never posted until Nick confirms the size on the tab; listed in the summary
                 size_check.append((roi_, r, e))
             continue
@@ -373,7 +376,9 @@ def main():
         asz = (r.get("extra") or {}).get("amazon_size")
         if asz:
             bits.append(f"Amazon size {asz}")
-        if r.get("needs_size"):
+        if r.get("store_size"):
+            bits.append(f"buy the {r['store_size']} (${C.fnum(r.get('store_size_price')) or 0:.2f} list)")
+        elif r.get("needs_size"):
             bits.append("buy the " + ("mini/smaller size" if "lo" == r.get("size_confirmed") else "full size") + " (Nick confirmed)")
         if sc_note:
             bits.append(sc_note)

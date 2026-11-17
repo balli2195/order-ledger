@@ -35,7 +35,8 @@ CAT_BOOL = ("on_sale", "needs_size", "amazon_on", "active")
 CAT_ENUM = {"size_guess": ("lo", "hi", "unknown"), "confidence": ("high", "medium", "low"),
             "sellable": ("open", "approval_required", "restricted")}
 CAT_FIELDS = set(CAT_TEXT) | set(CAT_MONEY) | set(CAT_NUM) | set(CAT_INT) | set(CAT_BOOL) | set(CAT_ENUM) | {"extra"}
-NICK_FIELDS = {"match_ok", "size_confirmed", "marked_by", "marked_at", "wrong_tags", "wrong_note", "correct_asin"}
+NICK_FIELDS = {"match_ok", "size_confirmed", "marked_by", "marked_at", "wrong_tags", "wrong_note", "correct_asin",
+               "store_sku_id", "store_size", "store_size_price", "store_size_by", "store_size_at"}
 
 # What can be wrong with a match (the Wrong match dialog's quick picks; static/wrongmatch.js has the labels).
 # The jobs turn repeated tags into match rules (jobs/sephora/match_rules.py).
@@ -244,7 +245,8 @@ async def deactivate_catalog(keys: list) -> dict:
 CAT_COLS = ("asin, product_id, store, sku_id, brand, sephora_name, sephora_url, price_lo, price_hi, sale_price, on_sale, needs_size, "
             "size_guess, size_confirmed, confidence, match_reason, sellable, shade, amazon_title, buybox, fba_low, bb_avg90, "
             "referral_pct, fba_fee, monthly_sold, offers_fba, amazon_on, roi_now, roi_avg90, watch_price, match_ok, marked_by, "
-            "marked_at, wrong_tags, wrong_note, correct_asin, active, extra, created_at, updated_at")
+            "marked_at, wrong_tags, wrong_note, correct_asin, store_sku_id, store_size, store_size_price, store_size_by, store_size_at, "
+            "active, extra, created_at, updated_at")
 
 
 async def engine_catalog(brand: str | None, active: str | None, limit: int, offset: int, asin: str | None = None) -> dict:
@@ -321,6 +323,7 @@ SELECT s.id, s.asin, s.product_id, s.found_on, s.reason, s.cost, s.price_basis, 
        c.store, c.brand, c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.price_lo, c.price_hi, c.sale_price, c.on_sale,
        c.needs_size, c.size_guess, c.size_confirmed, c.confidence, c.match_reason, c.sellable, c.fba_low, c.bb_avg90,
        c.monthly_sold, c.offers_fba, c.amazon_on, c.roi_avg90, c.watch_price, c.match_ok, c.wrong_tags, c.wrong_note, c.correct_asin,
+       c.store_sku_id, c.store_size, c.store_size_price,
        c.active AS catalog_active,
        l.qty_ordered AS lead_qty_ordered, l.buy_qty AS lead_buy_qty
   FROM sephora_candidates s
@@ -689,6 +692,24 @@ async def mark_catalog(actor: Actor, asin: str, product_id: str, body: dict) -> 
         if v is not None and v not in ("lo", "hi"):
             raise LedgerError("size_confirmed must be lo (mini / smaller size), hi (full size) or empty")
         sets.append("size_confirmed=%s"); args.append(v); after["size_confirmed"] = v
+    if "store_size" in body:   # {"sku_id", "size", "price"} = the store SKU this ASIN matches; null clears it
+        v = body["store_size"]
+        if v in (None, "", {}):
+            sets += ["store_sku_id=NULL", "store_size=NULL", "store_size_price=NULL", "store_size_by=NULL", "store_size_at=NULL"]
+            after["store_size"] = None
+        else:
+            if not isinstance(v, dict):
+                raise LedgerError("store_size must be {sku_id, size, price}")
+            sku, label = _txt(v.get("sku_id")), _txt(v.get("size"))
+            try:
+                price = round(float(str(v.get("price")).replace("$", "").replace(",", "")), 2)
+            except (TypeError, ValueError):
+                raise LedgerError("store_size.price must be a number")
+            if not (sku and sku.isdigit() and label and 0 < price < 100000):
+                raise LedgerError("store_size needs a numeric sku_id, a size and a price")
+            sets += ["store_sku_id=%s", "store_size=%s", "store_size_price=%s", "store_size_by=%s", "store_size_at=now()"]
+            args += [sku, label[:60], price, actor.label]
+            after["store_size"] = {"sku_id": sku, "size": label[:60], "price": price}
     wrong = None
     if "match_ok" in after:
         if after["match_ok"] is False:
@@ -702,13 +723,14 @@ async def mark_catalog(actor: Actor, asin: str, product_id: str, body: dict) -> 
     source = body.get("_source") or "catalog"
     async with db.pool.connection() as conn:
         async with conn.transaction():
-            cur = await conn.execute("SELECT match_ok, size_confirmed FROM sephora_catalog WHERE asin=%s AND product_id=%s FOR UPDATE",
-                                     (asin, product_id))
+            cur = await conn.execute("SELECT match_ok, size_confirmed, store_size FROM sephora_catalog WHERE asin=%s AND product_id=%s "
+                                     "FOR UPDATE", (asin, product_id))
             before = await cur.fetchone()
             if not before:
                 raise LedgerError("That catalog pair doesn't exist")
-            await conn.execute(f"UPDATE sephora_catalog SET {', '.join(sets)}, marked_by=%s, marked_at=now(), updated_at=now() "
-                               f"WHERE asin=%s AND product_id=%s", args + [actor.label, asin, product_id])
+            stamp = "marked_by=%s, marked_at=now(), " if ("match_ok" in after or "size_confirmed" in after) else ""
+            await conn.execute(f"UPDATE sephora_catalog SET {', '.join(sets)}, {stamp}updated_at=now() "
+                               f"WHERE asin=%s AND product_id=%s", args + ([actor.label] if stamp else []) + [asin, product_id])
             expired = 0
             if "match_ok" in after and after["match_ok"] is not False:   # changed his mind: stop learning from the old mark
                 await conn.execute("DELETE FROM match_feedback WHERE asin=%s AND product_id=%s", (asin, product_id))

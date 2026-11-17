@@ -104,9 +104,10 @@
     $('#head').innerHTML = `<tr>${cols.map((c) => `<th${/ROI/.test(c) ? ' class="num"' : ''}>${esc(c)}</th>`).join('')}</tr>`;
   }
   function prodCell(r) {
-    const u = safeUrl(r.sephora_url);
+    let u = safeUrl(r.sephora_url);
+    if (u && r.store_sku_id) { try { const x = new URL(u); x.searchParams.set('skuId', r.store_sku_id); u = x.toString(); } catch (e) {} }
     return `<td class="prod">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(r.sephora_name || r.product_id)}</a>` : esc(r.sephora_name || r.product_id)}${r.shade ? ` <span class="muted">· ${esc(r.shade)}</span>` : ''}
-      <div class="mm-small">${esc(r.store || 'Sephora')} ${esc(r.product_id || '')}${r.price_lo != null ? ` · $${esc(r.price_lo)}${r.price_hi != null && Number(r.price_hi) !== Number(r.price_lo) ? '–' + esc(r.price_hi) : ''}` : ''}</div></td>`;
+      <div class="mm-small">${esc(r.store || 'Sephora')} ${esc(r.product_id || '')}${r.store_size_price != null ? ` · $${esc(r.store_size_price)} (${esc(r.store_size || '')})` : r.price_lo != null ? ` · $${esc(r.price_lo)}${r.price_hi != null && Number(r.price_hi) !== Number(r.price_lo) ? '–' + esc(r.price_hi) : ''}` : ''}</div></td>`;
   }
   function amzCell(r) {
     const sz = amzSize(r);
