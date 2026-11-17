@@ -324,6 +324,9 @@ SELECT s.id, s.asin, s.product_id, s.found_on, s.reason, s.cost, s.price_basis, 
        c.needs_size, c.size_guess, c.size_confirmed, c.confidence, c.match_reason, c.sellable, c.fba_low, c.bb_avg90,
        c.monthly_sold, c.offers_fba, c.amazon_on, c.roi_avg90, c.watch_price, c.match_ok, c.wrong_tags, c.wrong_note, c.correct_asin,
        c.store_sku_id, c.store_size, c.store_size_price,
+       (SELECT w.status FROM sephora_stock_watch w WHERE w.candidate_id = s.id) AS stock_watch,
+       (SELECT w.last_checked_at FROM sephora_stock_watch w WHERE w.candidate_id = s.id) AS stock_checked_at,
+       (SELECT w.restocked_at FROM sephora_stock_watch w WHERE w.candidate_id = s.id) AS stock_restocked_at,
        c.active AS catalog_active,
        l.qty_ordered AS lead_qty_ordered, l.buy_qty AS lead_buy_qty
   FROM sephora_candidates s
@@ -841,6 +844,104 @@ async def approve(actor: Actor, cid: str, size: str | None = None) -> dict:
             "cost_note": cost_note}
 
 
+OOS_RE = re.compile(r"\b(not in stock|out of stock|sold out|oos)\b", re.I)
+
+
+async def stock_watch(status: str = "watching") -> dict:
+    """Stock watches (Nick, Nov 17, 2026). status: watching (what the Chrome check should read) | all."""
+    w = "w.status = 'watching' AND c.active AND c.match_ok IS NOT FALSE" if status == "watching" else "TRUE"
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            f"""SELECT w.id, w.candidate_id, w.asin, w.product_id, w.sku_id, w.status, w.added_by, w.added_at, w.checks,
+                       w.last_checked_at, w.last_in_stock, w.last_detail, w.restocked_at, s.decided_at AS rejected_at,
+                       c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.store_size
+                  FROM sephora_stock_watch w
+                  JOIN sephora_candidates s ON s.id = w.candidate_id
+                  LEFT JOIN sephora_catalog c ON c.asin = w.asin AND c.product_id = w.product_id
+                 WHERE {w} ORDER BY w.added_at""")
+        rows = [jsonable(dict(r)) for r in await cur.fetchall()]
+    return {"rows": rows}
+
+
+async def add_stock_watch(actor: Actor, cid: str) -> dict:
+    """Watch the stock of an already-rejected candidate (for rejects made before watches existed)."""
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            c = await _candidate(conn, cid)
+            if c["status"] != "rejected":
+                raise LedgerError("Only a rejected candidate can be watched")
+            cur = await conn.execute(
+                "INSERT INTO sephora_stock_watch (candidate_id, asin, product_id, sku_id, added_by) "
+                "SELECT %s::uuid, %s::text, %s::text, COALESCE(store_sku_id, substring(sephora_url from 'skuId=([0-9]+)')), %s::text "
+                "FROM sephora_catalog WHERE asin=%s AND product_id=%s ON CONFLICT (candidate_id) DO NOTHING RETURNING id",
+                (cid, c["asin"], c["product_id"], actor.label, c["asin"], c["product_id"]))
+            row = await cur.fetchone()
+            await _notify(conn)
+    return {"added": bool(row), "candidate_id": cid}
+
+
+def _pick_sku(watch: dict, skus: list[dict]) -> tuple[dict | None, str]:
+    """The Sephora SKU a watch is about: its own sku_id, else the one SKU, else a shade match on the Amazon title."""
+    if not skus:
+        return None, "no SKUs on the page"
+    by_id = {str(s.get("sku_id")): s for s in skus}
+    if watch.get("sku_id") and str(watch["sku_id"]) in by_id and len(skus) == 1:
+        return by_id[str(watch["sku_id"])], "only SKU"
+    if len(skus) == 1:
+        return skus[0], "only SKU"
+    text = " ".join(x for x in (watch.get("shade"), watch.get("amazon_title"), watch.get("store_size")) if x).lower()
+    words = set(re.findall(r"[a-z]{3,}|\d+(?:\.\d+)?", text))
+    best, score, tie = None, 0, False
+    for s in skus:
+        sw = set(re.findall(r"[a-z]{3,}|\d+(?:\.\d+)?", str(s.get("name") or "").lower()))
+        n = len(sw & words)
+        if n > score:
+            best, score, tie = s, n, False
+        elif n == score and n:
+            tie = True
+    if best and not tie:
+        return best, f"matched '{best.get('name')}'"
+    if watch.get("sku_id") and str(watch["sku_id"]) in by_id:
+        return by_id[str(watch["sku_id"])], "the pair's SKU"
+    return None, "can't tell which SKU/shade"
+
+
+async def stock_results(actor: Actor, results: list) -> dict:
+    """Results of the Chrome stock check: [{id, skus: [{sku_id, name, in_stock}], error?}].
+    Picks the watch's SKU (see _pick_sku); in stock -> status restocked (the daily job may propose the ASIN again)."""
+    if not isinstance(results, list) or len(results) > 500:
+        raise LedgerError("results must be a list (max 500)")
+    done = {"checked": 0, "restocked": 0, "still_out": 0, "unclear": 0}
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            for r in results:
+                wid = str((r or {}).get("id") or "")
+                cur = await conn.execute(
+                    "SELECT w.*, c.shade, c.amazon_title, c.store_size FROM sephora_stock_watch w LEFT JOIN sephora_catalog c "
+                    "ON c.asin = w.asin AND c.product_id = w.product_id WHERE w.id::text = %s FOR UPDATE OF w", (wid,))
+                w = await cur.fetchone()
+                if not w or w["status"] != "watching":
+                    continue
+                skus = [{"sku_id": str(x.get("sku_id")), "name": _txt(x.get("name"), 120), "in_stock": x.get("in_stock")}
+                        for x in (r.get("skus") or []) if isinstance(x, dict) and x.get("sku_id")]
+                if r.get("error"):
+                    sku, why, ins = None, _txt(r["error"], 200), None
+                else:
+                    sku, why = _pick_sku(dict(w), skus)
+                    ins = None if sku is None or sku.get("in_stock") is None else bool(sku["in_stock"])
+                detail = f"{why}; SKU {sku['sku_id']} {'in stock' if ins else 'out of stock'}" if sku and ins is not None else why
+                await conn.execute(
+                    "UPDATE sephora_stock_watch SET checks = checks + 1, last_checked_at = now(), last_in_stock = %s, last_detail = %s, "
+                    "sku_id = COALESCE(%s, sku_id), status = CASE WHEN %s THEN 'restocked' ELSE status END, "
+                    "restocked_at = CASE WHEN %s THEN now() ELSE restocked_at END WHERE id = %s",
+                    (ins, detail[:300], sku["sku_id"] if sku else None, ins is True, ins is True, w["id"]))
+                done["checked"] += 1
+                done["restocked" if ins else ("still_out" if ins is False else "unclear")] += 1
+            await _audit(conn, actor, "stock_check", "sephora", None, None, None, done)
+            await _notify(conn)
+    return done
+
+
 async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match: bool = False, wrong: dict | None = None) -> dict:
     reason = _txt(reason, 300)
     w = clean_wrong(wrong or {}) if wrong_match else None
@@ -853,6 +954,12 @@ async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match:
                 reason = wrong_text(w)
             await conn.execute("UPDATE sephora_candidates SET status='rejected', reject_reason=%s, decided_by=%s, decided_at=now(), "
                                "updated_at=now() WHERE id=%s", (reason, actor.label, cid))
+            if not wrong_match and OOS_RE.search(reason or ""):   # watch Sephora stock instead of the 21-day block
+                await conn.execute(
+                    "INSERT INTO sephora_stock_watch (candidate_id, asin, product_id, sku_id, added_by) "
+                    "SELECT %s::uuid, %s::text, %s::text, COALESCE(store_sku_id, substring(sephora_url from 'skuId=([0-9]+)')), %s::text "
+                    "FROM sephora_catalog WHERE asin=%s AND product_id=%s ON CONFLICT (candidate_id) DO NOTHING",
+                    (cid, c["asin"], c["product_id"], actor.label, c["asin"], c["product_id"]))
             await _audit(conn, actor, "reject", "sephora", cid, None, {"status": "new"},
                          {"status": "rejected", "asin": c["asin"], "reason": reason, "wrong_match": wrong_match})
             await _notify(conn)

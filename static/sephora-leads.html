@@ -155,6 +155,10 @@
     if (!safeUrl(r.sephora_url) || !r.store_sku_id) return r.sephora_url;
     try { const u = new URL(r.sephora_url); u.searchParams.set('skuId', r.store_sku_id); return u.toString(); } catch (e) { return r.sephora_url; }
   };
+  // leads rejected as not in stock are watched by the morning Chrome check (Nick, Nov 17, 2026)
+  const stockLine = (c) => c.stock_watch === 'restocked'
+    ? ` · <span class="sl-tag good">Back in stock ${esc(when(c.stock_restocked_at))}</span>`
+    : c.stock_watch === 'watching' ? ` · <span class="sl-tag">Watching Sephora stock${c.stock_checked_at ? ` · checked ${esc(when(c.stock_checked_at))}` : ''}</span>` : '';
   const listPrice = (r) => r.store_size_price != null
     ? `${money(r.store_size_price)}${r.store_size ? ` <span class="muted" style="font-size:11.5px">(${esc(r.store_size)})</span>` : ''}`
     : (r.price_lo != null && r.price_hi != null && Number(r.price_lo) !== Number(r.price_hi) ? `${money(r.price_lo)}–${money(r.price_hi)}` : money(r.price_hi ?? r.price_lo));
@@ -227,7 +231,7 @@
     }
     const done = decided ? `<div class="sl-done">${c.status === 'approved'
       ? `<span class="sl-tag good">Approved</span> by ${esc(c.decided_by || '')} ${esc(when(c.decided_at))}${c.lead_id ? ` · <a href="/leads#lead=${esc(c.lead_id)}">open lead</a>` : ''}${c.lead_qty_ordered != null ? ` · ordered ${num(c.lead_qty_ordered)}` : ''}`
-      : `<span class="sl-tag ${c.status === 'rejected' ? 'warn' : ''}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span>${c.decided_by ? ` by ${esc(c.decided_by)} ${esc(when(c.decided_at))}` : ''}${c.reject_reason ? ` · ${esc(c.reject_reason)}` : ''}`}</div>` : '';
+      : `<span class="sl-tag ${c.status === 'rejected' ? 'warn' : ''}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span>${c.decided_by ? ` by ${esc(c.decided_by)} ${esc(when(c.decided_at))}` : ''}${c.reject_reason ? ` · ${esc(c.reject_reason)}` : ''}${stockLine(c)}`}</div>` : '';
     return `<div class="sl-card" data-card="${esc(c.id)}"><div>
       <div class="sl-brand">${multiStore() || (c.store && c.store !== 'Sephora') ? `${esc(c.store)} · ` : ''}${esc(c.brand || '—')}</div>
       <div><span class="sl-name">${esc(c.sephora_name || c.product_id)}</span>${c.shade ? ` <span class="sl-shade">· ${esc(c.shade)}</span>` : ''}</div>

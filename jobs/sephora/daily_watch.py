@@ -293,6 +293,15 @@ def main():
                 decided[d_["asin"]] = (d_["status"], c_)
     except Exception as e:  # noqa: BLE001
         problems.append(f"feedback read failed (no recent-decision filter): {e!r}")
+    try:   # leads rejected as not in stock (Nick, Nov 17, 2026): held until the Chrome stock check finds them back in stock
+        for w_ in C.hub("GET", "/api/engine/sephora/stock-watch", params={"status": "all"}).get("rows") or []:
+            if w_["status"] == "watching":
+                decided[w_["asin"]] = ("rejected: not in stock at Sephora", None)   # no time limit, any price
+            elif w_["status"] == "restocked" and C.after_ts(w_.get("restocked_at") or "", w_.get("rejected_at") or ""):
+                if decided.get(w_["asin"], ("",))[0] == "rejected":
+                    decided.pop(w_["asin"], None)   # back in stock: may be proposed again
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"stock watch read failed: {e!r}")
     pool, skipped_decided, size_check = [], [], []
     for roi_, r, e in passed:
         if r.get("needs_size") and r.get("size_confirmed") not in ("lo", "hi") and not r.get("store_size_price"):

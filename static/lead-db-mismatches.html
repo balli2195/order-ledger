@@ -126,7 +126,7 @@
     $('#rows').innerHTML = S.rows.map((r) => {
       if (S.kind === 'rejected') {
         const m = r.match_ok === false ? '<span class="mm-why">Marked wrong</span>' : r.match_ok ? 'OK' : '<span class="muted">not checked</span>';
-        return `<tr><td>${esc(r.brand || '')}</td>${prodCell(r)}${amzCell(r)}<td class="mm-why">${esc(r.reject_reason || '')}</td>
+        return `<tr><td>${esc(r.brand || '')}</td>${prodCell(r)}${amzCell(r)}<td class="mm-why">${esc(r.reject_reason || '')}${r.stock_watch === 'restocked' ? `<div class="mm-small" style="color:var(--ok)">Back in stock ${esc(when(r.stock_restocked_at))}</div>` : r.stock_watch === 'watching' ? `<div class="mm-small">Watching Sephora stock${r.stock_checked_at ? ' · checked ' + esc(when(r.stock_checked_at)) : ''}</div>` : ''}</td>
           <td class="num">${pct(r.roi_now)}</td><td class="mm-small">${esc(r.decided_by || '')}<br>${esc(when(r.decided_at))}</td><td>${m}</td></tr>`;
       }
       if (S.kind === 'held') {

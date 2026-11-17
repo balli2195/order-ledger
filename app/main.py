@@ -1533,6 +1533,27 @@ async def engine_sephora_catalog(request: Request, body: dict = Body(...)):
     return await sephora.upsert_catalog(body.get("rows"))
 
 
+@app.get("/api/engine/sephora/stock-watch")
+async def engine_sephora_stock_watch(request: Request, status: str = "watching"):
+    """Leads rejected as not in stock at Sephora (Nick, Nov 17, 2026): what the morning Chrome stock check reads."""
+    auth.require_engine_key(request)
+    return await sephora.stock_watch(status)
+
+
+@app.post("/api/engine/sephora/stock-watch")
+async def engine_sephora_stock_watch_add(request: Request, body: dict = Body(...)):
+    """{candidate_id}: watch the Sephora stock of a candidate rejected as not in stock before watches existed."""
+    auth.require_engine_key(request)
+    return await sephora.add_stock_watch(sephora.Actor(None, "Claude", "engine"), body.get("candidate_id"))
+
+
+@app.post("/api/engine/sephora/stock-watch/results")
+async def engine_sephora_stock_results(request: Request, body: dict = Body(...)):
+    """{results: [{id, skus: [{sku_id, name, in_stock}], error?}]} from the Sephora pages; in stock -> restocked."""
+    auth.require_engine_key(request)
+    return await sephora.stock_results(sephora.Actor(None, "Claude (stock check)", "engine"), body.get("results"))
+
+
 @app.post("/api/engine/sephora/catalog/mark")
 async def engine_sephora_mark(request: Request, body: dict = Body(...)):
     """Claude's checked answers on a catalog pair (Nick, Nov 17, 2026: when a mismatch is found, find the correct ASIN and

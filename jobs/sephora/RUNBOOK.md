@@ -80,6 +80,21 @@ Nick (or his team) marks wrong Amazon ↔ Sephora matches on the Hub — the Sep
 - **Store size on a pair (Nick, Nov 17, 2026).** A multi-size store product (1.2 / 1.7 / 3.4 oz) pairs with one Amazon size. When the Sephora page sizes are known, write the matching SKU with `POST /api/engine/sephora/catalog/mark` `{asin, product_id, store_size: {sku_id, size, price}}` (doesn't change who checked the match). The page then links to that size and shows its price, and the daily watch prices the pair at that size (no size check needed). Sizes within 12% count as the same; a refill or 3 x 20 ml set maps to the store's travel set SKU only.
 - In the message to Nick, add one line: wrong-match marks this week, automatic checks now on, any manual rule you added (and why), pairs downgraded.
 
+## 4c. Daily: Sephora stock check (Claude in Chrome on Nick's MacBook, before the daily run)
+When Nick rejects a lead as **Not in stock at Sephora**, the Hub starts a stock watch instead of the 21-day block (Nick, Nov 17, 2026:
+"I don't need it snoozed"). The daily watch holds that ASIN back, at any price and for any time, until a check finds it back in stock;
+then the next daily run may propose it again with fresh prices.
+1. `GET /api/engine/sephora/stock-watch` (X-Engine-Key). If `rows` is empty, stop: nothing to check, no message.
+2. Load the Chrome tools in one ToolSearch, call tabs_context_mcp, open a new tab at https://www.sephora.com/ and wait for it to load.
+   Read `jobs/sephora/stock_check.js` (project doc `claude/sephora-catalog/stock_check.js`) and run it with javascript_tool.
+3. For the watched rows, 3 at a time: `await sephStock([{id, url: sephora_url}, ...])`. Keep the 8-second gap; never more than
+   60 pages a day. If a result says blocked / no product data twice in a row, stop and report it.
+4. POST all results (from the session, not the page) to `/api/engine/sephora/stock-watch/results` as `{results: [...]}`. The Hub picks
+   the watched SKU (the pair's store size, else the only SKU, else the shade that matches the Amazon title) and marks the watch
+   restocked when that SKU is in stock. Close your tab.
+5. Only message Nick when something came back in stock (name, Amazon ASIN link, Sephora link) or a step failed. Reads only: never
+   add to bag, sign in, or change anything on Sephora.
+
 ## 5. Other scripts
 
 - `build_backlog.py --max-tokens N` runs once within N Keepa tokens, then exits.

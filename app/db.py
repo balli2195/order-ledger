@@ -1032,6 +1032,26 @@ MIGRATIONS: list[str] = [
     ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store_size_by text;
     ALTER TABLE sephora_catalog ADD COLUMN IF NOT EXISTS store_size_at timestamptz;
     """,
+    # Lead DB (Nick, Nov 17, 2026): a lead rejected as "not in stock at Sephora" is watched, not snoozed. A Chrome run
+    # reads the Sephora page each morning; when the SKU is back in stock the daily job may propose it again.
+    """
+    CREATE TABLE IF NOT EXISTS sephora_stock_watch (
+      id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      candidate_id     uuid NOT NULL UNIQUE,
+      asin             text NOT NULL,
+      product_id       text NOT NULL,
+      sku_id           text,
+      status           text NOT NULL DEFAULT 'watching',   -- watching | restocked | stopped
+      added_by         text,
+      added_at         timestamptz NOT NULL DEFAULT now(),
+      checks           integer NOT NULL DEFAULT 0,
+      last_checked_at  timestamptz,
+      last_in_stock    boolean,
+      last_detail      text,
+      restocked_at     timestamptz
+    );
+    CREATE INDEX IF NOT EXISTS sephora_stock_watch_status ON sephora_stock_watch (status, asin);
+    """,
 ]
 
 
