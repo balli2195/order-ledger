@@ -79,7 +79,7 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
-_CORS_PATHS = ("/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
+_CORS_PATHS = ("/api/store-skus/upload", "/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
                "/api/engine/giftcards/to-check", "/api/engine/giftcards/check-results", "/api/engine/giftcards/order-dates")
 # The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
 _GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
@@ -92,11 +92,11 @@ _STORE_ORIGINS = {"https://www.macys.com", "https://macys.com"}
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    allowed = {"/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
+    allowed = {"/api/store-skus/upload": {"https://www.sephora.com"}, "/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
                "/api/engine/giftcards/to-check": _STORE_ORIGINS, "/api/engine/giftcards/check-results": _STORE_ORIGINS}.get(request.url.path, _IL_ORIGINS)
     if request.url.path in _CORS_PATHS and origin in allowed:
         h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-             "Access-Control-Allow-Headers": "Content-Type, X-Engine-Key, X-GC-Key", "Access-Control-Max-Age": "600", "Vary": "Origin"}
+             "Access-Control-Allow-Headers": "Content-Type, X-Engine-Key, X-GC-Key, X-Upload-Token", "Access-Control-Max-Age": "600", "Vary": "Origin"}
         if request.method == "OPTIONS":
             return JSONResponse({}, headers=h)
         resp = await call_next(request)
@@ -1531,6 +1531,25 @@ async def engine_sephora_catalog(request: Request, body: dict = Body(...)):
     """Upsert catalog pairs: {rows: [{asin, product_id, ...}]} (up to 1000). Never touches match_ok / size_confirmed."""
     auth.require_engine_key(request)
     return await sephora.upsert_catalog(body.get("rows"))
+
+
+@app.post("/api/engine/upload-token")
+async def engine_upload_token(request: Request, body: dict = Body(default={})):
+    """{purpose: 'store_skus', hours?} -> a short-lived token for /api/store-skus/upload (used inside sephora.com pages)."""
+    auth.require_engine_key(request)
+    return await sephora.new_upload_token(body.get("purpose") or "store_skus", body.get("hours") or 8)
+
+
+@app.post("/api/store-skus/upload")
+async def store_skus_upload(request: Request, body: dict = Body(...)):
+    """SKU lists read from Sephora product pages in Nick's Chrome (Nov 17, 2026). X-Upload-Token header; CORS: sephora.com only."""
+    return await sephora.upload_store_skus(request.headers.get("x-upload-token"), body)
+
+
+@app.get("/api/engine/store-skus")
+async def engine_store_skus(request: Request, product_ids: str | None = None):
+    auth.require_engine_key(request)
+    return await sephora.store_skus([p for p in (product_ids or "").split(",") if p] or None)
 
 
 @app.get("/api/engine/sephora/stock-watch")

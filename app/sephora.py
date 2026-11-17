@@ -884,6 +884,67 @@ async def approve(actor: Actor, cid: str, size: str | None = None) -> dict:
             "cost_note": cost_note}
 
 
+async def new_upload_token(purpose: str, hours: float) -> dict:
+    """A short-lived token that only allows posting SKU lists (store_skus), for scripts running inside a store's page."""
+    import secrets
+    if purpose != "store_skus":
+        raise LedgerError("purpose must be store_skus")
+    hours = max(0.25, min(float(hours or 8), 24))
+    tok = secrets.token_urlsafe(24)
+    async with db.pool.connection() as conn:
+        await conn.execute("DELETE FROM upload_tokens WHERE expires_at < now()")
+        await conn.execute("INSERT INTO upload_tokens (token, purpose, expires_at) VALUES (%s, %s, now() + make_interval(secs => %s))",
+                           (tok, purpose, hours * 3600))
+    return {"token": tok, "hours": hours}
+
+
+async def upload_store_skus(token: str | None, body: dict) -> dict:
+    """{products: {P123: {vt, skus: [[sku_id, size, variation_value, variation_desc, price, out_of_stock], ...]}}} from the
+    product pages in Nick's Chrome. Needs a live store_skus upload token. Only writes store_skus."""
+    if not token:
+        raise LedgerError("Missing upload token")
+    prods = (body or {}).get("products")
+    if not isinstance(prods, dict) or not prods or len(prods) > 1000:
+        raise LedgerError("products must be an object of up to 1000 products")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT 1 FROM upload_tokens WHERE token=%s AND purpose='store_skus' AND expires_at > now()", (token,))
+        if not await cur.fetchone():
+            raise LedgerError("Upload token is invalid or expired")
+        n = 0
+        async with conn.transaction():
+            for pid, v in prods.items():
+                pid = _pid(pid)
+                if not isinstance(v, dict) or not isinstance(v.get("skus"), list) or len(v["skus"]) > 400:
+                    continue
+                skus = []
+                for x in v["skus"]:
+                    if not isinstance(x, list) or len(x) < 6 or not str(x[0]).isdigit():
+                        continue
+                    price = None
+                    try:
+                        price = round(float(str(x[4]).replace("$", "").replace(",", "")), 2) if x[4] not in (None, "") else None
+                    except ValueError:
+                        pass
+                    skus.append({"sku_id": str(x[0]), "size": _txt(x[1], 80), "value": _txt(x[2], 120), "desc": _txt(x[3], 160),
+                                 "price": price, "oos": bool(x[5])})
+                await conn.execute(
+                    "INSERT INTO store_skus (store, product_id, variation_type, skus, read_at) VALUES ('Sephora', %s, %s, %s, now()) "
+                    "ON CONFLICT (store, product_id) DO UPDATE SET variation_type=EXCLUDED.variation_type, skus=EXCLUDED.skus, read_at=now()",
+                    (pid, _txt(v.get("vt"), 40), json.dumps(skus)))
+                n += 1
+    return {"saved": n}
+
+
+async def store_skus(product_ids: list[str] | None) -> dict:
+    async with db.pool.connection() as conn:
+        if product_ids:
+            cur = await conn.execute("SELECT * FROM store_skus WHERE product_id = ANY(%s)", ([_pid(p) for p in product_ids],))
+        else:
+            cur = await conn.execute("SELECT * FROM store_skus")
+        rows = [jsonable(dict(r)) for r in await cur.fetchall()]
+    return {"rows": rows}
+
+
 OOS_RE = re.compile(r"\b(not in stock|out of stock|sold out|oos)\b", re.I)
 
 

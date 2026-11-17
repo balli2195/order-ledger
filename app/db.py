@@ -1057,6 +1057,24 @@ MIGRATIONS: list[str] = [
     ALTER TABLE sephora_candidates ADD COLUMN IF NOT EXISTS rechecked_at timestamptz;
     ALTER TABLE sephora_candidates ADD COLUMN IF NOT EXISTS expired_reason text;
     """,
+    # Lead DB (Nick, Nov 17, 2026): Sephora's SKU list per product (sizes, shades, prices, stock) read from the product page in
+    # Nick's Chrome. The page posts it here with a short-lived upload token, so the engine key never enters a store's page.
+    """
+    CREATE TABLE IF NOT EXISTS store_skus (
+      store           text NOT NULL DEFAULT 'Sephora',
+      product_id      text NOT NULL,
+      variation_type  text,
+      skus            jsonb NOT NULL,
+      read_at         timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (store, product_id)
+    );
+    CREATE TABLE IF NOT EXISTS upload_tokens (
+      token       text PRIMARY KEY,
+      purpose     text NOT NULL,
+      created_at  timestamptz NOT NULL DEFAULT now(),
+      expires_at  timestamptz NOT NULL
+    );
+    """,
 ]
 
 
