@@ -58,7 +58,7 @@ MINI_RE = re.compile(r"\b(mini|minis|miniature|minature|travel[- ]size|travel|de
 SET_RE = re.compile(r"\b(set|kit|trio|duo|bundle|coffret|gift set|vault|quad|calendar|advent|\d+\s?pc|\d+\s?piece)\b")
 REFILL_RE = re.compile(r"\brefills?\b(?!able)")
 PACK_RE = [re.compile(r"\bpack of (\d+)\b"), re.compile(r"\b(\d+)[- ]?(?:pack|pk)\b"), re.compile(r"\bquantity of (\d+)\b"),
-           re.compile(r"\b(\d+)\s?(?:pcs|pieces)\b"), re.compile(r"\b(\d)\s?x\s?\d*\.?\d+\s?(?:ml|oz|fl|g)\b"),
+           re.compile(r"\b(\d+)\s?(?:pcs|pieces)\b"), re.compile(r"\b(\d)\s?[x×]\s?\d*\.?\d+\s?(?:ml|oz|fl|g|ounces?)\b"), re.compile(r"\b(twice) as precise\b"),
            re.compile(r"\b(\d+) full[- ]size\b"), re.compile(r"\b(double) deal\b")]
 SIZE_RE = re.compile(r"(\d*\.?\d+)\s*(fl\.? ?oz|fluid ounces?|oz|ounces?|ml|mls|milliliters?|g|grams?|gr|mg|l|liters?)\b")
 HIGH_MIN, MED_MIN, LOW_MIN = 0.70, 0.52, 0.38
@@ -155,7 +155,7 @@ def pack_qty(title, size):
     best = 1
     for rx in PACK_RE:
         for m in rx.finditer(t):
-            n = 2 if m.group(1) == "double" else int(m.group(1))
+            n = 2 if m.group(1) in ("double", "twice") else int(m.group(1))
             if 1 < n <= 12:
                 best = max(best, n)
     return best

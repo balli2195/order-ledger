@@ -10,7 +10,7 @@ derive(wrong_matches, manual) -> rules
     brand after 1 mark, and for every brand once the tag shows up in 3+ brands.
   - version / product / other have no automatic check: a Claude session reads their notes (weekly run, RUNBOOK step 4b)
     and, where a pattern is clear, adds a manual rule to Hub doc sephora_jobs/match_rules:
-      {"manual": [{"brand": "Chanel" | "*", "kind": "block_term" | "require_term", "side": "amazon" | "sephora",
+      {"manual": [{"brand": "Chanel" | "*", "kind": "block_term" | "require_term" | "same_term", "side": "amazon" | "sephora",
                    "term": "tester", "note": "why (from which marks)"}]}
 violations(rules, brand, amazon_title, amazon_size, amazon_color, sephora_name, sephora_shade) -> [reason, ...]
   Used by catalog/match.py (a violating match is capped at confidence low, which the daily watch never proposes),
@@ -97,8 +97,10 @@ def violations(rules, brand, amazon_title, amazon_size=None, amazon_color=None, 
             ml = size_ml(a_full)
             if fa["mini"] != fs["mini"] and not sephora_sizes and not sephora_multi:
                 why = "mini vs full size differs"
-            elif ml and sephora_sizes and all(abs(ml - s) / max(s, 1) > 0.12 for s in sephora_sizes):
-                why = f"Amazon size {ml:g} ml isn't a size Sephora sells"
+            elif ml and sephora_sizes and all(s < ml * 0.88 for s in sephora_sizes):
+                # Nick (Nov 17, 2026): slightly different volumes are fine, and so is a bigger store size on a smaller
+                # Amazon listing; a store size well below the Amazon size is not.
+                why = f"Amazon size {ml:g} ml is bigger than any size Sephora sells"
         elif k == "shade":
             aw, sw = _shade_words(amazon_color), _shade_words(sephora_shade)
             if aw and sw and not (aw & sw):
@@ -122,7 +124,12 @@ def violations(rules, brand, amazon_title, amazon_size=None, amazon_color=None, 
         if not _applies(r, brand) or not r.get("term"):
             continue
         txt = base_text(st if r.get("side") == "sephora" else at)
-        has = re.search(r"\b" + re.escape(base_text(r["term"])) + r"\b", txt) is not None
+        pat = r"\b" + re.escape(base_text(r["term"])) + r"\b"
+        has = re.search(pat, txt) is not None
+        if r.get("kind") == "same_term":   # the term marks a different product line / form: both sides or neither
+            if (re.search(pat, base_text(at)) is None) != (re.search(pat, base_text(st)) is None):
+                out.append(f"rule (same_term '{r['term']}', {r.get('brand') or '*'}): {r.get('note') or ''}".rstrip(": "))
+            continue
         if (r.get("kind") == "block_term" and has) or (r.get("kind") == "require_term" and not has):
             out.append(f"rule ({r.get('kind')} '{r['term']}', {r.get('brand') or '*'}): {r.get('note') or ''}".rstrip(": "))
     return out

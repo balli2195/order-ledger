@@ -6,7 +6,8 @@
   python3 -I rules.py remove --term tester [--brand Chanel]
   python3 -I rules.py reviewed                      # mark every current note as reviewed
 
-kind: block_term (the term must NOT be in that side's title/name) or require_term (it MUST be).
+kind: block_term (the term must NOT be in that side's title/name), require_term (it MUST be), or same_term
+(the term marks a separate line or form, e.g. 'cakeless', 'wax': it must be on both sides or neither; --side is ignored).
 brand: a brand name, or * for every brand. side: amazon (Amazon title) or sephora (Sephora name).
 Add a manual rule only when the marks show a clear, repeatable pattern; quote how many marks it came from in --note.
 """
@@ -24,7 +25,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["show", "add", "remove", "reviewed"])
     ap.add_argument("--brand", default="*")
-    ap.add_argument("--kind", choices=["block_term", "require_term"])
+    ap.add_argument("--kind", choices=["block_term", "require_term", "same_term"])
     ap.add_argument("--side", choices=["amazon", "sephora"], default="amazon")
     ap.add_argument("--term")
     ap.add_argument("--note", default="")
