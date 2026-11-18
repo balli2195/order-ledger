@@ -79,7 +79,7 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
-_CORS_PATHS = ("/api/store-skus/upload", "/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
+_CORS_PATHS = ("/api/store-skus/upload", "/api/store-skus/todo", "/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
                "/api/engine/giftcards/to-check", "/api/engine/giftcards/check-results", "/api/engine/giftcards/order-dates")
 # The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
 _GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
@@ -92,7 +92,7 @@ _STORE_ORIGINS = {"https://www.macys.com", "https://macys.com"}
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    allowed = {"/api/store-skus/upload": {"https://www.sephora.com"}, "/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
+    allowed = {"/api/store-skus/upload": {"https://www.sephora.com"}, "/api/store-skus/todo": {"https://www.sephora.com"}, "/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
                "/api/engine/giftcards/to-check": _STORE_ORIGINS, "/api/engine/giftcards/check-results": _STORE_ORIGINS}.get(request.url.path, _IL_ORIGINS)
     if request.url.path in _CORS_PATHS and origin in allowed:
         h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -1544,6 +1544,12 @@ async def engine_upload_token(request: Request, body: dict = Body(default={})):
 async def store_skus_upload(request: Request, body: dict = Body(...)):
     """SKU lists read from Sephora product pages in Nick's Chrome (Nov 17, 2026). X-Upload-Token header; CORS: sephora.com only."""
     return await sephora.upload_store_skus(request.headers.get("x-upload-token"), body)
+
+
+@app.get("/api/store-skus/todo")
+async def store_skus_todo(request: Request, limit: int = 100):
+    """Unread Sephora product pages for the reader in Nick's Chrome. X-Upload-Token header; CORS: sephora.com only."""
+    return await sephora.store_skus_todo(request.headers.get("x-upload-token"), limit)
 
 
 @app.get("/api/engine/store-skus")
