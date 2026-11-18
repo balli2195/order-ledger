@@ -1075,6 +1075,12 @@ MIGRATIONS: list[str] = [
       expires_at  timestamptz NOT NULL
     );
     """,
+    # Reimbursements page, Recovery section (Nick, Nov 18 2026): keep which reimbursement a reversal (clawback) undoes,
+    # so clawbacks net against the right kind of loss (lost inbound / lost in warehouse / damaged in warehouse).
+    """
+    ALTER TABLE inbound_reimb ADD COLUMN IF NOT EXISTS orig_id text;
+    ALTER TABLE inbound_reimb ADD COLUMN IF NOT EXISTS orig_type text;
+    """,
 ]
 
 

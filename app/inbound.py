@@ -336,13 +336,15 @@ async def sync() -> dict:
                     except ValueError:
                         return 0.0
                 await conn.execute(
-                    """INSERT INTO inbound_reimb (reimbursement_id, sku, fnsku, asin, case_id, reason, approval_date, amount, qty_cash, qty_inv, title)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """INSERT INTO inbound_reimb (reimbursement_id, sku, fnsku, asin, case_id, reason, approval_date, amount, qty_cash, qty_inv, title,
+                         orig_id, orig_type)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                        ON CONFLICT (reimbursement_id, sku) DO UPDATE SET amount=EXCLUDED.amount, qty_cash=EXCLUDED.qty_cash, qty_inv=EXCLUDED.qty_inv,
-                         case_id=EXCLUDED.case_id, reason=EXCLUDED.reason""",
+                         case_id=EXCLUDED.case_id, reason=EXCLUDED.reason, orig_id=EXCLUDED.orig_id, orig_type=EXCLUDED.orig_type""",
                     (rid, sku, (r.get("fnsku") or "").strip(), (r.get("asin") or "").strip(), (r.get("case-id") or "").strip() or None,
                      (r.get("reason") or "").strip(), (r.get("approval-date") or "")[:10] or None, num("amount-total"),
-                     int(num("quantity-reimbursed-cash")), int(num("quantity-reimbursed-inventory")), (r.get("product-name") or "")[:300]))
+                     int(num("quantity-reimbursed-cash")), int(num("quantity-reimbursed-inventory")), (r.get("product-name") or "")[:300],
+                     (r.get("original-reimbursement-id") or "").strip() or None, (r.get("original-reimbursement-type") or "").strip() or None))
             await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps({"t": "inbound", "op": "sync"}),))
     out["receipts"], out["reimb"] = len(rec), len(rb)
     return out

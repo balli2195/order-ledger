@@ -32,6 +32,15 @@
   .deny { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
   .deny b { color: var(--bad); font-weight: 600; }
   a.chat { white-space: nowrap; }
+  .rc-note { font-size: 12.5px; color: var(--muted); margin: 4px 0 10px; max-width: 900px; }
+  table.rc td, table.rc th { font-size: 12.5px; white-space: nowrap; }
+  table.rc th.grp { text-align: center; border-bottom: 1px solid var(--line); }
+  table.rc td.bl, table.rc th.bl { border-left: 1px solid var(--line); }
+  table.rc tr.tot td { font-weight: 700; background: var(--panel-2); }
+  table.rc .neg { color: var(--bad); }
+  .rc-chart { margin: 8px 0 4px; }
+  .rc-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+  .rc-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 </style>
 </head>
 <body>
@@ -60,6 +69,16 @@
   </div>
   <div class="stats" id="stats"></div>
   <div class="table-wrap" style="margin-top:16px"><table class="rb" id="tbl"></table></div>
+
+  <div class="rb-head"><h2>Recovery</h2><span class="muted" style="font-size:13px">lost at your sourcing cost vs what Amazon paid back</span><span class="sp"></span>
+    <select id="rcYear" class="btn small"></select></div>
+  <p class="rc-note">Lost inbound = units missing from closed shipment plans (month the plan closed). Lost / damaged in warehouse = the Profit page's write-offs from the inventory ledger (lost is net of units found). Paid = Amazon's Lost_Inbound, Lost_Warehouse and Damaged_Warehouse reimbursements by approval month, net of clawbacks. Shortfall = lost at your cost − paid. Amazon pays weeks after a loss, so recent months look worse until payouts arrive; the year total is the number to watch. Refreshes daily with the Hub's Amazon sync.</p>
+  <div class="stats" id="rcStats"></div>
+  <div class="rc-chart" id="rcChart"></div>
+  <div class="table-wrap" style="margin-top:10px"><table class="rb rc" id="rcTbl"></table></div>
+  <div class="rb-sec" style="margin-top:18px">How the money came back (Amazon paid, by month)</div>
+  <p class="rc-note">Amount disputes top up payouts already made, and approved sourcing-cost raises make later payouts bigger; neither adds to "lost". Their effect shows as a higher payout rate (paid ÷ those units at your cost).</p>
+  <div class="table-wrap"><table class="rb rc" id="rcMeth"></table></div>
 </div>
 <div id="toasts" class="toasts"></div>
 <script src="/static/viewas.js"></script>
@@ -136,9 +155,58 @@
     const k = r.dataset.p; S.open.has(k) ? S.open.delete(k) : S.open.add(k); render();
   });
   $$('.chip[data-f]').forEach((c) => c.addEventListener('click', () => { S.f = c.dataset.f; $$('.chip[data-f]').forEach((x) => x.classList.toggle('on', x === c)); load().catch(fail); }));
-  LG.header().then(load).catch(fail);
+  // ---- Recovery section (Nick, Nov 18 2026) ----
+  const R = { y: new Date().getFullYear(), d: null };
+  const K = ['inbound', 'wh_lost', 'wh_damaged'];
+  const m0 = (v) => money(v, 0);
+  const mon = (s) => new Date(s + '-15').toLocaleString('en-US', { month: 'short' });
+  async function loadRc() {
+    R.d = await api('GET', '/api/reimbursements/recovery?year=' + R.y);
+    renderRc();
+  }
+  function renderRc() {
+    const D = R.d, T = D.total, A = T.all;
+    const stat = (k, v, sub) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    $('#rcStats').innerHTML = stat('Lost at your cost', m0(A.lost_v), `${A.lost_u.toLocaleString()} units · ${D.year}`) +
+      stat('Amazon paid back', m0(A.paid), `${A.paid_u.toLocaleString()} units · net of clawbacks`) +
+      stat('Shortfall', `<span class="${A.shortfall > 0 ? 'neg' : ''}">${m0(A.shortfall)}</span>`, `${A.lost_v ? Math.round(100 * A.paid / A.lost_v) : 0}% of the loss recovered`) +
+      stat('Payout rate', T.payout_rate != null ? Math.round(100 * T.payout_rate) + '%' : '—', `paid ÷ reimbursed units at your cost (${m0(A.paid_cost)})`) +
+      K.map((k) => stat(D.kinds[k], m0(T[k].shortfall), `short · lost ${m0(T[k].lost_v)}, paid ${m0(T[k].paid)}`)).join('');
+    // chart: grouped bars per month (lost, paid, shortfall)
+    const M = D.months, W = 900, H = 220, pad = 34, bw = (W - pad) / Math.max(M.length, 1);
+    const vals = M.flatMap((r) => [r.all.lost_v, r.all.paid, r.all.shortfall]);
+    const mx = Math.max(1, ...vals), mn = Math.min(0, ...vals), sc = (v) => (H - 20) * (mx - v) / (mx - mn) + 4;
+    const col = ['var(--ink)', 'var(--ok)', 'var(--bad)'];
+    let bars = '';
+    M.forEach((r, i) => {
+      [r.all.lost_v, r.all.paid, r.all.shortfall].forEach((v, j) => {
+        const x = pad + i * bw + 6 + j * (bw - 12) / 3, y0 = sc(0), y1 = sc(v);
+        bars += `<rect x="${x}" y="${Math.min(y0, y1)}" width="${(bw - 12) / 3 - 2}" height="${Math.max(1, Math.abs(y1 - y0))}" fill="${col[j]}" opacity="${j === 0 ? .55 : .85}"><title>${mon(r.month)} · ${['Lost at your cost', 'Amazon paid', 'Shortfall'][j]}: ${m0(v)}</title></rect>`;
+      });
+      bars += `<text x="${pad + i * bw + bw / 2}" y="${H + 12}" text-anchor="middle" font-size="11" fill="var(--muted)">${mon(r.month)}</text>`;
+    });
+    const ticks = [mx, (mx + mn) / 2, mn].map((v) => `<text x="${pad - 4}" y="${sc(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${m0(v)}</text><line x1="${pad}" x2="${W}" y1="${sc(v)}" y2="${sc(v)}" stroke="var(--line)" />`).join('');
+    $('#rcChart').innerHTML = `<div class="rc-legend"><span><i style="background:var(--ink);opacity:.55"></i>Lost at your cost</span><span><i style="background:var(--ok)"></i>Amazon paid</span><span><i style="background:var(--bad)"></i>Shortfall</span></div>
+      <svg viewBox="0 0 ${W} ${H + 18}" width="100%" style="max-width:${W}px">${ticks}<line x1="${pad}" x2="${W}" y1="${sc(0)}" y2="${sc(0)}" stroke="var(--muted)" />${bars}</svg>`;
+    const cell = (g, bl) => `<td class="num ${bl ? 'bl' : ''}">${g.lost_v ? m0(g.lost_v) : '·'}<div class="sub">${g.lost_u ? g.lost_u + ' u' : ''}</div></td><td class="num">${g.paid ? m0(g.paid) : '·'}<div class="sub">${g.paid_u ? g.paid_u + ' u' : ''}</div></td><td class="num"><b class="${g.shortfall > 0 ? 'neg' : ''}">${g.lost_v || g.paid ? m0(g.shortfall) : '·'}</b></td>`;
+    const grp = (t) => `<th class="grp bl" colspan="3">${esc(t)}</th>`;
+    const sub3 = '<th class="num bl">Lost</th><th class="num">Paid</th><th class="num">Short</th>';
+    $('#rcTbl').innerHTML = `<thead><tr><th></th>${grp('All')}${K.map((k) => grp(D.kinds[k])).join('')}<th class="bl"></th></tr>
+      <tr><th>Month</th>${sub3}${K.map(() => sub3).join('')}<th class="num bl">Payout rate</th></tr></thead><tbody>` +
+      M.map((r) => `<tr><td><b>${mon(r.month)}</b></td>${cell(r.all, 1)}${K.map((k) => cell(r[k], 1)).join('')}<td class="num bl">${r.payout_rate != null ? Math.round(100 * r.payout_rate) + '%' : '·'}</td></tr>`).join('') +
+      `<tr class="tot"><td>${D.year} total</td>${cell(A, 1)}${K.map((k) => cell(T[k], 1)).join('')}<td class="num bl">${T.payout_rate != null ? Math.round(100 * T.payout_rate) + '%' : '·'}</td></tr></tbody>`;
+    const MK = Object.keys(D.method_labels);
+    $('#rcMeth').innerHTML = `<thead><tr><th>Month</th>${MK.map((k) => `<th class="num">${esc(D.method_labels[k])}</th>`).join('')}<th class="num bl">Net paid</th></tr></thead><tbody>` +
+      M.map((r) => `<tr><td><b>${mon(r.month)}</b></td>${MK.map((k) => `<td class="num ${r.methods[k] < 0 ? 'neg' : ''}">${r.methods[k] ? m0(r.methods[k]) : '·'}</td>`).join('')}<td class="num bl">${m0(r.all.paid)}</td></tr>`).join('') +
+      `<tr class="tot"><td>${D.year} total</td>${MK.map((k) => `<td class="num">${m0(T.methods[k])}</td>`).join('')}<td class="num bl">${m0(A.paid)}</td></tr></tbody>` +
+      (D.uncosted_units ? `<caption class="rc-note" style="caption-side:bottom;text-align:left">${D.uncosted_units} lost units have no cost on file and count as $0.</caption>` : '');
+  }
+  (() => { const sel = $('#rcYear'); const y = new Date().getFullYear(); sel.innerHTML = [y, y - 1].map((v) => `<option>${v}</option>`).join('');
+    sel.addEventListener('change', () => { R.y = +sel.value; loadRc().catch(fail); }); })();
+
+  LG.header().then(() => Promise.all([load(), loadRc()])).catch(fail);
   let t = null;
-  LG.live?.((m) => { if (m.t === 'inbound') { clearTimeout(t); t = setTimeout(() => load().catch(() => {}), 1500); } });
+  LG.live?.((m) => { if (m.t === 'inbound') { clearTimeout(t); t = setTimeout(() => { load().catch(() => {}); loadRc().catch(() => {}); }, 1500); } });
 })();
 </script>
 </body>

@@ -33,6 +33,7 @@ from . import orders as o
 from . import commissions as comm
 from . import order_bonus
 from . import inbound
+from . import recovery
 from . import sephora
 from . import sysmap
 from . import giftcards as gc
@@ -445,6 +446,14 @@ async def engine_profit_status(request: Request):
 async def api_reimbursements(request: Request, all: int = 0):
     await auth.require(request, tab="reimbursements")
     return await inbound.page(include_all=bool(all))
+
+
+@app.get("/api/reimbursements/recovery")
+async def api_reimbursements_recovery(request: Request, year: int | None = None):
+    """Recovery section: lost at Nick's cost vs paid back vs shortfall, by month (see app/recovery.py)."""
+    await auth.require(request, tab="reimbursements")
+    from datetime import date as _d
+    return await recovery.report(year or _d.today().year)
 
 
 @app.post("/api/engine/inbound/seller-central")
