@@ -71,7 +71,7 @@
   <div class="table-wrap" style="margin-top:16px"><table class="rb" id="tbl"></table></div>
 
   <div class="rb-head"><h2>Recovery</h2><span class="muted" style="font-size:13px">lost at your sourcing cost vs what Amazon paid back</span><span class="sp"></span>
-    <select id="rcYear" class="btn small"></select></div>
+    <select id="rcYear" class="btn small" style="width:auto"></select></div>
   <p class="rc-note">Lost inbound = units missing from closed shipment plans (month the plan closed). Lost / damaged in warehouse = the Profit page's write-offs from the inventory ledger (lost is net of units found). Paid = Amazon's Lost_Inbound, Lost_Warehouse and Damaged_Warehouse reimbursements by approval month, net of clawbacks. Shortfall = lost at your cost − paid. Amazon pays weeks after a loss, so recent months look worse until payouts arrive; the year total is the number to watch. Refreshes daily with the Hub's Amazon sync.</p>
   <div class="stats" id="rcStats"></div>
   <div class="rc-chart" id="rcChart"></div>
@@ -173,7 +173,7 @@
       stat('Payout rate', T.payout_rate != null ? Math.round(100 * T.payout_rate) + '%' : '—', `paid ÷ reimbursed units at your cost (${m0(A.paid_cost)})`) +
       K.map((k) => stat(D.kinds[k], m0(T[k].shortfall), `short · lost ${m0(T[k].lost_v)}, paid ${m0(T[k].paid)}`)).join('');
     // chart: grouped bars per month (lost, paid, shortfall)
-    const M = D.months, W = 900, H = 220, pad = 34, bw = (W - pad) / Math.max(M.length, 1);
+    const M = D.months, W = 900, H = 220, pad = 58, bw = (W - pad) / Math.max(M.length, 1);
     const vals = M.flatMap((r) => [r.all.lost_v, r.all.paid, r.all.shortfall]);
     const mx = Math.max(1, ...vals), mn = Math.min(0, ...vals), sc = (v) => (H - 20) * (mx - v) / (mx - mn) + 4;
     const col = ['var(--ink)', 'var(--ok)', 'var(--bad)'];
