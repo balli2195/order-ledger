@@ -946,7 +946,7 @@ async def store_skus_todo(token: str | None, limit: int) -> dict:
             "SELECT c.product_id, min(split_part(c.sephora_url, '?', 1)) AS url, count(*) FILTER (WHERE c.roi_now >= 0.15) AS prof, count(*) AS n "
             "FROM sephora_catalog c WHERE c.active IS NOT FALSE AND lower(c.brand) <> 'chanel' AND c.sephora_url LIKE 'https://www.sephora.com/product/%%' "
             "AND NOT EXISTS (SELECT 1 FROM store_skus s WHERE s.store='Sephora' AND s.product_id=c.product_id) "
-            "GROUP BY c.product_id ORDER BY prof DESC, n DESC, c.product_id LIMIT %s", (max(1, min(int(limit or 100), 2000)),))
+            "GROUP BY c.product_id ORDER BY prof DESC, max(GREATEST(COALESCE(c.roi_now, -9), COALESCE(c.roi_avg90, -9))) DESC, n DESC, c.product_id LIMIT %s", (max(1, min(int(limit or 100), 2000)),))
         rows = await cur.fetchall()
         cur = await conn.execute("SELECT count(DISTINCT product_id) AS left FROM sephora_catalog c WHERE c.active IS NOT FALSE AND lower(c.brand) <> 'chanel' "
                                  "AND NOT EXISTS (SELECT 1 FROM store_skus s WHERE s.store='Sephora' AND s.product_id=c.product_id)")
