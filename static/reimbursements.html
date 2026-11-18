@@ -175,7 +175,13 @@
     // chart: grouped bars per month (lost, paid, shortfall)
     const M = D.months, W = 900, H = 220, pad = 58, bw = (W - pad) / Math.max(M.length, 1);
     const vals = M.flatMap((r) => [r.all.lost_v, r.all.paid, r.all.shortfall]);
-    const mx = Math.max(1, ...vals), mn = Math.min(0, ...vals), sc = (v) => (H - 20) * (mx - v) / (mx - mn) + 4;
+    // regular axis steps: 1, 2 or 5 × 10^n, about 5 gridlines, always including $0
+    const rawMx = Math.max(0, ...vals), rawMn = Math.min(0, ...vals);
+    const span = Math.max(1, rawMx - rawMn), p10 = Math.pow(10, Math.floor(Math.log10(span / 5)));
+    const step = [1, 2, 2.5, 5, 10].map((f) => f * p10).find((s) => span / s <= 6) || 10 * p10;
+    const mx = Math.ceil(rawMx / step) * step || step, mn = Math.floor(rawMn / step) * step;
+    const sc = (v) => (H - 20) * (mx - v) / (mx - mn) + 4;
+    const lab = (v) => (v < 0 ? '−$' : '$') + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 }) + 'k' : Math.abs(v).toLocaleString());
     const col = ['var(--ink)', 'var(--ok)', 'var(--bad)'];
     let bars = '';
     M.forEach((r, i) => {
@@ -185,7 +191,7 @@
       });
       bars += `<text x="${pad + i * bw + bw / 2}" y="${H + 12}" text-anchor="middle" font-size="11" fill="var(--muted)">${mon(r.month)}</text>`;
     });
-    const ticks = [mx, (mx + mn) / 2, mn].map((v) => `<text x="${pad - 4}" y="${sc(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${m0(v)}</text><line x1="${pad}" x2="${W}" y1="${sc(v)}" y2="${sc(v)}" stroke="var(--line)" />`).join('');
+    let ticks = ''; for (let v = mn; v <= mx + step / 2; v += step) ticks += `<text x="${pad - 6}" y="${sc(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${lab(v)}</text><line x1="${pad}" x2="${W}" y1="${sc(v)}" y2="${sc(v)}" stroke="var(--line)" />`;
     $('#rcChart').innerHTML = `<div class="rc-legend"><span><i style="background:var(--ink);opacity:.55"></i>Lost at your cost</span><span><i style="background:var(--ok)"></i>Amazon paid</span><span><i style="background:var(--bad)"></i>Shortfall</span></div>
       <svg viewBox="0 0 ${W} ${H + 18}" width="100%" style="max-width:${W}px">${ticks}<line x1="${pad}" x2="${W}" y1="${sc(0)}" y2="${sc(0)}" stroke="var(--muted)" />${bars}</svg>`;
     const cell = (g, bl) => `<td class="num ${bl ? 'bl' : ''}">${g.lost_v ? m0(g.lost_v) : '·'}<div class="sub">${g.lost_u ? g.lost_u + ' u' : ''}</div></td><td class="num">${g.paid ? m0(g.paid) : '·'}<div class="sub">${g.paid_u ? g.paid_u + ' u' : ''}</div></td><td class="num"><b class="${g.shortfall > 0 ? 'neg' : ''}">${g.lost_v || g.paid ? m0(g.shortfall) : '·'}</b></td>`;
