@@ -148,3 +148,14 @@ After the weekly run, add: new products matched (flag ROI ≥ 21%), brands auto-
   - The Hub stores ROI and `referral_pct` as fractions.
 - When updating existing catalog pairs, always send their current `active`: the Hub re-activates any pair sent without it.
 - Sizes: the search API gives only Sephora's price range, not sizes. A multi-size product is therefore only proposed after Nick confirms the size on the Sephora leads tab.
+
+## 4d. Reading Sephora's SKU lists (sizes, shades, prices, stock) — Nov 17, 2026
+
+Sephora product pages only load in Nick's Chrome. The reader posts what it reads straight to the Hub, so nothing goes through chat:
+
+1. Mint a short-lived upload token from the cloud: `POST /api/engine/upload-token {"purpose":"store_skus","hours":12}` (engine key). The token can only write `store_skus`.
+2. In a sephora.com tab: `GET /api/store-skus/todo?limit=60` (header `X-Upload-Token`) lists unread product pages, closest-to-profitable first (Chanel excluded; it was read separately).
+3. Read each page (`#linkStore` → `currentSku` + every `*ChildSkus` list), one page every ~7 s, never two at once, and `POST /api/store-skus/upload {products:{P123:{vt, skus:[[sku_id,size,value,desc,price,oos],…]}}}`.
+4. In the cloud, `GET /api/engine/store-skus` returns everything read; match each pair's Amazon size/shade to a SKU and write `store_size` (and marks) through `/api/engine/sephora/catalog/mark`.
+
+Status Nov 17: all 1,536 active Sephora products read (11 pages empty or 404, likely discontinued). Profitable pairs and every pair within reach of profit (≥5% now or ≥10% on the 90-day Buy Box) were reviewed by hand; the rest only got their exact size/price set automatically.
