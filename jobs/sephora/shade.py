@@ -281,6 +281,14 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                         if hit and len(hit) == len(words):
                             sc += FIELD_W[f] * 0.6; why.append(f"name words {' '.join(hit)} in {f}")
                             break
+        # tone name + undertone from the description ('Light 2 | neutral undertone' = Amazon 'light neutral', Glossier)
+        STOP = {"undertone", "undertones", "skin", "tones", "tone", "for", "with", "and", "to", "the"}
+        nd = {w for w in name.split() if not re.fullmatch(r"[\d.]+", w)} | (set(norm(s.get("desc") or "").split()) - STOP)
+        for f in ("color", "own"):
+            fw = set(F[f].split()) - STOP
+            if nd and len(nd) >= 2 and fw and nd == fw:
+                sc += FIELD_W[f]; why.append(f"name + description = {f} ('{' '.join(sorted(nd))}')")
+                break
         d = norm(s.get("desc") or "")
         if len(d.split()) >= 2 and descs[d] == 1 and any(_has_phrase(F[f], d) for f in ("own", "color", "title")):
             whole = d in (F["color"], F["own"])   # the color field is exactly Sephora's description ('Light Warm' = 140)
