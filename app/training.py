@@ -85,6 +85,33 @@ async def export(kind: str, after: str | None, since: str | None, limit: int) ->
     return {"kind": kind, "rows": rows, "next": nxt}
 
 
+META_KEYS = ("asin", "title", "brand", "color", "size", "model", "partNumber", "features", "description", "images",
+             "variations", "parentAsin", "itemTypeKeyword", "scent", "style", "upcList", "eanList")
+
+
+async def keepa_meta(asins: list) -> dict:
+    """Listing details from the collector's latest pull (no Keepa tokens): title, color, size, model / partNumber,
+    bullets, description, photos and the variation selector, for up to 300 ASINs (Nov 19, 2026)."""
+    asins = [a.strip().upper() for a in asins if a and a.strip()][:300]
+    if not asins:
+        raise LedgerError("asins is required")
+    out = {}
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT asin, pulled_at, raw_gz FROM keepa_raw WHERE asin = ANY(%s) AND bytes > 0", (asins,))
+        for r in await cur.fetchall():
+            try:
+                p = json.loads(gzip.decompress(bytes(r["raw_gz"])))
+            except Exception:  # noqa: BLE001
+                continue
+            p = p.get("products", [p])[0] if isinstance(p, dict) and "products" in p else p
+            d = {k: p.get(k) for k in META_KEYS}
+            d["features"] = (d.get("features") or [])[:5]
+            d["description"] = (d.get("description") or "")[:1500]
+            d["pulled_at"] = r["pulled_at"].isoformat()
+            out[r["asin"]] = d
+    return {"products": out, "missing": [a for a in asins if a not in out]}
+
+
 async def summary() -> dict:
     """Counts and sizes, for the export script and the System map."""
     async with db.pool.connection() as conn:

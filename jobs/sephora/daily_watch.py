@@ -405,6 +405,9 @@ def main():
             bits.append("buy the " + ("mini/smaller size" if "lo" == r.get("size_confirmed") else "full size") + " (Nick confirmed)")
         elif r.get("needs_size"):   # no size hold any more (Nick, Nov 19, 2026): posted, flagged
             bits.insert(0, "Size not checked: confirm which Sephora size the Amazon listing is")
+        sh_ = (r.get("extra") or {}).get("shade_hint")
+        if not r.get("store_size") and sh_ and sh_.get("guess"):   # resolve_skus.py couldn't tell the shade
+            bits.insert(0, "Shade not confirmed: looks like " + " or ".join(sh_["guess"][:3]))
         if sc_note:
             bits.append(sc_note)
         if rules and r.get("match_ok") is not True:   # learned match rules no longer hold a pair back, they flag it (Nov 19, 2026)

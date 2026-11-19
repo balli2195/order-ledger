@@ -182,15 +182,19 @@ def size_ml(text):
     return max(vals) if vals else None
 
 
-def match_brand(slug, cfg_b, keepa=None, exclude=None):
+def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
     """keepa: the Amazon side ({"asins": [...]}) instead of raw/keepa/<slug>.json. exclude: {asin: {productId, ...}}
-    products never proposed for that ASIN (pairs Nick marked wrong), so the next-best product is picked instead."""
+    products never proposed for that ASIN (pairs Nick marked wrong), so the next-best product is picked instead.
+    shades: {productId: [SKU value, ...]} from the Hub's store_skus (Nov 19, 2026). Shade names / codes of a product
+    that appear in the Amazon title ('#2 Cream Puff', 'C-Thru', '1.3N Nougat') are not counted against it, and a
+    shade the product really sells adds a little: titles full of shade words used to fall below the match threshold."""
     import match_rules as MR   # rules learned from Nick's wrong-match marks (written by the weekly job before matching)
     rules = MR.load()
     seph = json.load(open(os.path.join(CAT, "raw", "sephora", slug + ".json")))
     if keepa is None:
         keepa = json.load(open(os.path.join(CAT, "raw", "keepa", slug + ".json")))
     exclude = exclude or {}
+    shades = shades or {}
     drop = set()
     for n in [cfg_b["name"]] + cfg_b.get("sephora_names", []) + cfg_b.get("keepa_brands", []) + cfg_b.get("strip", []):
         drop |= set(re.sub(r"[^a-z0-9]+", " ", base_text(n)).split())
@@ -202,6 +206,16 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None):
         head = tk[:2]
         P.append({"p": p, "tok": tk, "set": set(tk), "types": ptypes(p["name"]), "conc": conc(p["name"]), "flags": flags(p["name"]),
                   "head": head, "forms": forms(p["name"]), "multi": bool(p.get("price_lo") and p.get("price_hi") and p["price_hi"] > p["price_lo"])})
+    for x in P:
+        vals = shades.get(x["p"]["productId"]) or []
+        names = set()
+        for v in vals:
+            v0 = re.split(r"\s+[-–|]\s+|\s*\(", v or "")[0]
+            t = re.sub(r"[^a-z0-9.]+", " ", SIZE_RE.sub(" ", base_text(v0))).strip()
+            if len(t) >= 3 and not re.fullmatch(r"[\d. ]+", t):
+                names.add(t)
+        x["shade_names"] = names
+        x["shade_tok"] = {w for v in vals for w in tokens(v, drop)}
     N = max(len(P), 1)
     df = Counter(w for x in P for w in x["set"])
     for x in P:   # line name = first distinctive (rare, non-generic) word among the first three of the Sephora name
@@ -222,6 +236,8 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None):
         title = a["title"] or ""
         shade = set(tokens(" ".join(str(v) for v in [a.get("color")] + list((a.get("variation_attrs") or {}).values()) if v), drop))
         at = A_tok[a["asin"]]
+        sp = x.get("shade_tok") or set()
+        shade = shade | (at & sp - x["set"])   # this product's own shade words in the title are shade, not mismatch
         av = (at & vocab) - (shade - x["set"])
         if not av or not x["set"]:
             return 0.0, "", (0.0, None)
@@ -230,8 +246,18 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None):
         prec_all = sum(aw[w] for w in rest & x["set"]) / max(sum(aw[w] for w in rest), 1e-9)
         rec = sum(idf[w] for w in at & x["set"]) / sum(idf[w] for w in x["set"])
         s = 0.30 * prec + 0.25 * min(1.0, prec_all * 1.5) + 0.45 * rec
+        bt = base_text(title)
+        hits = [n for n in (x.get("shade_names") or ()) if re.search(r"(?<![a-z0-9])" + re.escape(n) + r"(?![a-z0-9])", bt)]
+        if hits:
+            s += 0.08   # the title names a shade this product sells
         why = []
-        at_types = ptypes(title)
+        # product type from the title without the shade text ('Cream Puff' is a lip tint shade, not a brush)
+        tt = bt
+        for v in [a.get("color")] + list((a.get("variation_attrs") or {}).values()) + hits:
+            v = base_text(str(v or "")).strip()
+            if len(v) >= 3:
+                tt = tt.replace(v, " ")
+        at_types = ptypes(tt)
         if type_conflict(at_types, x["types"]):
             s -= 0.60; why.append("type differs (%s vs %s)" % ("/".join(sorted(at_types)), "/".join(sorted(x["types"]))))
         elif at_types and not x["types"] and not (at_types & {"fragrance"}):
@@ -259,7 +285,7 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None):
             cap = "low"; why.append(f"line word '{x['lead']}' missing")
         elif x["head"] and not all(w in at for w in x["head"]):
             cap = "medium"
-        return s, ", ".join(why), (rec, cap)
+        return s, ", ".join(why), (rec, cap, bool(hits))
 
     VARIANT_WORDS = {"travel", "spray", "mini", "set", "duo", "trio", "refill", "refillable", "intense", "jumbo", "deluxe"}
     for x in P:
@@ -286,7 +312,8 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None):
                           "scores": {i: v for v, i in sc[:8]}}
 
     def conf_of(s, margin, rc):
-        rec, cap = rc
+        rec, cap = rc[0], rc[1]
+        shade_hit = len(rc) > 2 and rc[2]
         c = None
         if s >= HIGH_MIN and margin >= 0.12:
             c = "high"
@@ -297,9 +324,13 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None):
         order = ["high", "medium", "low", None]
         while c is not None and rec < REC_MIN[c]:      # the Sephora name's distinctive words must be in the title
             c = order[order.index(c) + 1]
+        if c is None and shade_hit and s >= LOW_MIN:   # a shade this product sells is in the title: keep it as low
+            c = "low"
         if cap and c and order.index(c) < order.index(cap):
             c = cap
-        if cap == "low" and rec < 0.5:
+        # Sephora's first name word missing (marketing words: 'Pro Filt'r', 'Ultra Suede', 'Perfectionist'): keep a
+        # clear winner as low (Nov 19, 2026; Nick's leads showed these are mostly the right product)
+        if cap == "low" and rec < 0.5 and not (shade_hit or (s >= 0.40 and margin >= 0.15)):
             c = None
         return c
 
@@ -349,7 +380,9 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None):
                 reason.append(f"variation family {par} agrees")
         if conf is None or best is None:
             unmatched.append({**{k: a.get(k) for k in ("asin", "title", "color", "size", "parentAsin", "buybox", "monthlySold", "offers_fba")},
-                              "best_guess": P[best]["p"]["name"] if best is not None else None, "best_score": round(o["s"], 3)})
+                              "best_guess": P[best]["p"]["name"] if best is not None else None, "best_score": round(o["s"], 3),
+                              "best_pid": P[best]["p"]["productId"] if best is not None else None, "best_why": o["why"],
+                              "best_rec": round(o["rec"][0], 3), "best_cap": o["rec"][1], "best_margin": round(o["margin"], 3)})
             continue
         x = P[best]
         if conf and ("set mismatch" in why or "refill mismatch" in why):

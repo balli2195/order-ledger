@@ -1555,6 +1555,14 @@ async def api_sephora_mark(request: Request, body: dict = Body(...)):
                                       {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin", "store_size") if k in body})
 
 
+@app.get("/api/engine/keepa/meta")
+async def engine_keepa_meta(request: Request, asins: str = ""):
+    """Listing details (title, color, variations, photos...) from the Keepa collector's latest pulls: no tokens."""
+    auth.require_engine_key(request)
+    from . import training
+    return await training.keepa_meta(asins.split(","))
+
+
 @app.get("/api/engine/training/summary")
 async def engine_training_summary(request: Request):
     """Keepa store + Lead DB sizes and the Keepa collector's heartbeat."""
