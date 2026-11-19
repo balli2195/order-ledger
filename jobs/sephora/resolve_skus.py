@@ -145,6 +145,7 @@ def main():
             stats["no Amazon data"] += 1
             continue
         s = sk[r["product_id"]]
+        k = {**k, "_buybox": C.fnum(r.get("buybox")) or C.fnum(r.get("fba_low"))}
         res = SH.resolve_text(k, s["skus"], s.get("variation_type"), r["asin"], pn.get(r["product_id"]) or r.get("sephora_name"))
         how = "text"
         if not res["sku_id"] and "olor" in (s.get("variation_type") or "") and photos < a.max_photo_pairs and reach(r) >= 0:

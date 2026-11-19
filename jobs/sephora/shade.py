@@ -316,6 +316,9 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                 continue   # the title's size wins over a reused item number
             return {"sku_id": v, "score": 100, "margin": 100, "how": f"Amazon {f} {v} is the Sephora item number"}
     F = _fields(k, asin)
+    # a color field that lists many of the product's shades ('Worthy, Strength, Courage, Harmony, ...') names none of them
+    if F["color"] and len(re.split(r"[,/;|]", str(k.get("color") or ""))) >= 3 and sum(1 for x in skus if (x.get("value") or "").strip() and _has_phrase(F["color"], norm(split_value(x.get("value") or "")[1] or "~"))) >= 3:
+        F["color"] = ""
     shade_like = "color" in (vt or "").lower() or "scent" in (vt or "").lower() or not vt
     if not shade_like and "size" in (vt or "").lower():
         p = _size_pick(k, F, skus)
@@ -352,7 +355,9 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                     break
         # '1 Neutral' / 'Lightest 2': a name made only of tone words is part of the code, it counts only with the code
         name0 = name
-        weak = bool(code) and set(name.split()) <= (GENERIC | {"lightest", "lighter", "darkest", "deepest", "tan", "olive", "golden"})
+        # (tone words only: '011 Pink' / '017 Nude' on Dior's highlighter are real names)
+        weak = bool(code) and set(name.split()) <= {"warm", "cool", "neutral", "deep", "light", "medium", "fair", "tan", "rich",
+                                                    "dark", "lightest", "lighter", "darkest", "deepest", "olive", "golden"}
         if weak and not any(w.startswith("code") for w in why):
             name = ""
         if not name.replace(".", "").strip():
@@ -440,8 +445,12 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
             if p:
                 pick, how = p["sku_id"], how + "; " + p["how"]
                 alts = p.get("alts") or []
-            else:   # no size on Amazon: the full size, unless the listing says mini
+            else:   # no size on Amazon: the full size, unless the listing says mini or sells at the mini's price
                 mini = bool(re.search(r"\b(mini|travel|deluxe sample)\b", (k.get("title") or "").lower()))
+                bb = k.get("_buybox")
+                prices = sorted(g.get("price") for g in group if g.get("price"))
+                if not mini and bb and len(prices) >= 2 and bb < 0.75 * prices[-1] and bb <= 1.6 * prices[0]:
+                    mini = True   # Amazon's price is the mini's, not the full size's (checker round 2: Laura Mercier mini)
                 sz = sorted(group, key=lambda g: (oz_amounts(g.get("size") or "") or [0])[0])
                 pick = (sz[0] if mini else sz[-1])["sku_id"]; how += "; " + ("smallest" if mini else "largest") + " size of that shade"
         # the title's size disagrees with the pick and a SKU with no shade name has that size (Sephora lists some minis

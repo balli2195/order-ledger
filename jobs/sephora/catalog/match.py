@@ -269,7 +269,8 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
         # perfume for a deodorant stick, a body / hair version for the fragrance
         bta = set(re.sub(r"[^a-z0-9]+", " ", bt).split())
         bsx = set(re.sub(r"[^a-z0-9]+", " ", base_text(x["p"]["name"])).split())
-        for wv, pen in (("waterproof", 0.18), ("deodorant", 0.45), ("stick", 0.12), ("refillable", 0.0), ("body", 0.2), ("hair", 0.2)):
+        for wv, pen in (("waterproof", 0.18), ("deodorant", 0.45), ("stick", 0.12), ("refillable", 0.0), ("body", 0.2), ("hair", 0.2),
+                        ("sharpener", 0.6), ("rollerball", 0.25), ("toenail", 0.4), ("toenails", 0.4), ("loose", 0.2), ("pressed", 0.2)):
             if (wv in bsx) != (wv in bta) and pen:
                 s -= pen; why.append(f"'{wv}' on one side only")
         for ex, pen in (("brush", 0.45), ("palette", 0.2)):
