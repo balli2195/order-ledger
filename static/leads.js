@@ -39,6 +39,10 @@
     buyer_notes: ['Buyer notes', null, 'note-cell', (r) => noteCell(r, 'buyer_notes')],
     feedback: ['Feedback', null, 'note-cell', (r) => noteCell(r, 'feedback')],
   };
+  // Column widths (Nick, Nov 19 2026: the table must fit the screen without sideways scrolling). Text columns share the
+  // room by percentage and cut off with "…"; number columns are fixed. Hover a cut-off cell or open the lead to see it all.
+  const COL_W = { product: '20%', brand: '7%', promo: '6%', va_notes: '6%', buyer_notes: '6%', feedback: '6%',
+    cost: '58px', buy_qty: '48px', qty_ordered: '62px', left: '44px', spend: '62px', roi: '56px', claude_qty: '54px', by: '68px' };
   const DEFAULT_ORDER = ['product', 'brand', 'cost', 'promo', 'va_notes', 'buyer_notes', 'feedback', 'buy_qty', 'qty_ordered', 'left', 'spend', 'roi', 'claude_qty', 'by'];
   const ORDER_KEY = 'leadColOrder.v3';
   function loadOrder() {
@@ -140,7 +144,7 @@
     $('#summary') && ($('#summary').textContent = `${num(t.n)} leads match · ${num(t.bought)} bought`);
     const selOk = canPick();
     const eo = $('#entryOrder'); if (eo) { const on = S.sort === 'date' && S.desc; eo.classList.toggle('on', on); eo.disabled = on; }
-    $('#head').innerHTML = (selOk ? `<th class="sel-col"><input type="checkbox" id="selAll" title="Select all shown" ${S.rows.length && S.rows.every((r) => S.sel.has(r.id)) ? 'checked' : ''}></th>` : '') + S.order.map((k) => {
+    $('#head').innerHTML = (selOk ? `<th class="sel-col" style="width:30px"><input type="checkbox" id="selAll" title="Select all shown" ${S.rows.length && S.rows.every((r) => S.sel.has(r.id)) ? 'checked' : ''}></th>` : '') + S.order.map((k) => {
       const [label, sk, cls] = COLS[k];
       const fk = HEADER_FILTERS[k];
       const fval = fk ? $('#' + fk.input).value : '';
@@ -148,8 +152,8 @@
       const ftag = fk ? `<span class="hf-btn ${fval ? 'on' : ''}" aria-label="Filter">${FUNNEL(!!fval)}</span>` : '';
       const attrs = fk ? `data-hfilter="${k}"` : (sk ? `data-sort="${sk}"` : '');
       const tip = fk ? (fval ? `Filtered: ${fk.show(fval)} (click to change)` : (fk.as ? `Click to filter or sort by ${fk.as}` : 'Click to filter' + (sk ? ' or sort' : ''))) : (sk ? 'Click to sort' : '');
-      return `<th draggable="true" data-col="${k}" class="${cls} ${fk || sk ? 'sortable' : ''} ${fval ? 'hf-on' : ''}" ${attrs} title="${tip}; drag to move">${label}${arrow}${ftag}</th>`;
-    }).join('') + '<th class="row-act" aria-label="Delete"></th>';
+      return `<th draggable="true" data-col="${k}" class="${cls} ${fk || sk ? 'sortable' : ''} ${fval ? 'hf-on' : ''}" ${attrs} style="width:${COL_W[k] || 'auto'}" title="${tip}; drag to move">${label}${arrow}${ftag}</th>`;
+    }).join('') + '<th class="row-act" style="width:34px" aria-label="Delete"></th>';
     let html = '', lastDay = null;
     let prevSet = null;
     for (const r of S.rows) {
@@ -179,7 +183,6 @@
   }
   window.addEventListener('scroll', maybeMore, { passive: true });
   window.addEventListener('resize', maybeMore);
-  $('#leadScroll')?.addEventListener('scroll', maybeMore, { passive: true });   // the table scrolls inside its own box
 
   async function rescoreDay(day) {
     S.rescore = S.rescore || {};

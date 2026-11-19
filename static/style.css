@@ -491,10 +491,6 @@ tr.day-row .day-claude { color: var(--ink); opacity: .85; }
 /* Leads: the filter bar stays at the top while scrolling, and the table header pins just below it */
 .sticky-bar { position: sticky; top: 0; z-index: 6; background: var(--bg); padding-top: 8px; padding-bottom: 8px; margin-bottom: 4px; }
 body.has-sticky-bar #head th { top: var(--bar-h, 0px); }   /* only the main Leads table, not tables in dialogs */
-/* Leads table scrolls sideways inside its own box (Nick, Nov 19 2026: right-hand columns were cut off).
-   The box is one screen tall under the filter bar, so the header still pins while you scroll down. */
-.table-wrap.lead-scroll { overflow: auto; max-height: calc(100vh - var(--bar-h, 0px) - 12px); scrollbar-width: thin; }
-body.has-sticky-bar .lead-scroll #head th { top: 0; }
 
 /* Copy-ASIN button next to the ASIN on Leads */
 .copy-btn { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: -3px; border-radius: 5px; color: var(--muted); flex: 0 0 auto; }
@@ -587,3 +583,12 @@ tr.day-row .day-rescore { margin-left: 12px; padding: 2px 10px; font-size: 12.5p
 .drawer-head .pp-sent { font-size: 13px; color: var(--ok); white-space: nowrap; }
 [data-needs-tab][hidden] { display: none !important; }
 a.btn { color: var(--ink); text-decoration: none; }
+
+/* Leads table fits the window (Nick, Nov 19 2026): fixed layout, widths from COL_W in leads.js, long text ends in "…" */
+table.lead-table { table-layout: fixed; width: 100%; }
+table.lead-table th { white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+table.lead-table td { overflow: hidden; text-overflow: ellipsis; max-width: none; }
+table.lead-table td.prod, table.lead-table td.note-cell, table.lead-table td.tags, table.lead-table td.promo { max-width: none; }
+table.lead-table td .pill-list { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.lead-table td input, table.lead-table td select { max-width: 100%; box-sizing: border-box; }
+table.lead-table tr.day-row td { overflow: visible; white-space: normal; }
