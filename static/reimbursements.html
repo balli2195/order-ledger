@@ -32,6 +32,17 @@
   .deny { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
   .deny b { color: var(--bad); font-weight: 600; }
   a.chat { white-space: nowrap; }
+  .ws { display: grid; grid-template-columns: 1fr 28px 1fr; align-items: start; max-width: 900px; margin: 6px 0 16px; }
+  .ws .ch { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .ws .ar { color: var(--muted); text-align: center; padding-top: 26px; }
+  .ws .nm { font-size: 13.5px; font-weight: 600; display: flex; justify-content: space-between; gap: 6px; }
+  .ws .bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; gap: 2px; margin-top: 6px; }
+  .ws .bar span { display: block; height: 100%; }
+  .ws .rows { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .ws .rows div { display: flex; justify-content: space-between; }
+  .ws-leg { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); }
+  .ws-leg i, .ws .rows i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .ws-h { background: repeating-linear-gradient(45deg,#eda100 0 3px,transparent 3px 6px); box-shadow: inset 0 0 0 1px #eda100; }
   .rc-note { font-size: 12.5px; color: var(--muted); margin: 4px 0 10px; max-width: 900px; }
   table.rc td, table.rc th { font-size: 12.5px; white-space: nowrap; }
   table.rc th.grp { text-align: center; border-bottom: 1px solid var(--line); }
@@ -73,6 +84,9 @@
   <div class="rb-head"><h2>Recovery</h2><span class="muted" style="font-size:13px">lost at your sourcing cost vs what Amazon paid back</span><span class="sp"></span>
     <div class="chips" role="tablist"><button class="chip on" data-by="paid">Payments by month paid</button><button class="chip" data-by="loss">Payments by month of loss</button></div>
     <select id="rcYear" class="btn small" style="width:auto"></select></div>
+  <div class="rb-sec" style="margin-top:4px">Where it stands</div>
+  <div class="ws-leg" id="wsLeg"></div>
+  <div class="ws" id="ws"></div>
   <p class="rc-note">Lost inbound = units missing from closed shipment plans (month the plan closed). Lost / damaged in warehouse = the Profit page's write-offs from the inventory ledger (lost is net of units found). Paid = Amazon's Lost_Inbound, Lost_Warehouse and Damaged_Warehouse reimbursements by approval month, net of clawbacks. Shortfall = lost at your cost − paid. Damaged units Amazon moves to “distributor damaged” (it says they arrived damaged) are shown separately as Not Amazon’s fault and left out of the shortfall. “By month paid” dates payments by approval; “by month of loss” puts each payment in the month of the loss it pays for (warehouse: first-in-first-out by SKU; lost inbound: the month the case’s shipment plan closed), so recent months still fill in as Amazon pays. Refreshes daily with the Hub's Amazon sync.</p>
   <div class="stats" id="rcStats"></div>
   <div class="rc-chart" id="rcChart"></div>
@@ -163,7 +177,22 @@
   const mon = (s) => s.length === 4 ? 'Earlier' : new Date(s + '-15').toLocaleString('en-US', { month: 'short' });
   async function loadRc() {
     R.d = await api('GET', '/api/reimbursements/recovery?year=' + R.y + '&by=' + R.by);
+    loadWs().catch(() => {});
     renderRc();
+  }
+  const WSK = [['paid', '#1baf7a', 'Paid'], ['in_process', '#2a78d6', 'In process'], ['claimable', '#eda100', 'Claimable now'],
+    ['needs_invoice', 'ws-h', 'Underpaid, needs invoice to dispute'], ['unpaid', '#e34948', 'Unpaid, closed or denied']];
+  const swatch = (c) => c.startsWith('#') ? `<i style="background:${c}"></i>` : `<i class="${c}"></i>`;
+  async function loadWs() {
+    const P = await api('GET', '/api/reimbursements/pipeline?year=' + R.y);
+    $('#wsLeg').innerHTML = WSK.map(([, c, l]) => `<span>${swatch(c)}${l}</span>`).join('');
+    const one = (h, name, s) => {
+      const tot = WSK.reduce((a, [k]) => a + (s[k] || 0), 0) || 1;
+      const segs = WSK.map(([k, c, l]) => s[k] > 0 ? `<span title="${l}: ${money(s[k], 0)}" class="${c.startsWith('#') ? '' : c}" style="width:${100 * s[k] / tot}%;${c.startsWith('#') ? 'background:' + c : ''}"></span>` : '').join('');
+      const rows = WSK.filter(([k]) => s[k] > 0).map(([k, c, l]) => `<div><span>${swatch(c)}${l}</span><span>${money(s[k], 0)}</span></div>`).join('');
+      return `<div><div class="ch">${h}</div><div class="nm"><span>${name}</span><span>${money(tot, 0)}</span></div><div class="bar">${segs}</div><div class="rows">${rows}</div></div>`;
+    };
+    $('#ws').innerHTML = one('1 · Sent to Amazon', 'Lost inbound', P.inbound) + '<div class="ar">→</div>' + one('2 · In the warehouse', 'Lost or damaged', P.warehouse);
   }
   function renderRc() {
     const D = R.d, T = D.total, A = T.all;

@@ -464,6 +464,26 @@ async def engine_reimbursements(request: Request, all: int = 0):
     return await inbound.page(include_all=bool(all))
 
 
+@app.get("/api/reimbursements/pipeline")
+async def api_reimbursements_pipeline(request: Request, year: int | None = None):
+    """'Where it stands' diagram: paid / in process / claimable / underpaid needing an invoice / unpaid (app/recovery.py)."""
+    await auth.require(request, tab="reimbursements")
+    from datetime import date as _d
+    return await recovery.pipeline(year or _d.today().year)
+
+
+@app.post("/api/engine/reimbursements/disputes")
+async def engine_reimbursements_disputes(request: Request):
+    """Claude posts the reimbursement-amount dispute totals: {inbound|warehouse: {filed, claimable, needs_invoice}, as_of}."""
+    auth.require_engine_key(request)
+    body = await request.json()
+    from psycopg.types.json import Jsonb
+    async with db.pool.connection() as conn:
+        await conn.execute("INSERT INTO settings (key, value) VALUES ('reimb_disputes', %s) "
+                           "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (Jsonb(body),))
+    return {"ok": True}
+
+
 @app.get("/api/engine/reimbursements/recovery")
 async def engine_reimbursements_recovery(request: Request, year: int | None = None, by: str = "paid"):
     auth.require_engine_key(request)

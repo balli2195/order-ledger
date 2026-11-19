@@ -242,3 +242,50 @@ async def report(year: int, by: str = "paid") -> dict:
     total = finish(tot)
     return {"year": year, "by": by, "months": out, "total": {**total, **{k: total[k] for k in KIND_LABELS}},
             "method_labels": METHODS, "uncosted_units": uncosted, "kinds": KIND_LABELS, "claimable": list(CLAIMABLE)}
+
+
+async def pipeline(year: int) -> dict:
+    """"Where it stands" diagram on the Reimbursements page (Nick, Nov 18 2026): for lost inbound and for warehouse
+    lost/damaged, the year's loss at Nick's cost split into paid / in process / claimable now / underpaid (needs an
+    invoice to dispute) / unpaid.
+
+    - Paid: Amazon's net payouts (report(), by month paid).
+    - In process, inbound: missing value of this year's plans with a case open; warehouse: the shortfall on losses from the
+      last 60 days (by month of loss), which Amazon is normally still settling.
+    - Claimable now, inbound: plans ready to file (closed, unfiled, window open).
+    - Reimbursement-amount disputes (payouts below Nick's approved cost) come from the settings key reimb_disputes,
+      which Claude posts from the dispute list: {"inbound"|"warehouse": {"filed", "claimable", "needs_invoice"}, "as_of"}.
+      Filed counts as in process, claimable (invoice on file) as claimable now, needs_invoice as its own segment.
+    - Unpaid = loss − everything above (closed, denied, or paid without a dispute path), never below 0.
+    """
+    from . import inbound, leads
+    paid = await report(year, "paid")
+    loss = await report(year, "loss")
+    pg = await inbound.page(include_all=True)
+    yp = [p for p in pg["plans"] if str(p.get("plan", ""))[6:10] == str(year)]
+    disp = await leads.get_setting("reimb_disputes", {}) or {}
+    T = paid["total"]
+    cutoff = date.today() - timedelta(days=60)
+    wh_recent = 0.0
+    for r in loss["months"]:
+        if r.get("earlier"):
+            continue
+        y, m = int(r["month"][:4]), int(r["month"][5:7])
+        end = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
+        if end >= cutoff:
+            wh_recent += max(0.0, r["wh_lost"]["shortfall"]) + max(0.0, r["wh_damaged"]["shortfall"])
+
+    def seg(kind: str, lost: float, pd: float, ip: float, cl: float) -> dict:
+        d = disp.get(kind) or {}
+        ip2, cl2, ni = ip + float(d.get("filed", 0)), cl + float(d.get("claimable", 0)), float(d.get("needs_invoice", 0))
+        un = max(0.0, lost - pd - ip2 - cl2 - ni)
+        return {k: round(v, 2) for k, v in {"lost": lost, "paid": pd, "in_process": ip2, "claimable": cl2,
+                                             "needs_invoice": ni, "unpaid": un}.items()}
+
+    inb = seg("inbound", T["inbound"]["lost_v"], T["inbound"]["paid"],
+              sum(p["missing_value"] for p in yp if p["state"] == "case_open"),
+              sum(p["missing_value"] for p in yp if p["state"] == "eligible"))
+    wh = seg("warehouse", T["wh_lost"]["lost_v"] + T["wh_damaged"]["lost_v"], T["wh_lost"]["paid"] + T["wh_damaged"]["paid"],
+             wh_recent, 0.0)
+    return {"year": year, "inbound": inb, "warehouse": wh, "disputes_as_of": disp.get("as_of"),
+            "receiving_plans": sum(1 for p in yp if p["state"] == "receiving")}
