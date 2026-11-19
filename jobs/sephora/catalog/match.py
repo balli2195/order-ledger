@@ -265,6 +265,13 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
         fa, fx = forms(title), x["forms"]
         if ({"liquid", "powder"} <= (fa | fx)) and not (fa & fx) and fa and fx:
             s -= 0.30; why.append("form differs (%s vs %s)" % ("/".join(sorted(fa)), "/".join(sorted(fx))))
+        # one-sided variant words (Nov 19, 2026 dry run): a Sephora 'Waterproof' mascara for a regular listing, the
+        # perfume for a deodorant stick, a body / hair version for the fragrance
+        bta = set(re.sub(r"[^a-z0-9]+", " ", bt).split())
+        bsx = set(re.sub(r"[^a-z0-9]+", " ", base_text(x["p"]["name"])).split())
+        for wv, pen in (("waterproof", 0.18), ("deodorant", 0.45), ("stick", 0.12), ("refillable", 0.0), ("body", 0.2), ("hair", 0.2)):
+            if (wv in bsx) != (wv in bta) and pen:
+                s -= pen; why.append(f"'{wv}' on one side only")
         for ex, pen in (("brush", 0.45), ("palette", 0.2)):
             if (ex in at_types) != (ex in x["types"]):
                 s -= pen; why.append(f"{ex} mismatch")

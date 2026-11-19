@@ -195,16 +195,26 @@ def shade_not_sold(k: dict, skus: list, asin: str | None = None) -> str | None:
         a = title_shade(k) if coded else None
     if not a or close_skus(k, skus, asin):   # close shades are kept for Nick to review, not dropped
         return None
-    aw = set(norm(_strip_sizes(a)).replace("#", " ").split()) - GENERIC
-    asq = _squash(a)
+    # the shade's name part only ('Fizzy Frosé - rose gold' -> 'Fizzy Frosé'), and without the line words most Sephora
+    # shades share ('Intense' in Dior's '026 Intense Mauve'): round 1 of the checker loop, Nov 19, 2026
+    a_name = re.split(r"\s+[-–|]\s+|\s*\(", a)[0] or a
+    df = collections.Counter(w for s_ in skus for w in set(norm(_strip_sizes(s_.get("value") or "")).split()))
+    line = {w for w, c in df.items() if len(skus) >= 4 and c >= max(3, 0.3 * len(skus))}
+    aw = set(norm(_strip_sizes(a_name)).replace("#", " ").split()) - GENERIC - line
+    acode = split_value(a_name)[0]
+    asq = _squash(a_name)
     for s in skus:
         code, name = split_value(s.get("value") or "")
         v = norm(_strip_sizes(s.get("value") or ""))
         if not v:
-            return None   # size-only SKUs: no shade list to compare with
-        sw = set(v.replace("#", " ").split()) - GENERIC
-        if aw & sw or any(_near(x, y) for x in aw for y in sw) or (code and any(_code_eq(code, t) for t in aw)) or (_squash(name) and _squash(name) in asq) \
-                or (asq and asq in _squash(s.get("value") or "")):
+            if not any((x.get("value") or "").strip() for x in skus):
+                return None   # size-only SKUs: no shade list to compare with
+            continue          # one nameless SKU (a mini) among named shades
+        sw = set(v.replace("#", " ").split()) - GENERIC - line
+        if acode and code and _code_eq(acode, code):
+            return None
+        if aw & sw or any(_near(x, y) for x in aw for y in sw) or (code and not acode and any(_code_eq(code, t) for t in aw)) \
+                or (_squash(name) and len(_squash(name)) >= 3 and _squash(name) in asq) or (asq and asq in _squash(s.get("value") or "")):
             return None
         d = norm(s.get("desc") or "")
         if d and len(d.split()) >= 2 and d in norm(a):
@@ -283,6 +293,14 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
     for s in skus:
         code, name = split_value(s.get("value") or s.get("size") or "")
         names[s["sku_id"]] = (code, name)
+    # line words shared by most shade names ('Atelier' in Westman's 'Atelier X', 'Pillow Talk' in Charlotte Tilbury's,
+    # 'Shade' in Benefit's 'Shade 04') say nothing about the shade: drop them (round 1 of the checker loop, Nov 19, 2026)
+    df = collections.Counter(w for _, n in names.values() for w in set(n.split()))
+    line = {w for w, c in df.items() if len(skus) >= 4 and c >= max(4, 0.7 * len(skus))}
+    if line:
+        for sid, (code, name) in list(names.items()):
+            rest = " ".join(w for w in name.split() if w not in line)
+            names[sid] = (code, rest)
     all_names = [n for _, n in names.values() if n]
     pn = set(norm(product_name or "").split())
     descs = collections.Counter(norm(s.get("desc") or "") for s in skus)
@@ -299,6 +317,11 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                 if any(_code_eq(code, t) or _code_eq(code, t.lstrip("no")) for t in toks):
                     sc += w * (1.2 if re.search(r"[a-z]", code) or len(code) >= 3 else 0.9); why.append(f"code {code} in {f}")
                     break
+        # '1 Neutral' / 'Lightest 2': a name made only of tone words is part of the code, it counts only with the code
+        name0 = name
+        weak = bool(code) and set(name.split()) <= (GENERIC | {"lightest", "lighter", "darkest", "deepest", "tan", "olive", "golden"})
+        if weak and not any(w.startswith("code") for w in why):
+            name = ""
         if name:
             # a name that is part of a longer SKU name found in the same field doesn't count ('Juicy Pink' in 'Juicy Pink Lady')
             for f, w in FIELD_W.items():
@@ -339,7 +362,7 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                             break
         # tone name + undertone from the description ('Light 2 | neutral undertone' = Amazon 'light neutral', Glossier)
         STOP = {"undertone", "undertones", "skin", "tones", "tone", "for", "with", "and", "to", "the"}
-        nd = {w for w in name.split() if not re.fullmatch(r"[\d.]+", w)} | (set(norm(s.get("desc") or "").split()) - STOP)
+        nd = {w for w in name0.split() if not re.fullmatch(r"[\d.]+", w)} | (set(norm(s.get("desc") or "").split()) - STOP)
         for f in ("color", "own"):
             fw = set(F[f].split()) - STOP
             if nd and len(nd) >= 2 and fw and nd == fw:
