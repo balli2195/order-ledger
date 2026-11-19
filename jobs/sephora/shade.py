@@ -331,6 +331,13 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
             if len(bare) == 1:
                 pick, how = bare[0]["sku_id"], how + f"; the title's size {t_oz[0]:.2f} oz is the unnamed {bare[0].get('size')} SKU"
         return {"sku_id": pick, "score": top[0], "margin": round(top[0] - second, 2), "how": how, "ranked": ranked[:5], "alts": alts}
+    # the listing names two Sephora shades (title 'Say Less', color field 'Superficial'): Nick counts it as both and
+    # reviews it later (Nov 19, 2026) -> the stronger one is the store size, the other an alternate, flagged
+    named = [r for r in ranked if r[0] >= 7 and r[1] in found_name]
+    if len(named) >= 2 and key[named[0][1]] != key[named[1][1]] and named[0][0] - named[1][0] < 3:
+        return {"sku_id": named[0][1], "score": named[0][0], "margin": round(named[0][0] - named[1][0], 2),
+                "how": f"listing names two Sephora shades ({named[0][2]} / {named[1][2]}): both kept, check the photo",
+                "ranked": ranked[:5], "alts": [named[1][1]], "two_shades": True}
     if "size" in (vt or "").lower():
         p = _size_pick(k, F, skus)
         if p:

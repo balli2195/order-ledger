@@ -169,6 +169,9 @@ def main():
                 ex = {k_: v for k_, v in (r.get("extra") or {}).items() if k_ != "shade_hint"}
                 if alts:
                     ex["store_sku_alts"] = alts
+                if res.get("two_shades"):   # the candidate note asks Nick to check which one the photo shows
+                    ex["shade_hint"] = {"two_shades": [label(x)] + [label(by[a_]) for a_ in alts], "checked": C.today().isoformat()}
+                    stats["two shades named (both kept)"] += 1
                 hints.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"], "extra": ex})
         else:
             ns = SH.shade_not_sold(k, s["skus"], r["asin"]) if "olor" in (s.get("variation_type") or "") or "cent" in (s.get("variation_type") or "") else None
