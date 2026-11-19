@@ -172,6 +172,8 @@ def main():
         if not r["active"] or r.get("sellable") != "open" or r.get("match_ok") is False:
             return False
         ex = r.get("extra") or {}
+        if ex.get("listing_dead"):   # Amazon has no detail page for the ASIN any more (dog page; listing_check.py)
+            return False
         if (ex.get("shade_hint") or {}).get("not_sold") and not r.get("store_size") and r.get("match_ok") is not True:
             return False   # resolve_skus.py: the Amazon shade isn't on Sephora's shade list (Nov 19, 2026)
         return ex.get("demand_ok") is True and ex.get("thin_price") is not True
@@ -277,8 +279,12 @@ def main():
         except Exception as e:  # noqa: BLE001
             problems.append(f"SP-API offers failed (Keepa prices used): {e!r}")
     passed = []
+    dead_today = []
     for r in pre:
         lv = sp_live.get(r["asin"]) or {}
+        if lv.get("invalid"):   # SP-API: "invalid ASIN" = the listing is gone (dog page), Nick Nov 19, 2026
+            dead_today.append(r)
+            continue
         if lv and lv.get("status") in (None, 200):
             if lv.get("buybox"):
                 amz[r["asin"]]["buybox"] = lv["buybox"]
@@ -467,6 +473,10 @@ def main():
         if e:
             fields.update(roi_now=e["roi_now"], roi_avg90=e["roi_avg90"], watch_price=e["watch_price"])
         put(r, **fields)
+    for r in dead_today:
+        put(r, extra={**(r.get("extra") or {}), **(upd.get((r["asin"], r["product_id"]), {}).get("extra") or {}),
+                      "listing_dead": day.isoformat()})
+    counts["listings_dead"] = len({r["asin"] for r in dead_today})
     cat_rows = list(upd.values())
 
     # ---- 5b. re-price open candidates (Nick, Nov 17, 2026); the ones posted again today were replaced by today's row

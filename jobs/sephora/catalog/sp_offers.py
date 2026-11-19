@@ -74,6 +74,8 @@ def offers(asins):
                         "fbm_low": min([x for x in fbm if x], default=None), "offers_fba": cnt.get("Amazon", 0),
                         "offers_fbm": cnt.get("Merchant", 0), "amazon_offer": amazon,
                         "status": (r.get("status") or {}).get("statusCode"), "ts": time.time(),
+                        # 'B0D6YKCPW4 is an invalid ASIN for marketplace': the listing is gone (dog page), Nick Nov 19, 2026
+                        "invalid": (r.get("status") or {}).get("statusCode") == 400 and "invalid asin" in json.dumps(r.get("body") or {}).lower(),
                         "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
         if (i // 20) % 10 == 0:
             json.dump(cache, open(OFF, "w"))

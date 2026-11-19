@@ -443,6 +443,26 @@ def main():
         except Exception as e:  # noqa: BLE001
             problems.append(f"sweep pairs upsert failed: {e!r}"[:300])
 
+    # ---- 5c2. dead Amazon listings (dog pages): SP-API catalog search over every watched ASIN (listing_check.py)
+    try:
+        import listing_check as LC
+        live = [r for r in cat if r.get("active") and r.get("match_ok") is not False]
+        dead = LC.sweep([r["asin"] for r in live], log=C.log)
+        dl = []
+        for r in live:
+            ex = r.get("extra") or {}
+            if r["asin"] in dead and not ex.get("listing_dead"):
+                dl.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"], "extra": {**ex, "listing_dead": day.isoformat()}})
+            elif r["asin"] not in dead and ex.get("listing_dead"):   # back on Amazon
+                dl.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"],
+                           "extra": {k_: v for k_, v in ex.items() if k_ != "listing_dead"}})
+        counts["listings_dead"] = len(dead)
+        if dl and not a.dry_run:
+            for i in range(0, len(dl), 500):
+                C.hub_upsert_catalog(dl[i:i + 500])
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"dead listing check failed: {e!r}"[:300])
+
     # ---- 5d. shades / sizes for pairs without a store size (resolve_skus.py; collector data, photos for near-profit pairs)
     try:
         rs = subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)), "resolve_skus.py"),
