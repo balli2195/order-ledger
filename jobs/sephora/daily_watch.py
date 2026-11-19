@@ -10,7 +10,7 @@ Steps
     Sale-page items join the catalog by productId (markdown price, newly on sale / lower than stored = price drop);
     catalog products that were on sale but are off the Sale page now get on_sale=false. Sale items not in the catalog
     go to new_products.json for the weekly matcher. Full brand listings are refreshed weekly, not here.
- 3. Watch rows: active, sellable=open, confidence high/medium (or Nick's match_ok=true), match_ok not false,
+ 3. Watch rows: active, sellable=open, match_ok not false (any confidence; learned rules only flag, Nick Nov 19 2026),
     extra.demand_ok, not extra.thin_price, and priceable by the buying rule. Keepa refresh (Buy Box, 90-day avg) in
     priority order (price drops / promo rows first, then ROI closest to or above 15%) within --max-tokens.
  4. ROI prefilter >= 15%: cost = Sephora price x 1.05 x pack (markdown only for the size it belongs to; a broad promo
@@ -18,7 +18,7 @@ Steps
     confirmed); revenue = Buy Box else lowest FBA; minus referral, FBA fee, $1 prep. SP-API getItemOffersBatch re-checks
     the Buy Box / FBA low of the rows that pass.
  5. Lead Score (Hub proxy, <= 25 per call, sequential, <= --max-score rows a day incl. earlier runs today) on the top
-    rows by ROI; candidates = pred ROI >= 21% (or ROI >= 21% marked 'not scored' when scoring fails).
+    rows by ROI; candidates = pred ROI >= 10% (or ROI >= 10% marked 'not scored' when scoring fails).
  6. Upsert refreshed catalog fields, the candidates and the run record; write daily_summary.md.
 --dry-run: no Hub writes (payloads are saved under $SEPH_DATA/out/<date>/); Lead Score is skipped unless --score.
 """
@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 
 CONF_OK = ("high", "medium")
-CAND_MIN, PREFILTER = 0.21, 0.15
+CAND_MIN, PREFILTER = 0.10, 0.15   # posting floor: predicted ROI 10% (Nick, Nov 19, 2026; was 21%)
 DECIDED_DAYS = 21
 
 
@@ -167,18 +167,11 @@ def main():
     rule_skipped = []
 
     def watchable(r):
+        # Nick, Nov 19, 2026: every pair not marked wrong is watched. The match gate (learned rules, confidence, product
+        # still on Sephora's brand listing) was removed; Nick judges the match on the To review tab.
         if not r["active"] or r.get("sellable") != "open" or r.get("match_ok") is False:
             return False
-        if rules and r.get("match_ok") is not True:
-            br = C.rule_breaks(rules, r)
-            if br:
-                rule_skipped.append((r["asin"], r.get("sephora_name"), br[0]))
-                return False
-        if r.get("confidence") not in CONF_OK and r.get("match_ok") is not True:
-            return False
         ex = r.get("extra") or {}
-        if ex.get("listing_seen") is False:   # product not on Sephora's brand listing at the last weekly refresh
-            return False
         return ex.get("demand_ok") is True and ex.get("thin_price") is not True
 
     best = {}   # one pair per ASIN: Nick-confirmed first, then confidence, then match score
@@ -405,6 +398,11 @@ def main():
             bits.append("buy the " + ("mini/smaller size" if "lo" == r.get("size_confirmed") else "full size") + " (Nick confirmed)")
         if sc_note:
             bits.append(sc_note)
+        if rules and r.get("match_ok") is not True:   # learned match rules no longer hold a pair back, they flag it (Nov 19, 2026)
+            br = C.rule_breaks(rules, r)
+            if br:
+                bits.insert(0, f"Check the match: {br[0]}")
+                rule_skipped.append((r["asin"], r.get("sephora_name"), br[0]))
         if e["promo_applied"]:   # cost from a site-wide / brand event code, not the item's own sale price
             bits.insert(0, "Event code — confirm brand qualifies at checkout")
         row = {"asin": r["asin"], "product_id": r["product_id"], "found_on": day.isoformat(),
@@ -415,7 +413,7 @@ def main():
         cands.append(row)
         cand_view.append({**row, "brand": r["brand"], "sephora_name": r["sephora_name"], "amazon_title": r.get("amazon_title"),
                           "shade": r.get("shade"), "confidence": r.get("confidence")})
-    C.log(f"candidates: {len(cands)} (pred ROI >= 21%{' or unscored ROI >= 21%' if any(c['lead_score_band'] is None for c in cands) else ''})")
+    C.log(f"candidates: {len(cands)} (pred ROI >= {C.pct(CAND_MIN)}{' or unscored ROI >= ' + C.pct(CAND_MIN) if any(c['lead_score_band'] is None for c in cands) else ''})")
 
     # ---- 6. catalog upserts
     upd = {}
@@ -532,7 +530,7 @@ def main():
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
              f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}",
              f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
-             f"- Held back by learned match rules (Nick's wrong-match marks): {len(rule_skipped)}",
+             f"- Posted with a match warning from the learned rules (Nick's wrong-match marks): {len(rule_skipped)}",
              f"- Open leads on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]
     lines += [f"  - {r['asin']} {r.get('sephora_name') or ''}: {why}" for r, why in rechecked_expired[:15]] + [""]
     if cand_view:
@@ -552,7 +550,7 @@ def main():
                          f"${(amz[r['asin']]['buybox'] or amz[r['asin']]['fba_low'] or 0):.2f} | {C.pct(roi_)} |")
         lines.append("")
     if rule_skipped:
-        lines += ["## Held back by learned match rules (marked OK on the Sephora leads tab -> proposed again)", ""]
+        lines += ["## Posted with a match warning (learned rules from Nick's wrong-match marks)", ""]
         lines += [f"- {a_} {n_ or ''}: {why}" for a_, n_, why in rule_skipped[:30]] + [""]
     if fatal:
         lines.insert(1, f"**RUN FAILED: {fatal}.**")

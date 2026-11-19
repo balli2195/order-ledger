@@ -34,7 +34,7 @@ What a run does:
 2. Refreshes watched ASINs with Keepa (Buy Box, 90-day average): sale and promo rows first, then the best ROI.
 3. Applies the ROI ≥ 15% prefilter, then an SP-API live offers check.
 4. Scores the top ≤60 with Lead Score (through the Hub, ≤25 per call, one call at a time).
-5. Posts as candidates the rows with predicted ROI ≥ 21%.
+5. Posts as candidates the rows with predicted ROI ≥ 10% (Nick, Nov 19, 2026; was 21%). Every pair not marked wrong is watched: learned match rules, confidence and the Sephora-listing check no longer hold a pair back (Nick judges the match on To review).
    - Multi-size products are never posted until Nick confirms the size (`needs_size` with no `size_confirmed`). They are listed under "Needs your size check" with the Amazon size.
    - A cost that comes from an event code rather than the item's own sale price gets the note prefix "Event code — confirm brand qualifies at checkout".
 6. Updates the catalog's prices and ROI and records the run.
@@ -125,7 +125,7 @@ Every stage logs into the summary's **Problems** list and the run carries on.
   - Never raise `--max-tokens` above the budget.
 - **Hub** (5xx while Render cold-starts): requests retry 4 times with backoff. If the Hub is down, the run exits 1 and the summary says FAILED. Re-run once it's up.
 - **Lead Score:**
-  - If a batch fails, rows with ROI ≥ 21% are posted with "not scored" in the note.
+  - If a batch fails, rows with ROI ≥ 10% are posted with "not scored" in the note.
   - The Hub proxy takes about 2 s per row.
   - Never send more than 60 rows a day or run batches in parallel; Nick doesn't want his Lead Score server loaded.
 - **SP-API:** if the offers check fails, Keepa prices are used. If the restrictions check fails, the row stays `sellable=null` and is not watched.

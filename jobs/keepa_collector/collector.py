@@ -7,8 +7,7 @@ pull per ASIN is kept.
 
 What it does, forever:
   1. Every 10 minutes it reads the ASIN list from the Hub database:
-     - hot: Lead DB pairs the daily finder watches (active, open to sell, not marked wrong, confidence high/medium or
-       Nick-confirmed), pairs on sale or with open candidates, and Nick's leads from the last 30 days -> pulled every HOT_HOURS
+     - hot: Lead DB pairs the daily finder watches (active, open to sell, not marked wrong), pairs on sale or with open candidates, and Nick's leads from the last 30 days -> pulled every HOT_HOURS
      - cold: every other active Lead DB ASIN -> pulled every COLD_HOURS
      Pairs Nick or Claude marked wrong are left out (Nov 19, 2026): they only matter for review, not for leads.
   2. Pulls the most overdue ASINs from Keepa, 20 per request (history, stats, Buy Box, 20 offers with stock, rating).
@@ -106,8 +105,7 @@ def snapshot(p: dict) -> dict:
 ASIN_SQL = """
 WITH cat AS (
   SELECT asin,
-         bool_or(active AND sellable = 'open' AND match_ok IS NOT FALSE
-                 AND (confidence IN ('high', 'medium') OR match_ok IS TRUE)) AS watched,
+         bool_or(active AND sellable = 'open' AND match_ok IS NOT FALSE) AS watched,   -- any confidence (Nick, Nov 19, 2026)
          bool_or(active AND on_sale) AS on_sale
     FROM sephora_catalog WHERE active AND match_ok IS NOT FALSE GROUP BY asin),   -- pairs marked wrong aren't pulled (Nick, Nov 19, 2026)
 cand AS (SELECT DISTINCT asin FROM sephora_candidates WHERE status = 'new'),
