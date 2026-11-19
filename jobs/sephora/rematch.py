@@ -44,9 +44,9 @@ MEN_RE = r"\b(men|man|mens|homme|him|masculine)\b"
 def _word_gap(M, w: dict, sephora_name: str, drop: set, vocab: set) -> str | None:
     title = w.get("amazon_title") or ""
     skip = IGNORE | set(M.tokens(w.get("shade") or "", drop))
-    if not M.conc(title):
-        skip |= CONC_WORDS
     a = set(M.tokens(title, drop))
+    if not M.conc(title) and not ("parfum" in a and "eau" not in a):   # "Miss Parfum Spray" names a concentration too
+        skip |= CONC_WORDS
     s = set(M.tokens(sephora_name or "", drop))
     extra_a = sorted(((a & vocab) | (a & FORM_WORDS)) - s - skip)
     extra_s = sorted(s - a - skip)
