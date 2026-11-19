@@ -304,6 +304,15 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
             agree = [t for t in twins if P[t[1]]["flags"]["mini"] == af["mini"] and P[t[1]]["flags"]["set"] == af["set"]]
             if agree:
                 top = agree[0]
+            # same line, one name has an extra variant word the title doesn't ('Overcurl Waterproof', 'Blush Stick',
+            # 'Deodorant'): the one whose words are all in the title wins (Nov 19, 2026, from Nick's leads)
+            pool = agree or twins
+            if len(pool) > 1:
+                at_all = A_tok[a["asin"]]
+                miss = lambda t: len(P[t[1]]["set"] - at_all)
+                best_t = min(pool, key=lambda t: (miss(t), -t[0][0]))
+                if miss(best_t) < miss(top):
+                    top = best_t
             others = [t for t in sc if P[t[1]]["core"] != core]
             second = others[0][0][0] if others else 0
         else:
