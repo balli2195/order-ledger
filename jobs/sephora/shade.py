@@ -137,10 +137,46 @@ def _near(a: str, b: str) -> bool:
     return a[i + 1:] == b[i + 1:] or a[i:] == b[i + 1:] or a[i + 1:] == b[i:]
 
 
+# colour words that mean the same thing (French names on Dior / Chanel / Givenchy listings, US vs UK spelling)
+SYN = {"noir": "black", "nero": "black", "negro": "black", "blanc": "white", "bianco": "white", "rouge": "red",
+       "rosso": "red", "rose": "pink", "rosa": "pink", "brun": "brown", "marron": "brown", "gris": "grey", "gray": "grey",
+       "bleu": "blue", "vert": "green", "or": "gold", "dore": "gold", "argent": "silver", "beige": "nude", "naked": "nude",
+       "chocolat": "chocolate", "prune": "plum", "framboise": "raspberry", "cerise": "cherry", "corail": "coral",
+       "peche": "peach", "pêche": "peach", "colour": "color", "transparent": "clear"}
+
+
+def _syn(words):
+    return {SYN.get(w, w) for w in words}
+
+
+def close_skus(k: dict, skus: list, asin: str | None = None) -> list:
+    """Sephora SKUs close to the Amazon shade without being it for sure (Nick, Nov 19, 2026: 'close but different should
+    still count, I can review manually'): same colour after synonyms ('Noir' / 'Black'), or the Amazon shade words are
+    Sephora's description of the SKU ('Cherry Red Chrome' vs a 'cherry red' SKU)."""
+    a = amazon_shade(k, asin) or (k.get("color") or "")
+    aw = _syn(set(norm(_strip_sizes(a)).replace("#", " ").split()) - {"shade", "color", "colour", "the", "and", "with"})
+    if not aw:
+        return []
+    acode, _an = split_value(a)
+    only_colour = not (aw - _syn(COLOUR_WORDS))   # 'Red', 'Black': means something on a 3-shade mascara, not a 40-shade lipstick
+    if only_colour and len(skus) > 4:
+        return []
+    out = []
+    for s in skus:
+        code, name = split_value(s.get("value") or "")
+        if acode and code and not _code_eq(acode, code):
+            continue   # '051 Nude Bloom' is not '013 Beige'
+        nw = _syn(set(name.split()))
+        dw = _syn(set(norm(s.get("desc") or "").split()) - {"undertone", "undertones", "skin", "tones", "for", "with", "and"})
+        if (nw and (nw <= aw or aw <= nw)) or (len(dw) >= 2 and dw <= aw) or (len(aw) >= 2 and aw <= dw):
+            out.append(s)
+    return out if len(out) <= 3 else []   # 'close' to half the list says nothing
+
+
 def shade_not_sold(k: dict, skus: list, asin: str | None = None) -> str | None:
     """The Amazon shade when it shares no word or code with any Sephora SKU (Sephora doesn't sell that shade), else None."""
     a = amazon_shade(k, asin)
-    if not a:
+    if not a or close_skus(k, skus, asin):   # close shades are kept for Nick to review, not dropped
         return None
     aw = set(norm(_strip_sizes(a)).replace("#", " ").split()) - GENERIC
     asq = _squash(a)

@@ -183,10 +183,15 @@ def main():
                 continue
             stats["undecided"] += 1
             top = [by[sid] for sc_, sid, _w in (res.get("ranked") or [])[:3] if sc_ > 0]
+            close = SH.close_skus(k, s["skus"], r["asin"])
+            if close:   # 'Noir' vs 'Black': kept as a lead, the note says it's a close shade to check
+                stats["close shade (review)"] += 1
+                top = close + [t for t in top if t not in close]
             if res.get("photo_hint") and res["photo_hint"] in by and by[res["photo_hint"]] not in top:
                 top.insert(0, by[res["photo_hint"]])
             hints.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"],
                           "extra": {**(r.get("extra") or {}), "shade_hint": {"guess": [label(t) for t in top[:3]],
+                                                                             "close": bool(close),
                                                                              "checked": C.today().isoformat()}}})
     C.log("results:", dict(stats))
     C.save_json(f"out/{C.today().isoformat()}/resolve_skus.json", {"marks": marks, "hints": hints, "recheck": recheck})

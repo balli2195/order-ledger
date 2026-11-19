@@ -415,7 +415,8 @@ def main():
             bits.insert(0, "Size not checked: confirm which Sephora size the Amazon listing is")
         sh_ = (r.get("extra") or {}).get("shade_hint")
         if not r.get("store_size") and sh_ and sh_.get("guess"):   # resolve_skus.py couldn't tell the shade
-            bits.insert(0, "Shade not confirmed: looks like " + " or ".join(sh_["guess"][:3]))
+            bits.insert(0, ("Close shade, check it: Amazon's shade is near " if sh_.get("close") else "Shade not confirmed: looks like ")
+                        + " or ".join(sh_["guess"][:3]))
         elif sh_ and sh_.get("two_shades"):   # the listing names two Sephora shades: both kept (Nick, Nov 19, 2026)
             bits.insert(0, "Two shades named: " + " or ".join(sh_["two_shades"][:2]) + " (check the photo)")
         if sc_note:
