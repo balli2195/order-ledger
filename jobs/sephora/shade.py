@@ -33,7 +33,8 @@ FIELD_W = {"own": 10, "color": 9, "title": 8, "feat": 3, "desc": 2}
 
 def norm(s) -> str:
     s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().lower()
-    s = s.replace("&", " and ").replace("’", "'")
+    s = s.replace("&", " and ").replace("’", "'").replace("$", "s")   # 'Fu$$y' = 'Fussy'
+    s = re.sub(r"(\d)\(([a-z])\)", r"\1\2", s)                          # '1.3(N)' = '1.3N'
     s = re.sub(r"\bn\s*[°o]\s*\.?\s*(\d)", r"no\1", s)
     return re.sub(r"[^a-z0-9.]+", " ", s).strip()
 
@@ -66,7 +67,8 @@ def _strip_sizes(t: str) -> str:
 def split_value(v: str) -> tuple[str | None, str]:
     """Sephora shade value -> (code, name). '81 Daydreaming' -> ('81', 'daydreaming'); 'Salty Tan - soft mauve' ->
     (None, 'salty tan'); '3F' -> ('3f', ''); '0.1 Translucent' -> ('0.1', 'translucent'); '#56.5' -> ('56.5', '')."""
-    parts = re.split(r"\s+[-–|]\s+|\s*\(", v or "")
+    v = re.sub(r"(\d)\(([A-Za-z])\)", r"\1\2", v or "")
+    parts = re.split(r"\s+[-–|]\s+|\s*\(", v)
     v = parts[0]
     if len(parts) > 1 and re.fullmatch(r"#?\s*(?:no\.?\s*)?\d+(?:\.\d+)?[A-Za-z]{0,2}", v.strip()) and parts[1].strip():
         v = v + " " + parts[1]   # '5 - Tan': code then name (not code then description)
@@ -255,7 +257,21 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                     break
             else:
                 if len(_squash(name)) >= 3 and any(_squash(name) == _squash(t) for t in F["_own_raw"].split(" | ") + [F["color"]] if t):
-                    sc += FIELD_W["own"]; why.append(f"name '{name}' = selector (punctuation aside)")
+                    sc += FIELD_W["own"]; why.append(f"name '{name}' in own (punctuation aside)")
+                    ranked.append([round(sc, 2), s["sku_id"], "; ".join(why)])
+                    continue
+                nw = name.split()
+                hitf = None
+                for f in ("own", "color", "title"):
+                    fw = F[f].split()
+                    if len(_squash(name)) >= 6 and _squash(name) in re.sub(r"[^a-z0-9]", "", F[f]):
+                        hitf = (f, "run together")      # 'LOVECHILD' = 'Love Child', 'BananaBread'
+                    elif len(nw) >= 1 and all(any(_near(x, y) for y in fw) for x in nw if len(x) >= 3) and any(len(x) >= 5 for x in nw):
+                        hitf = (f, "typo / word order")  # 'RASPERRY' = 'Raspberry', 'Black Brown' = 'Brown Black'
+                    if hitf:
+                        break
+                if hitf:
+                    sc += FIELD_W[hitf[0]] * 0.9; why.append(f"name '{name}' in {hitf[0]} ({hitf[1]})")
                     ranked.append([round(sc, 2), s["sku_id"], "; ".join(why)])
                     continue
                 words = [x for x in name.split() if len(x) >= 3 and x not in GENERIC]
@@ -267,7 +283,8 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                             break
         d = norm(s.get("desc") or "")
         if len(d.split()) >= 2 and descs[d] == 1 and any(_has_phrase(F[f], d) for f in ("own", "color", "title")):
-            sc += 4; why.append(f"description '{d}' in the listing")
+            whole = d in (F["color"], F["own"])   # the color field is exactly Sephora's description ('Light Warm' = 140)
+            sc += 8 if whole else 4; why.append(f"description '{d}' {'is the color field' if whole else 'in the listing'}")
         ranked.append([round(sc, 2), s["sku_id"], "; ".join(why)])
     # a SKU whose code is missing while another SKU's code is in the selector / color / title is another shade
     # ('5.5 Tan' when the title says '5 Tan')
