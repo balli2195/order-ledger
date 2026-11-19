@@ -82,6 +82,7 @@ def base_text(s):
     s = strip_accents(s or "").lower().replace("’", "'")
     s = re.sub(r"\bn\s*[°ºo]\s*[._]?\s*(\d)", r"no\1", s)          # N°5, No.5, No_5 -> no5
     s = re.sub(r"\bchanel\s+(5|19|22)\b", r"chanel no\1", s)
+    s = re.sub(r"\bafter[- ]?shave\b", "aftershave", s)   # Fahrenheit After Shave is not the EDT (round 5)
     s = re.sub(r"\beau sauvage\b", "eausauvage", s)   # Dior's Eau Sauvage is not Sauvage EDT (checker round 4)
     s = re.sub(r"\bl\s*'?\s*eau\b", "leau", s)                      # L'Eau, L Eau, LEau -> leau (N°5 L'Eau is not N°5 EDT)
     s = re.sub(r"m\s*[·.]\s*a\s*[·.]\s*c\s*\.?\s*", "mac", s)          # M·A·C / M.A.C. -> mac
@@ -278,7 +279,7 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
         bta = set(re.sub(r"[^a-z0-9]+", " ", bt).split())
         bsx = set(re.sub(r"[^a-z0-9]+", " ", base_text(x["p"]["name"])).split())
         for wv, pen in (("waterproof", 0.18), ("deodorant", 0.45), ("stick", 0.12), ("refillable", 0.0), ("body", 0.2), ("hair", 0.2),
-                        ("sharpener", 0.6), ("rollerball", 0.25), ("toenail", 0.6), ("toenails", 0.6), ("loose", 0.2), ("pressed", 0.2)):
+                        ("sharpener", 0.6), ("rollerball", 0.25), ("toenail", 0.6), ("toenails", 0.6), ("loose", 0.2), ("pressed", 0.2), ("aftershave", 0.5)):
             if (wv in bsx) != (wv in bta) and pen:
                 s -= pen; why.append(f"'{wv}' on one side only")
         for ex, pen in (("brush", 0.45), ("palette", 0.2)):

@@ -250,15 +250,27 @@ def shade_not_sold(k: dict, skus: list, asin: str | None = None) -> str | None:
             continue          # one nameless SKU (a mini) among named shades
         sw = set(v.replace("#", " ").split()) - GENERIC - line
         if acode and code and _code_eq(acode, code):
+            if _tone_conflict(code, name, norm(a_name)):
+                continue   # '16 Cool' is not '16 Neutral'
             return None
         if aw & sw or any(_near(x, y) for x in aw for y in sw) or (code and not acode and any(_code_eq(code, t) for t in aw)) \
                 or (_squash(name) and len(_squash(name)) >= 3 and set(name.split()) - GENERIC and _squash(name) in asq) \
                 or (asq and asq in _squash(s.get("value") or "")):
             return None
         d = norm(s.get("desc") or "")
-        if d and len(d.split()) >= 2 and d in norm(a):
-            return None
+        if d and len(d.split()) >= 2 and d in norm(a) and not (acode and code and not _code_eq(acode, code)):
+            return None   # (a sibling with another code can share the description: '15 Cool' / '16 Cool', round 5)
     return a
+
+
+TONES = {"warm", "cool", "neutral", "olive", "golden", "rosy", "peach", "pink", "yellow", "red"}
+
+
+def _tone_conflict(code: str, name: str, text: str) -> bool:
+    """'16 Cool' on Amazon vs Sephora's '16 Neutral': the code matches, the undertone right after it doesn't (round 5)."""
+    m = re.search(r"(?<![a-z0-9.])" + re.escape(code) + r"\s+([a-z]+)", text or "")
+    nt = set((name or "").split()) & TONES
+    return bool(m and nt and m.group(1) in TONES and m.group(1) not in nt)
 
 
 def _has_phrase(text: str, phrase: str) -> bool:
@@ -372,6 +384,8 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                 toks += [toks[i] + toks[i + 1] for i in range(len(toks) - 1)
                          if re.fullmatch(r"[\d.]+", toks[i]) and re.fullmatch(r"[a-z]{1,2}", toks[i + 1])]
                 if any(_code_eq(code, t) or _code_eq(code, re.sub(r"^no\.?(?=\d)", "", t)) for t in toks):
+                    if _tone_conflict(code, name, F[f]):
+                        why.append(f"code {code} in {f} but another undertone"); break
                     sc += w * (1.2 if re.search(r"[a-z]", code) or len(code) >= 3 else 0.9); why.append(f"code {code} in {f}")
                     break
                 if "." in code and f in ("own", "color", "title") and re.search(r"[a-z]", code) and any(
@@ -454,6 +468,7 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
     def _hit(why, kind):
         return any(w.startswith(kind) and w.split(" in ")[-1] in ("own", "color", "title") for w in why.split("; "))
     found_name = {sid for sc_, sid, why in ranked if _hit(why, "name '") or "= selector" in why}
+    key0 = lambda sid: " ".join(x for x in names[sid] if x)
     for r in ranked:
         code = names[r[1]][0]
         if r[1] in found_name:
@@ -462,6 +477,30 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
             r[0] = round(r[0] - 6, 2); r[2] += "; only its code matches, another SKU's name is there"
         elif code and found_code and r[1] not in found_code and r[0] > 0:
             r[0] = round(r[0] - 6, 2); r[2] += "; its code is missing, another SKU's code is there"
+    # two one-word names side by side in one field are one compound shade ('04 medium deep' is not Medium + Deep, round 5)
+    one = {}
+    for r in ranked:
+        for w in r[2].split("; "):
+            m = re.fullmatch(r"name '([a-z]+)' in (own|color|title)", w)
+            if m:
+                one.setdefault(m.group(2), []).append((m.group(1), r))
+    for f, lst in one.items():
+        for i in range(len(lst)):
+            for j in range(i + 1, len(lst)):
+                (a_, ra), (b_, rb) = lst[i], lst[j]
+                tone_w = {"light", "medium", "deep", "fair", "tan", "dark", "rich", "lightest", "deepest"}
+                if ra is not rb and a_ in tone_w and b_ in tone_w and (_has_phrase(F[f], a_ + " " + b_) or _has_phrase(F[f], b_ + " " + a_)):
+                    for rr in (ra, rb):
+                        if "compound" not in rr[2]:
+                            rr[0] = round(rr[0] - 6, 2); rr[2] += f"; part of the compound '{a_} {b_}', not its own shade"
+    # a shade named like the product line ('Translucent' on Laura Mercier's Translucent powder) next to another named
+    # shade ('translucent honey'): the other one is the shade (round 5)
+    if pn:
+        nm = [r for r in ranked if r[1] in found_name and r[0] >= 7]
+        line_hit = [r for r in nm if names[r[1]][1] and set(names[r[1]][1].split()) <= pn]
+        if line_hit and len({key0(r[1]) for r in line_hit}) < len({key0(r[1]) for r in nm}):
+            for r in line_hit:
+                r[0] = round(r[0] - 5, 2); r[2] += "; its name is the product line's"
     refill_l = bool(re.search(r"\brefill", (k.get("title") or "").lower() + " " + F["own"]))
     is_refill = {x["sku_id"]: bool(re.search(r"\brefill", (x.get("value") or "").lower())) for x in skus}
     if any(is_refill.values()) and not all(is_refill.values()):
