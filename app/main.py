@@ -449,11 +449,12 @@ async def api_reimbursements(request: Request, all: int = 0):
 
 
 @app.get("/api/reimbursements/recovery")
-async def api_reimbursements_recovery(request: Request, year: int | None = None):
-    """Recovery section: lost at Nick's cost vs paid back vs shortfall, by month (see app/recovery.py)."""
+async def api_reimbursements_recovery(request: Request, year: int | None = None, by: str = "paid"):
+    """Recovery section: lost at Nick's cost vs paid back vs shortfall, by month (see app/recovery.py).
+    by=paid dates payments by approval month; by=loss puts each payment in the month of the loss it pays for."""
     await auth.require(request, tab="reimbursements")
     from datetime import date as _d
-    return await recovery.report(year or _d.today().year)
+    return await recovery.report(year or _d.today().year, by)
 
 
 @app.post("/api/engine/inbound/seller-central")

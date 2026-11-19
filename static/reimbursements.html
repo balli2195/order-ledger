@@ -71,8 +71,9 @@
   <div class="table-wrap" style="margin-top:16px"><table class="rb" id="tbl"></table></div>
 
   <div class="rb-head"><h2>Recovery</h2><span class="muted" style="font-size:13px">lost at your sourcing cost vs what Amazon paid back</span><span class="sp"></span>
+    <div class="chips" role="tablist"><button class="chip on" data-by="paid">Payments by month paid</button><button class="chip" data-by="loss">Payments by month of loss</button></div>
     <select id="rcYear" class="btn small" style="width:auto"></select></div>
-  <p class="rc-note">Lost inbound = units missing from closed shipment plans (month the plan closed). Lost / damaged in warehouse = the Profit page's write-offs from the inventory ledger (lost is net of units found). Paid = Amazon's Lost_Inbound, Lost_Warehouse and Damaged_Warehouse reimbursements by approval month, net of clawbacks. Shortfall = lost at your cost − paid. Amazon pays weeks after a loss, so recent months look worse until payouts arrive; the year total is the number to watch. Refreshes daily with the Hub's Amazon sync.</p>
+  <p class="rc-note">Lost inbound = units missing from closed shipment plans (month the plan closed). Lost / damaged in warehouse = the Profit page's write-offs from the inventory ledger (lost is net of units found). Paid = Amazon's Lost_Inbound, Lost_Warehouse and Damaged_Warehouse reimbursements by approval month, net of clawbacks. Shortfall = lost at your cost − paid. Damaged units Amazon moves to “distributor damaged” (it says they arrived damaged) are shown separately as Not Amazon’s fault and left out of the shortfall. “By month paid” dates payments by approval; “by month of loss” puts each payment in the month of the loss it pays for (warehouse: first-in-first-out by SKU; lost inbound: the month the case’s shipment plan closed), so recent months still fill in as Amazon pays. Refreshes daily with the Hub's Amazon sync.</p>
   <div class="stats" id="rcStats"></div>
   <div class="rc-chart" id="rcChart"></div>
   <div class="table-wrap" style="margin-top:10px"><table class="rb rc" id="rcTbl"></table></div>
@@ -156,12 +157,12 @@
   });
   $$('.chip[data-f]').forEach((c) => c.addEventListener('click', () => { S.f = c.dataset.f; $$('.chip[data-f]').forEach((x) => x.classList.toggle('on', x === c)); load().catch(fail); }));
   // ---- Recovery section (Nick, Nov 18 2026) ----
-  const R = { y: new Date().getFullYear(), d: null };
+  const R = { y: new Date().getFullYear(), d: null, by: 'paid' };
   const K = ['inbound', 'wh_lost', 'wh_damaged'];
   const m0 = (v) => money(v, 0);
-  const mon = (s) => new Date(s + '-15').toLocaleString('en-US', { month: 'short' });
+  const mon = (s) => s.length === 4 ? 'Earlier' : new Date(s + '-15').toLocaleString('en-US', { month: 'short' });
   async function loadRc() {
-    R.d = await api('GET', '/api/reimbursements/recovery?year=' + R.y);
+    R.d = await api('GET', '/api/reimbursements/recovery?year=' + R.y + '&by=' + R.by);
     renderRc();
   }
   function renderRc() {
@@ -171,9 +172,10 @@
       stat('Amazon paid back', m0(A.paid), `${A.paid_u.toLocaleString()} units · net of clawbacks`) +
       stat('Shortfall', `<span class="${A.shortfall > 0 ? 'neg' : ''}">${m0(A.shortfall)}</span>`, `${A.lost_v ? Math.round(100 * A.paid / A.lost_v) : 0}% of the loss recovered`) +
       stat('Payout rate', T.payout_rate != null ? Math.round(100 * T.payout_rate) + '%' : '—', `paid ÷ reimbursed units at your cost (${m0(A.paid_cost)})`) +
-      K.map((k) => stat(D.kinds[k], m0(T[k].shortfall), `short · lost ${m0(T[k].lost_v)}, paid ${m0(T[k].paid)}`)).join('');
+      K.map((k) => stat(D.kinds[k], m0(T[k].shortfall), `short · lost ${m0(T[k].lost_v)}, paid ${m0(T[k].paid)}`)).join('') +
+      stat('Not Amazon\'s fault', m0(T.not_amazon.lost_v), `${T.not_amazon.lost_u} units Amazon says arrived damaged · not claimable, not in the shortfall`);
     // chart: grouped bars per month (lost, paid, shortfall)
-    const M = D.months, W = 900, H = 220, pad = 58, bw = (W - pad) / Math.max(M.length, 1);
+    const M = D.months.filter((r) => !r.earlier), W = 900, H = 220, pad = 58, bw = (W - pad) / Math.max(M.length, 1);
     const vals = M.flatMap((r) => [r.all.lost_v, r.all.paid, r.all.shortfall]);
     // regular axis steps: 1, 2 or 5 × 10^n, about 5 gridlines, always including $0
     const rawMx = Math.max(0, ...vals), rawMn = Math.min(0, ...vals);
@@ -197,18 +199,21 @@
     const cell = (g, bl) => `<td class="num ${bl ? 'bl' : ''}">${g.lost_v ? m0(g.lost_v) : '·'}<div class="sub">${g.lost_u ? g.lost_u + ' u' : ''}</div></td><td class="num">${g.paid ? m0(g.paid) : '·'}<div class="sub">${g.paid_u ? g.paid_u + ' u' : ''}</div></td><td class="num"><b class="${g.shortfall > 0 ? 'neg' : ''}">${g.lost_v || g.paid ? m0(g.shortfall) : '·'}</b></td>`;
     const grp = (t) => `<th class="grp bl" colspan="3">${esc(t)}</th>`;
     const sub3 = '<th class="num bl">Lost</th><th class="num">Paid</th><th class="num">Short</th>';
-    $('#rcTbl').innerHTML = `<thead><tr><th></th>${grp('All')}${K.map((k) => grp(D.kinds[k])).join('')}<th class="bl"></th></tr>
-      <tr><th>Month</th>${sub3}${K.map(() => sub3).join('')}<th class="num bl">Payout rate</th></tr></thead><tbody>` +
-      M.map((r) => `<tr><td><b>${mon(r.month)}</b></td>${cell(r.all, 1)}${K.map((k) => cell(r[k], 1)).join('')}<td class="num bl">${r.payout_rate != null ? Math.round(100 * r.payout_rate) + '%' : '·'}</td></tr>`).join('') +
-      `<tr class="tot"><td>${D.year} total</td>${cell(A, 1)}${K.map((k) => cell(T[k], 1)).join('')}<td class="num bl">${T.payout_rate != null ? Math.round(100 * T.payout_rate) + '%' : '·'}</td></tr></tbody>`;
+    const na = (g) => `<td class="num bl">${g.lost_v ? m0(g.lost_v) : '·'}<div class="sub">${g.lost_u ? g.lost_u + ' u' : ''}${g.paid ? ' · paid ' + m0(g.paid) : ''}</div></td>`;
+    const RM = D.months;
+    $('#rcTbl').innerHTML = `<thead><tr><th></th>${grp('All claimable')}${K.map((k) => grp(D.kinds[k])).join('')}<th class="grp bl" title="Damaged units Amazon moved to distributor damaged (says they arrived damaged). A real loss, but not reimbursable, so not in the shortfall.">Not Amazon's fault</th><th class="bl"></th></tr>
+      <tr><th>Month</th>${sub3}${K.map(() => sub3).join('')}<th class="num bl">Lost</th><th class="num bl">Payout rate</th></tr></thead><tbody>` +
+      RM.map((r) => `<tr><td><b>${mon(r.month)}</b>${r.earlier ? `<div class="sub">losses before ${D.year}, paid in ${D.year}</div>` : ''}</td>${cell(r.all, 1)}${K.map((k) => cell(r[k], 1)).join('')}${na(r.not_amazon)}<td class="num bl">${r.payout_rate != null ? Math.round(100 * r.payout_rate) + '%' : '·'}</td></tr>`).join('') +
+      `<tr class="tot"><td>${D.year} total</td>${cell(A, 1)}${K.map((k) => cell(T[k], 1)).join('')}${na(T.not_amazon)}<td class="num bl">${T.payout_rate != null ? Math.round(100 * T.payout_rate) + '%' : '·'}</td></tr></tbody>`;
     const MK = Object.keys(D.method_labels);
     $('#rcMeth').innerHTML = `<thead><tr><th>Month</th>${MK.map((k) => `<th class="num">${esc(D.method_labels[k])}</th>`).join('')}<th class="num bl">Net paid</th></tr></thead><tbody>` +
-      M.map((r) => `<tr><td><b>${mon(r.month)}</b></td>${MK.map((k) => `<td class="num ${r.methods[k] < 0 ? 'neg' : ''}">${r.methods[k] ? m0(r.methods[k]) : '·'}</td>`).join('')}<td class="num bl">${m0(r.all.paid)}</td></tr>`).join('') +
+      D.months.map((r) => `<tr><td><b>${mon(r.month)}</b></td>${MK.map((k) => `<td class="num ${r.methods[k] < 0 ? 'neg' : ''}">${r.methods[k] ? m0(r.methods[k]) : '·'}</td>`).join('')}<td class="num bl">${m0(r.all.paid)}</td></tr>`).join('') +
       `<tr class="tot"><td>${D.year} total</td>${MK.map((k) => `<td class="num">${m0(T.methods[k])}</td>`).join('')}<td class="num bl">${m0(A.paid)}</td></tr></tbody>` +
       (D.uncosted_units ? `<caption class="rc-note" style="caption-side:bottom;text-align:left">${D.uncosted_units} lost units have no cost on file and count as $0.</caption>` : '');
   }
   (() => { const sel = $('#rcYear'); const y = new Date().getFullYear(); sel.innerHTML = [y, y - 1].map((v) => `<option>${v}</option>`).join('');
-    sel.addEventListener('change', () => { R.y = +sel.value; loadRc().catch(fail); }); })();
+    sel.addEventListener('change', () => { R.y = +sel.value; loadRc().catch(fail); });
+    $$('.chip[data-by]').forEach((c) => c.addEventListener('click', () => { R.by = c.dataset.by; $$('.chip[data-by]').forEach((x) => x.classList.toggle('on', x === c)); loadRc().catch(fail); })); })();
 
   LG.header().then(() => Promise.all([load(), loadRc()])).catch(fail);
   let t = null;

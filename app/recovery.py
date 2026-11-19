@@ -8,22 +8,34 @@ refreshes every day, so it needs no job of its own:
   dated the day the plan's last shipment closed.
 - Lost / damaged in warehouse: inv_writeoff kinds 'lost' (net of found) and 'damaged' (the Profit page's write-off lines,
   from the inventory ledger), dated by the ledger event.
-- Paid back: inbound_reimb (GET_FBA_REIMBURSEMENTS_DATA) Lost_Inbound, Lost_Warehouse, Damaged_Warehouse cash, by
-  approval date, net of Reimbursement_Reversal rows (clawbacks), which are matched to their kind by orig_type.
+- Not Amazon's fault (Nick, Nov 18 2026): damaged units Amazon moved on to DISTRIBUTOR_DAMAGED (ledger P +n into
+  DISTRIBUTOR_DAMAGED within a few days of the damage) = Amazon says they arrived damaged, so it doesn't reimburse them.
+  They are a real loss but not an unpaid claim, so they are taken out of "Damaged in warehouse" into their own line and
+  are not part of the claimable shortfall.
+- Paid back: inbound_reimb (GET_FBA_REIMBURSEMENTS_DATA) Lost_Inbound, Lost_Warehouse, Damaged_Warehouse cash, net of
+  Reimbursement_Reversal rows (clawbacks), which are matched to their kind by orig_type.
 - Cost: the latest InventoryLab cost per SKU (sku_costs), else the Hub's average order cost for the ASIN.
+
+Two ways to date a payment (by=):
+- "paid": the month Amazon approved it.
+- "loss" (Nick, Nov 18 2026): the month of the loss it pays for, so lost and paid line up. Warehouse payments are matched
+  first-in-first-out to earlier losses of the same SKU and kind; lost-inbound payments go to the month their shipment's plan
+  closed (case ID -> shipment from inbound_cases), else FIFO by SKU; a clawback goes where its original payment went.
+  Payments for losses from before the year go to an "Earlier losses" line.
 
 Shortfall = lost at cost − paid. "Paid units at cost" = the same reimbursed units valued at Nick's cost, so
 (paid units at cost − paid) is how far below cost Amazon paid on the units it did reimburse.
-Losses and payments land in different months (Amazon pays weeks later), so one month's shortfall is not final until
-the claim windows close; the year total is the meaningful number.
 """
 from __future__ import annotations
 
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 
 from . import db, profit
 
 KINDS = {"Lost_Inbound": "inbound", "Lost_Warehouse": "wh_lost", "Damaged_Warehouse": "wh_damaged"}
+KIND_LABELS = {"inbound": "Lost inbound", "wh_lost": "Lost in warehouse (net of found)", "wh_damaged": "Damaged in warehouse",
+               "not_amazon": "Damaged, Amazon says not its fault"}
 METHODS = {
     "case": "Lost inbound cases (incl. contests on the same case)",
     "rereview": "Re-reviews (Seller Assistant)",
@@ -32,6 +44,9 @@ METHODS = {
     "wh_claim": "Warehouse claims & amount disputes",
     "clawback": "Clawbacks (found units)",
 }
+CLAIMABLE = ("inbound", "wh_lost", "wh_damaged")
+RECLASS_DAYS = 10      # damage -> DISTRIBUTOR_DAMAGED move counted if it happens within this many days
+LOOKBACK = 300         # losses from before the year are loaded this far back so early payments can match them
 
 
 async def _costs(conn) -> tuple[dict, dict, dict]:
@@ -44,42 +59,93 @@ async def _costs(conn) -> tuple[dict, dict, dict]:
     return sku, sku_asin, asin
 
 
-async def report(year: int) -> dict:
+def _d(v) -> date:
+    return v if isinstance(v, date) else date.fromisoformat(str(v)[:10])
+
+
+async def report(year: int, by: str = "paid") -> dict:
+    by = "loss" if by == "loss" else "paid"
     a, b = date(year, 1, 1), date(year, 12, 31)
+    a0 = a - timedelta(days=LOOKBACK)
     async with db.pool.connection() as conn:
         sku_c, sku_asin, asin_c = await _costs(conn)
-
-        def cost(sku: str | None, asin: str | None = None) -> float | None:
-            if sku and sku in sku_c:
-                return sku_c[sku]
-            k = (asin or sku_asin.get(sku or "") or "").strip().upper()
-            return asin_c.get(k)
-
         wo = await (await conn.execute(
-            "SELECT day, sku, kind, units FROM inv_writeoff WHERE kind IN ('lost','damaged') AND day BETWEEN %s AND %s",
-            (a, b))).fetchall()
+            "SELECT day, sku, kind, units FROM inv_writeoff WHERE kind IN ('lost','damaged') AND day BETWEEN %s AND %s ORDER BY day",
+            (a0, b))).fetchall()
+        dist = await (await conn.execute(
+            """SELECT day, sku, qty FROM inv_ledger WHERE event = 'Adjustments' AND reason = 'P' AND disp = 'DISTRIBUTOR_DAMAGED'
+               AND qty > 0 AND day BETWEEN %s AND %s ORDER BY day""", (a0, b + timedelta(days=RECLASS_DAYS)))).fetchall()
         rb = await (await conn.execute(
-            """SELECT reimbursement_id, sku, asin, case_id, reason, approval_date, amount, qty_cash, qty_inv, orig_type
-               FROM inbound_reimb WHERE approval_date BETWEEN %s AND %s""", (a, b))).fetchall()
-        cases = await (await conn.execute("SELECT data FROM inbound_cases")).fetchall()
-    inbound_lost = await profit.missing_inbound(a, b)
+            """SELECT reimbursement_id, sku, asin, case_id, reason, approval_date, amount, qty_cash, qty_inv, orig_id, orig_type
+               FROM inbound_reimb WHERE approval_date BETWEEN %s AND %s ORDER BY approval_date""",
+            (a if by == "paid" else a0, b))).fetchall()
+        cases = await (await conn.execute("SELECT shipment_id, data FROM inbound_cases")).fetchall()
+        ships = await (await conn.execute(
+            "SELECT shipment_id, plan_key, last_receipt, closed_seen_at FROM inbound_shipments")).fetchall()
+    inbound_lost = await profit.missing_inbound(a0, b)
 
-    case_ids, rereview_ids = set(), set()
+    def cost(sku: str | None, asin: str | None = None) -> float | None:
+        if sku and sku in sku_c:
+            return sku_c[sku]
+        k = (asin or sku_asin.get(sku or "") or "").strip().upper()
+        return asin_c.get(k)
+
+    # case IDs -> method, and -> shipment -> the day its plan closed
+    case_ids, rereview_ids, case_ship = set(), set(), {}
     for r in cases:
         d = r["data"] or {}
         if d.get("case"):
             case_ids.add(str(d["case"]))
+            case_ship[str(d["case"])] = r["shipment_id"]
         rr = d.get("rereview") or {}
         if isinstance(rr, dict) and rr.get("case"):
             rereview_ids.add(str(rr["case"]))
+            case_ship[str(rr["case"])] = r["shipment_id"]
+    plan_close: dict = {}
+    ship_plan: dict = {}
+    for s in ships:
+        c = s["last_receipt"] or (s["closed_seen_at"].date() if s["closed_seen_at"] else None)
+        ship_plan[s["shipment_id"]] = s["plan_key"]
+        if c and (s["plan_key"] not in plan_close or c > plan_close[s["plan_key"]]):
+            plan_close[s["plan_key"]] = c
 
-    months = {m: {"month": f"{year}-{m:02d}", **{k: {"lost_u": 0, "lost_v": 0.0, "paid": 0.0, "paid_u": 0, "paid_cost": 0.0, "inv_u": 0}
-                                                 for k in KINDS.values()}, "methods": {k: 0.0 for k in METHODS}}
-              for m in range(1, 13)}
+    # losses (incl. the lookback, for matching) -> list of [day, kind, sku, units]
+    losses: list = []
+    for day, sku, units in inbound_lost:
+        losses.append([day, "inbound", sku, int(units)])
+    pool = defaultdict(list)      # sku -> [[day, units left]] of moves into DISTRIBUTOR_DAMAGED
+    for r in dist:
+        pool[r["sku"]].append([r["day"], int(r["qty"])])
+    for r in wo:
+        units = int(r["units"])
+        if r["kind"] == "lost":
+            losses.append([r["day"], "wh_lost", r["sku"], units])
+            continue
+        moved = 0
+        for p in pool.get(r["sku"], []):
+            if units - moved <= 0:
+                break
+            if p[1] > 0 and r["day"] - timedelta(days=2) <= p[0] <= r["day"] + timedelta(days=RECLASS_DAYS):
+                t = min(p[1], units - moved)
+                p[1] -= t
+                moved += t
+        if moved:
+            losses.append([r["day"], "not_amazon", r["sku"], moved])
+        if units - moved:
+            losses.append([r["day"], "wh_damaged", r["sku"], units - moved])
+
+    def mkey(d: date):
+        return d.month if d >= a else 0          # 0 = earlier losses (before the year)
+
+    blank = lambda: {"lost_u": 0, "lost_v": 0.0, "paid": 0.0, "paid_u": 0, "paid_cost": 0.0, "inv_u": 0}
+    months = {m: {**{k: blank() for k in KIND_LABELS}, "methods": {k: 0.0 for k in METHODS}} for m in range(0, 13)}
     uncosted = 0
-
-    def lost(day: date, kind: str, sku: str, units: int):
-        nonlocal uncosted
+    queue = defaultdict(list)     # (kind, sku) -> [[day, units left]] for FIFO matching of payments to losses
+    for day, kind, sku, units in sorted(losses, key=lambda x: x[0]):
+        if units > 0:
+            queue[(kind, sku)].append([day, units])
+        if day < a:
+            continue
         c = cost(sku)
         if c is None:
             uncosted += abs(units)
@@ -88,10 +154,24 @@ async def report(year: int) -> dict:
         g["lost_u"] += units
         g["lost_v"] += units * c
 
-    for day, sku, units in inbound_lost:
-        lost(day, "inbound", sku, units)
-    for r in wo:
-        lost(r["day"], "wh_lost" if r["kind"] == "lost" else "wh_damaged", r["sku"], int(r["units"]))
+    placed: dict = {}             # reimbursement_id|sku -> [(month, share)] where a payment landed (for its clawbacks)
+
+    def place_fifo(kind: str, sku: str, n: int, when: date) -> list:
+        """Split n paid units over the earliest unmatched losses of the same kind and SKU dated on or before `when`."""
+        out, left = [], n
+        for q in queue.get((kind, sku), []):
+            if left <= 0:
+                break
+            if q[1] <= 0 or q[0] > when:
+                continue
+            t = min(q[1], left)
+            q[1] -= t
+            left -= t
+            out.append((mkey(q[0]), t))
+        if left > 0:
+            out.append((mkey(when), left))      # no matching loss on file: keep it in the month it was paid
+        tot = sum(t for _, t in out) or 1
+        return [(m, t / tot) for m, t in out]
 
     for r in rb:
         reason = (r["reason"] or "").strip()
@@ -99,15 +179,9 @@ async def report(year: int) -> dict:
         kind = KINDS.get((r["orig_type"] or "").strip() if rev else reason)
         if not kind:
             continue
-        d = r["approval_date"]
-        d = d if isinstance(d, date) else date.fromisoformat(str(d)[:10])
-        m = months[d.month]
-        g = m[kind]
+        paid_day = _d(r["approval_date"])
+        sku = r["sku"]
         amt, qc, qi = float(r["amount"] or 0), int(r["qty_cash"] or 0), int(r["qty_inv"] or 0)
-        g["paid"] += amt
-        g["paid_u"] += qc
-        g["inv_u"] += qi
-        g["paid_cost"] += qc * (cost(r["sku"], r["asin"]) or 0)
         cid = str(r["case_id"] or "")
         if rev:
             meth = "clawback"
@@ -115,30 +189,56 @@ async def report(year: int) -> dict:
             meth = "rereview" if cid in rereview_ids else "case" if cid in case_ids else "dispute"
         else:
             meth = "wh_claim" if cid else "wh_auto"
-        m["methods"][meth] += amt
+        if by == "paid":
+            where = [(paid_day.month, 1.0)] if paid_day >= a else []
+        elif rev:
+            where = placed.get(f"{r['orig_id']}|{sku}") or [(mkey(paid_day), 1.0)]
+        elif kind == "inbound" and cid in case_ship and plan_close.get(ship_plan.get(case_ship[cid])):
+            where = [(mkey(plan_close[ship_plan[case_ship[cid]]]), 1.0)]
+            place_fifo("inbound", sku, qc + qi, paid_day)    # use up matching losses so FIFO doesn't reuse them
+        else:
+            q_kind = kind
+            if kind == "wh_damaged" and not any(q[1] > 0 for q in queue.get(("wh_damaged", sku), [])):
+                q_kind = "not_amazon" if queue.get(("not_amazon", sku)) else kind   # Amazon paid one after all
+            where = place_fifo(q_kind, sku, max(1, qc + qi), paid_day)
+        placed[f"{r['reimbursement_id']}|{sku}"] = where
+        if paid_day < a:
+            continue          # paid before the year: only used to match losses and clawbacks, not counted
+        uc = cost(sku, r["asin"]) or 0
+        for m, share in where:
+            g = months[m][kind]
+            g["paid"] += amt * share
+            g["paid_u"] += qc * share
+            g["inv_u"] += qi * share
+            g["paid_cost"] += qc * uc * share
+            months[m]["methods"][meth] += amt * share
 
-    out, tot = [], {k: {"lost_u": 0, "lost_v": 0.0, "paid": 0.0, "paid_u": 0, "paid_cost": 0.0, "inv_u": 0} for k in KINDS.values()}
-    tot_m = {k: 0.0 for k in METHODS}
-    last = date.today().month if year == date.today().year else 12
-    for mi in range(1, last + 1):
-        m = months[mi]
-        row = {"month": m["month"], "methods": {k: round(v, 2) for k, v in m["methods"].items()}}
-        for k in KINDS.values():
-            g = m[k]
-            row[k] = {**{x: round(g[x], 2) for x in g}, "shortfall": round(g["lost_v"] - g["paid"], 2)}
-            for x in g:
-                tot[k][x] += g[x]
-        for k, v in m["methods"].items():
-            tot_m[k] += v
-        row["all"] = {x: round(sum(row[k][x] for k in KINDS.values()), 2) for x in ("lost_u", "lost_v", "paid", "paid_u", "paid_cost", "shortfall")}
-        out.append(row)
-    total = {k: {**{x: round(v, 2) for x, v in tot[k].items()}, "shortfall": round(tot[k]["lost_v"] - tot[k]["paid"], 2)} for k in KINDS.values()}
-    total["all"] = {x: round(sum(total[k][x] for k in KINDS.values()), 2) for x in ("lost_u", "lost_v", "paid", "paid_u", "paid_cost", "shortfall")}
-    total["methods"] = {k: round(v, 2) for k, v in tot_m.items()}
-    pc = total["all"]["paid_cost"]
-    total["payout_rate"] = round(total["all"]["paid"] / pc, 4) if pc else None
-    for row in out:
+    def finish(src: dict) -> dict:
+        row = {"methods": {k: round(v, 2) for k, v in src["methods"].items()}}
+        for k in KIND_LABELS:
+            g = src[k]
+            row[k] = {x: round(v, 2) for x, v in g.items()}
+            row[k]["shortfall"] = round(g["lost_v"] - g["paid"], 2)
+        row["all"] = {x: round(sum(row[k][x] for k in CLAIMABLE), 2)
+                      for x in ("lost_u", "lost_v", "paid", "paid_u", "paid_cost", "shortfall")}
         c = row["all"]["paid_cost"]
         row["payout_rate"] = round(row["all"]["paid"] / c, 4) if c else None
-    return {"year": year, "months": out, "total": total, "method_labels": METHODS, "uncosted_units": uncosted,
-            "kinds": {"inbound": "Lost inbound", "wh_lost": "Lost in warehouse (net of found)", "wh_damaged": "Damaged in warehouse"}}
+        return row
+
+    last = date.today().month if year == date.today().year else 12
+    out = []
+    if by == "loss" and any(months[0][k]["paid"] for k in KIND_LABELS):
+        out.append({"month": f"{year - 1}", "earlier": True, **finish(months[0])})
+    for mi in range(1, last + 1):
+        out.append({"month": f"{year}-{mi:02d}", **finish(months[mi])})
+    tot = {**{k: blank() for k in KIND_LABELS}, "methods": {k: 0.0 for k in METHODS}}
+    for r in out:
+        src = months[0] if r.get("earlier") else months[int(r["month"][5:])]
+        for k in KIND_LABELS:
+            for x in tot[k]:
+                tot[k][x] += src[k][x]
+        for k in METHODS:
+            tot["methods"][k] += src["methods"][k]
+    total = finish(tot)
+    return {"year": year, "by": by, "months": out, "total": {**total, **{k: total[k] for k in KIND_LABELS}},
+            "method_labels": METHODS, "uncosted_units": uncosted, "kinds": KIND_LABELS, "claimable": list(CLAIMABLE)}
