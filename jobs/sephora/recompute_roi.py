@@ -19,6 +19,8 @@ def main():
     C.need_env("ENGINE_KEY")
     rows, changed = C.hub_catalog(), []
     for r in rows:
+        if r.get("match_ok") is False:   # wrong matches: review only, not updated (Nick, Nov 19, 2026)
+            continue
         lo, hi = C.fnum(r.get("price_lo")), C.fnum(r.get("price_hi"))
         sale = C.fnum(r.get("sale_price")) if r.get("on_sale") else None
         amz = {k: C.fnum(r.get(k)) for k in ("buybox", "fba_low", "bb_avg90", "referral_pct", "fba_fee")}

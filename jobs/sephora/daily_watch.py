@@ -426,6 +426,8 @@ def main():
 
     for pid, t in seph_today.items():
         for r in by_pid.get(pid, []):
+            if r.get("match_ok") is False:   # wrong matches are kept for review only, never updated (Nick, Nov 19, 2026)
+                continue
             put(r, price_lo=t["lo"], price_hi=t["hi"], sale_price=t["sale"], on_sale=t["on_sale"])
     for _, _, r in pri:
         m = meta[r["asin"]]

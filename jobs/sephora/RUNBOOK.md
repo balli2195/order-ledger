@@ -64,6 +64,11 @@ Run it once a week (for example Sunday).
 - **Adding a brand by hand:** copy an entry in `brands.json`. The next weekly run builds it.
 - **Keep the brand lists in sync.** `exclude_brands` mirrors the Hub `brands.can_source=false` list; refresh it with the Myrddin Hub `get_lead_choices` tool if Nick changes it.
 
+**Pairs marked wrong are never updated (Nick, Nov 19, 2026).** Only matches and possible matches matter for leads; a
+wrong pair is kept as it was, for review on the Mismatches page. The daily job, the weekly listing refresh,
+recompute_roi, the Keepa collector and the Sephora page reader all skip `match_ok = false`. Clearing the mark or
+marking it a match puts the pair back in every update.
+
 ## 4b. Weekly: learn from Nick's wrong-match marks (after the weekly script)
 
 Nick (or his team) marks wrong Amazon ↔ Sephora matches on the Hub — the Sephora leads tab (candidate card or catalog) and the Sephora relist page — and says why: tags `size`, `shade`, `concentration`, `set`, `bonus`, `multipack`, `version`, `product`, `other`, plus an optional note and the correct ASIN. They are stored in the Hub table `match_feedback` and come back as `wrong_matches` from `GET /api/engine/sephora/feedback`.

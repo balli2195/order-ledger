@@ -190,6 +190,8 @@ def main():
         if pid in listing:
             _, p = listing[pid]
             for r in rows:
+                if r.get("match_ok") is False:   # wrong matches: review only, not updated (Nick, Nov 19, 2026)
+                    continue
                 ch = {}
                 for f, v in (("price_lo", p.get("price_lo")), ("price_hi", p.get("price_hi")), ("sale_price", p.get("sale_price"))):
                     if v is not None or f == "sale_price":
@@ -204,6 +206,8 @@ def main():
                                 "extra": merged_extra(r, listing_seen=True, listing_checked=day.isoformat())})
         elif brand_ok.get(brand):
             for r in rows:
+                if r.get("match_ok") is False:
+                    continue
                 if (r.get("extra") or {}).get("listing_seen") is not False:
                     gone += 1
                     upd.append({"asin": r["asin"], "product_id": pid, "active": r["active"], "on_sale": False, "sale_price": None,

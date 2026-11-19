@@ -10,6 +10,7 @@ What it does, forever:
      - hot: Lead DB pairs the daily finder watches (active, open to sell, not marked wrong, confidence high/medium or
        Nick-confirmed), pairs on sale or with open candidates, and Nick's leads from the last 30 days -> pulled every HOT_HOURS
      - cold: every other active Lead DB ASIN -> pulled every COLD_HOURS
+     Pairs Nick or Claude marked wrong are left out (Nov 19, 2026): they only matter for review, not for leads.
   2. Pulls the most overdue ASINs from Keepa, 20 per request (history, stats, Buy Box, 20 offers with stock, rating).
   3. Writes keepa_raw (latest full pull, gzipped, replaced) and one keepa_snapshots row (today's offers/stock).
   4. Spends only spare tokens: it never takes the shared key below KEEPA_RESERVE and averages at most
@@ -108,7 +109,7 @@ WITH cat AS (
          bool_or(active AND sellable = 'open' AND match_ok IS NOT FALSE
                  AND (confidence IN ('high', 'medium') OR match_ok IS TRUE)) AS watched,
          bool_or(active AND on_sale) AS on_sale
-    FROM sephora_catalog WHERE active GROUP BY asin),
+    FROM sephora_catalog WHERE active AND match_ok IS NOT FALSE GROUP BY asin),   -- pairs marked wrong aren't pulled (Nick, Nov 19, 2026)
 cand AS (SELECT DISTINCT asin FROM sephora_candidates WHERE status = 'new'),
 lead AS (SELECT DISTINCT upper(btrim(asin)) AS asin FROM leads
           WHERE asin IS NOT NULL AND btrim(asin) <> '' AND COALESCE(lead_date, created_at::date) >= current_date - 30),
