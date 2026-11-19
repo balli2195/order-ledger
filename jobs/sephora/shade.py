@@ -28,7 +28,7 @@ GENERIC = set("""shade color colour the and with for in of a an lip lipstick glo
 cream liquid powder foundation concealer blush bronzer highlighter oil balm tint stain mascara eyeshadow palette
 spray brush nail polish finish long wear lasting waterproof full size mini travel new warm cool neutral deep light
 medium fair tan rich dark soft pink nude red brown beige berry rose coral peach plum mauve shimmer glow""".split())
-FIELD_W = {"own": 10, "color": 9, "title": 8, "feat": 3, "desc": 2}
+FIELD_W = {"own": 10, "color": 9, "title": 8, "ocr": 7, "feat": 3, "desc": 2}
 
 
 def norm(s) -> str:
@@ -98,7 +98,40 @@ def _fields(k: dict, asin: str | None) -> dict:
     feats = " ".join((k.get("features") or [])[:5])
     return {"own": norm(_strip_sizes(" | ".join(own))), "color": norm(_strip_sizes(k.get("color") or "")),
             "title": norm(_strip_sizes(k.get("title") or "")), "feat": norm(_strip_sizes(feats)),
-            "desc": norm(_strip_sizes((k.get("description") or "")[:1500])), "_own_raw": " | ".join(own)}
+            "desc": norm(_strip_sizes((k.get("description") or "")[:1500])), "_own_raw": " | ".join(own),
+            "ocr": norm(_strip_sizes(" | ".join(k.get("_ocr") or [])))}
+
+
+def ocr_photos(paths: list) -> list:
+    """Text printed on the listing photos (box fronts / bottoms, stickers: the checkers found the shade there in about
+    half the cases where the text didn't name it). Needs tesseract; returns one string per photo."""
+    try:
+        import pytesseract
+        from PIL import Image
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for p in paths:
+        try:
+            im = Image.open(p).convert("L")
+            if im.width < 1200:
+                im = im.resize((im.width * 2, im.height * 2))
+            out.append(" ".join(pytesseract.image_to_string(im, timeout=20).split())[:1500])
+        except Exception:  # noqa: BLE001
+            out.append("")
+    return out
+
+
+def keep_ocr(texts: list, skus: list) -> list:
+    """Photos that name at most two of the product's shades: a shade chart naming many of them says nothing."""
+    names = [split_value(s.get("value") or "")[1] for s in skus]
+    keep = []
+    for t in texts:
+        nt = norm(t)
+        hits = sum(1 for n in names if n and len(n) >= 3 and _has_phrase(nt, n))   # (names under 3 letters are ignored)
+        if hits <= 2:
+            keep.append(t)
+    return keep
 
 
 def _squash(t: str) -> str:
@@ -321,6 +354,8 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
         name0 = name
         weak = bool(code) and set(name.split()) <= (GENERIC | {"lightest", "lighter", "darkest", "deepest", "tan", "olive", "golden"})
         if weak and not any(w.startswith("code") for w in why):
+            name = ""
+        if not name.replace(".", "").strip():
             name = ""
         if name:
             # a name that is part of a longer SKU name found in the same field doesn't count ('Juicy Pink' in 'Juicy Pink Lady')

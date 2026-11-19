@@ -149,6 +149,15 @@ def main():
         how = "text"
         if not res["sku_id"] and "olor" in (s.get("variation_type") or "") and photos < a.max_photo_pairs and reach(r) >= 0:
             photos += 1
+            # text printed on the listing photos (box bottoms, stickers) first, then the photo comparison
+            d_ = os.path.join(C.DATA, "img"); os.makedirs(d_, exist_ok=True)
+            big = [_get("https://m.media-amazon.com/images/I/" + (im.get("l") or im.get("m")), os.path.join(d_, f"A_{r['asin']}_{i}.jpg"), ua=False)
+                   for i, im in enumerate((k.get("images") or [])[:6]) if im.get("l") or im.get("m")]
+            kk = dict(k); kk["_ocr"] = SH.keep_ocr(SH.ocr_photos([b for b in big if b]), s["skus"])
+            ro = SH.resolve_text(kk, s["skus"], s.get("variation_type"), r["asin"], pn.get(r["product_id"]) or r.get("sephora_name"))
+            if ro["sku_id"]:
+                res, how = ro, "photo text"
+        if not res["sku_id"] and "olor" in (s.get("variation_type") or "") and photos <= a.max_photo_pairs and reach(r) >= 0:
             pr = photo_pick(r["asin"], k, s["skus"])
             if pr.get("sku_id"):
                 res = {"sku_id": pr["sku_id"], "how": pr["how"]}; how = "photo"
