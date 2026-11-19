@@ -19,6 +19,10 @@
  5. New products of known brands (Sephora New flag in listings, New arrivals, the daily job's Sale-page finds):
     Keepa finder on brand + name words (<= 10 ASINs each), the same match/build pipeline, new ASINs upserted.
     Keepa budget <= --max-tokens for the whole run; what doesn't fit waits a week.
+ 5b. Re-match (rematch.py): ASINs whose every pair is marked wrong are scored again against the brand's listing with
+    the wrong products left out; a high / medium match whose words agree both ways is added (no Keepa).
+ 5c. Brand best-seller sweep (rematch.py, <= --sweep-tokens): a few brands per run, oldest swept first, Keepa finder
+    sorted by sales rank (one page of 50, deeper each rotation); ASINs not in the catalog go through the usual match.
  6. Feedback (GET /api/engine/sephora/feedback): approved vs rejected / wrong match per brand -> brand_weights
     section of weekly_summary.md (report only; no automatic brand removal).
  7. POST /run {kind: 'weekly'}.
@@ -131,6 +135,7 @@ def main():
     ap.add_argument("--max-products", type=int, default=80, help="new products to search on Keepa per run")
     ap.add_argument("--skip-seed", action="store_true")
     ap.add_argument("--screen-tokens", type=int, default=500, help="Keepa tokens for new-brand screening per run")
+    ap.add_argument("--sweep-tokens", type=int, default=800, help="Keepa tokens for the brand best-seller sweep per run")
     a = ap.parse_args()
     C.need_env("ENGINE_KEY", "KEEPA_KEY", "SPAPI_CLIENT_ID", "SPAPI_CLIENT_SECRET", "SPAPI_REFRESH_TOKEN")
     import keepa_pull as kp
@@ -405,6 +410,38 @@ def main():
             C.log("new pairs upsert:", C.hub_upsert_catalog(new_rows))
         except Exception as e:  # noqa: BLE001
             problems.append(f"new pairs upsert failed: {e!r}"[:300])
+    # ---- 5b. re-match ASINs whose every pair is marked wrong (rematch.py; no Keepa)
+    import rematch as RM
+    re_rows, re_low = [], []
+    try:
+        re_rows, re_low = RM.rematch_wrong(cat, cfg, lambda n: config_brand(n, cfg), listing, log=C.log)
+        re_rows = [x for x in re_rows if (x["asin"], x["product_id"]) not in {(r_["asin"], r_["product_id"]) for r_ in new_rows}]
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"re-match step failed: {e!r}"[:300])
+    counts.update(rematched=len(re_rows), rematch_suggestions=len(re_low))
+    C.save_json(f"out/{day.isoformat()}/weekly_rematch.json", {"rows": re_rows, "low": re_low})
+    if re_rows and not a.dry_run:
+        try:
+            C.log("re-matched pairs upsert:", C.hub_upsert_catalog(re_rows))
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"re-matched pairs upsert failed: {e!r}"[:300])
+
+    # ---- 5c. brand best-seller sweep (rematch.py): ASINs the name-word search can't find
+    sw = {"rows": [], "brands": [], "tokens": 0, "asins_new": 0}
+    try:
+        sw = RM.brand_sweep(cfg, hub_asins, min(a.sweep_tokens, max(0, budget)), kp, build_brand, excluded, a.dry_run, log=C.log)
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"brand sweep failed: {e!r}"[:300])
+    budget -= sw["tokens"]
+    tokens_used += sw["tokens"]
+    counts.update(sweep_brands=len(sw["brands"]), sweep_asins_new=sw["asins_new"], sweep_pairs=len(sw["rows"]), keepa_tokens=tokens_used)
+    C.save_json(f"out/{day.isoformat()}/weekly_sweep_rows.json", sw["rows"])
+    if sw["rows"] and not a.dry_run:
+        try:
+            C.log("sweep pairs upsert:", C.hub_upsert_catalog(sw["rows"]))
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"sweep pairs upsert failed: {e!r}"[:300])
+
     # products matched or searched leave new_products.json; the rest carry over
     left = [x for x in np_file if x["productId"] not in tried and x["productId"] not in {r_["product_id"] for r_ in new_rows}]
     if not a.dry_run:
@@ -435,7 +472,14 @@ def main():
          f"{price_changes} catalog pairs changed price/sale; {gone} pairs' products no longer on Sephora",
          f"- New brands built: {', '.join(built_now) or 'none'}" + (f"; {len(deferred)} waiting for budget" if deferred else ""),
          f"- New products: {len(cand)} candidates, {searched} searched on Keepa, {carry} carried to next week; {len(new_rows)} new pairs added",
+         f"- Re-matched after a wrong mark: {len(re_rows)} pairs added; {len(re_low)} low-confidence suggestions (below)",
+         f"- Brand best-seller sweep: {'; '.join(sw['brands']) or 'no brands (no budget)'}; {len(sw['rows'])} new pairs",
          f"- Keepa tokens: {tokens_used} (budget {a.max_tokens}); runtime {counts['minutes']} min", ""]
+    if re_rows or re_low:
+        L += ["## Re-matched after a wrong mark", ""]
+        L += [f"- added: {x['asin']} {(x.get('amazon_title') or '')[:60]} -> {x['sephora_name']} ({x['confidence']})" for x in re_rows]
+        L += [f"- suggestion (not added): {x['asin']} {(x.get('amazon_title') or '')[:60]} -> {x['sephora_name']}" for x in re_low[:30]]
+        L.append("")
     L += ["## New products matched", ""]
     if new_rows:
         L += ["| ASIN | Brand | Sephora product | Amazon title | Conf | ROI now |", "|---|---|---|---|---|---|"]

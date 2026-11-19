@@ -11,9 +11,10 @@
    productIds still unknown get one keyword search on their product-link words. Unknown after that = not on Sephora
    now: priced at the last lead cost, extra.listing_seen=false (the daily job skips those).
 3. Brands Nick can't source (brands.json exclude_brands = Hub brands.can_source=false) are skipped and logged.
-4. Pairs not yet in the Hub get a row: confidence high, match_reason 'Nick lead <date>'. One active pair per ASIN:
-   when the lead's product is live on Sephora, the matcher's other pairs for that ASIN are deactivated (never pairs
-   Nick marked match_ok=true); extra lead pairs for the same ASIN are stored inactive.
+4. Pairs not yet in the Hub get a row: confidence high, match_reason 'Nick lead <date>'. Every lead pair is active
+   (Nov 19, 2026; before, extra lead pairs for an ASIN were stored inactive and could hide the right match). When the
+   lead's product is live on Sephora, the matcher's other pairs for that ASIN are deactivated (never pairs Nick marked
+   match_ok=true). The daily job prices every active pair and posts one per ASIN (marked OK, then Nick's lead first).
 5. Enrichment for the new ASINs: Keepa /product (stats=90, buybox; within --max-tokens), SP-API listing restrictions and
    getItemOffersBatch, then the catalog economics (same rules as catalog/build.py).
 6. Upsert + report: coverage of 2026 Sephora lead spend before / after.
@@ -315,7 +316,7 @@ def main():
                 "reason": f"Nick lead {v['date']}" + (f", relinked (old product {old_pid} is gone from Sephora)" if st == "relinked" else ""),
                 "needs_size": needs, "size_guess": size_guess_from_cost(v.get("cost"), lo, hi) if needs else None,
                 "price_lo": lo, "price_hi": hi, "sale_price": pr.get("sale_price"), "on_sale": bool(pr.get("on_sale")),
-                "_active": npid == primary and not nick_ok,
+                "_active": True,   # every lead pair is watched (Nov 19, 2026); the daily job picks one pair per ASIN
                 "_lead": {"lead_spend": round(v["spend"], 2), "lead_spend_2026": round(v["spend_2026"], 2), "leads": v["n"],
                           "lead_last": v["date"], "lead_cost": v.get("cost"), "source": "nick_lead", "listing_seen": True,
                           **({"relinked_from": old_pid} if st == "relinked" else {})},

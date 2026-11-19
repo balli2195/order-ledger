@@ -174,15 +174,16 @@ def main():
         ex = r.get("extra") or {}
         return ex.get("demand_ok") is True and ex.get("thin_price") is not True
 
-    best = {}   # one pair per ASIN: Nick-confirmed first, then confidence, then match score
+    # Every watchable pair is priced, not only one per ASIN (Nov 19, 2026): an ASIN with two Sephora pairs (Nick's lead and
+    # the matcher's pick, a mini and a full size, ...) is posted from the most trusted pair that is profitable. Before,
+    # the job kept one pair per ASIN by confidence, so a profitable lead pair could sit behind a set or a wrong size.
     rank = {"high": 0, "medium": 1, "low": 2}
-    for r in active:
-        if not watchable(r):
-            continue
-        k = (r.get("match_ok") is not True, rank.get(r.get("confidence"), 3), -(C.fnum((r.get("extra") or {}).get("score")) or 0))
-        if r["asin"] not in best or k < best[r["asin"]][0]:
-            best[r["asin"]] = (k, r)
-    watch = [r for _, r in best.values()]
+
+    def trust(r):
+        return (r.get("match_ok") is not True, not str(r.get("match_reason") or "").startswith("Nick lead"),
+                rank.get(r.get("confidence"), 3), -(C.fnum((r.get("extra") or {}).get("score")) or 0))
+
+    watch = [r for r in active if watchable(r)]
     pri = []
     for r in watch:
         lo, hi, sale_p = seph(r)
@@ -203,17 +204,18 @@ def main():
     by_key = {(r["asin"], r["product_id"]): r for r in active}
     for oc in open_cands:
         k_ = (oc["asin"], oc["product_id"])
-        if k_ in by_key and k_ not in in_pri and oc["asin"] not in {r["asin"] for _, _, r in pri}:
+        if k_ in by_key and k_ not in in_pri:
             pri.append((-1, 0, by_key[k_])); in_pri.add(k_)
     pri = [(-1 if (r["asin"], r["product_id"]) in {(o["asin"], o["product_id"]) for o in open_cands} else t, v, r) for t, v, r in pri]
     pri.sort(key=lambda x: (x[0], x[1]))
-    counts["watch_rows"] = len(watch)
+    counts["watch_rows"] = len({r["asin"] for r in watch})
+    counts["watch_pairs"] = len(watch)
     counts["watch_priceable"] = len(pri)
-    C.log(f"watch rows: {len(watch)} ASINs ({len(pri)} priceable by the buying rule)")
+    C.log(f"watch rows: {counts['watch_rows']} ASINs, {len(watch)} pairs ({len(pri)} priceable by the buying rule)")
 
     # Keepa refresh (cache: today's refreshes are reused by a re-run)
     kcache = C.load_json(f"state/keepa_{day.isoformat()}.json", {}) or {}
-    order = [r["asin"] for _, _, r in pri]
+    order = list(dict.fromkeys(r["asin"] for _, _, r in pri))   # Keepa is per ASIN: each once, in priority order
     todo = [x for x in order if x not in kcache]
     tokens, kstop = 0, None
     if a.no_keepa:
@@ -269,7 +271,7 @@ def main():
     if pre:
         try:
             import sp_offers
-            sp_live = sp_offers.offers([r["asin"] for r in pre])
+            sp_live = sp_offers.offers(list(dict.fromkeys(r["asin"] for r in pre)))
         except Exception as e:  # noqa: BLE001
             problems.append(f"SP-API offers failed (Keepa prices used): {e!r}")
     passed = []
@@ -286,8 +288,17 @@ def main():
         e, d, thin = evaluate(r)
         if e and e["roi_now"] is not None and e["roi_now"] >= PREFILTER and d and not thin:
             passed.append((e["roi_now"], r, e))
-    passed.sort(key=lambda x: -x[0])
-    C.log(f"after SP-API: {len(passed)} rows >= 15%")
+    # one pair per ASIN from here on (no duplicate candidates): an open candidate's pair first (so To review keeps one row),
+    # then the most trusted pair (marked OK, Nick's lead, confidence, match score), then the best ROI
+    open_keys = {(o["asin"], o["product_id"]) for o in open_cands}
+    pick = {}
+    for roi_, r, e in passed:
+        k_ = ((r["asin"], r["product_id"]) not in open_keys, trust(r), -roi_)
+        if r["asin"] not in pick or k_ < pick[r["asin"]][0]:
+            pick[r["asin"]] = (k_, (roi_, r, e))
+    n_pairs = len(passed)
+    passed = sorted((v for _, v in pick.values()), key=lambda x: -x[0])
+    C.log(f"after SP-API: {len(passed)} ASINs >= 15% ({n_pairs} pairs)")
 
     # skip ASINs Nick decided recently unless the cost is now lower
     decided = {}

@@ -783,6 +783,14 @@ async def mark_catalog(actor: Actor, asin: str, product_id: str, body: dict) -> 
                     "decided_by=%s, decided_at=now(), updated_at=now() WHERE asin=%s AND product_id=%s AND status='new' RETURNING id",
                     (wrong_text(wrong), actor.label, asin, product_id))
                 expired = len(await cur.fetchall())
+                # Fallback: if no other active, not-wrong pair is left for this ASIN, switch its inactive
+                # not-wrong pairs back on (e.g. Nick's lead pair stored inactive behind the matcher's pick).
+                cur = await conn.execute(
+                    "UPDATE sephora_catalog c SET active=true, updated_at=now() WHERE c.asin=%s AND c.product_id<>%s "
+                    "AND c.active IS NOT TRUE AND c.match_ok IS NOT FALSE AND NOT EXISTS (SELECT 1 FROM sephora_catalog o "
+                    "WHERE o.asin=c.asin AND o.product_id<>%s AND o.active AND o.match_ok IS NOT FALSE) RETURNING product_id",
+                    (asin, product_id, product_id))
+                after["reactivated"] = [r["product_id"] for r in await cur.fetchall()]
                 if not body.get("_no_log"):
                     await log_wrong(conn, actor, source, asin, product_id, wrong, body.get("_list_path"))
             await _audit(conn, actor, "mark", "sephora", None, None,

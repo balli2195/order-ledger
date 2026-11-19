@@ -32,11 +32,11 @@ What a run does:
    - The sale is recorded as `{text, code, ends}`.
    - The discount comes from `brands.json` → `promo`: `savings_event_pct` (Nick: 25%), or a higher brand banner such as "30% off Sephora Collection".
 2. Refreshes watched ASINs with Keepa (Buy Box, 90-day average): sale and promo rows first, then the best ROI.
+   - Every watchable pair is priced, not one per ASIN (Nov 19, 2026). An ASIN with several pairs (Nick's lead and the matcher's pick, a mini and a full size) is posted once, from: the pair of its open candidate, else the most trusted profitable pair (marked OK → Nick's lead → confidence → match score), else the best ROI. Keepa and SP-API are still called once per ASIN.
 3. Applies the ROI ≥ 15% prefilter, then an SP-API live offers check.
 4. Scores the top ≤60 with Lead Score (through the Hub, ≤25 per call, one call at a time).
 4b. Multi-size rows without a known size are no longer held (Nick, Nov 19, 2026): they're priced at the size guess, or the full size when unknown, and posted with "Size not checked" at the front of the note.
 5. Posts as candidates the rows with predicted ROI ≥ 10% (Nick, Nov 19, 2026; was 21%). Every pair not marked wrong is watched: learned match rules, confidence and the Sephora-listing check no longer hold a pair back (Nick judges the match on To review).
-   - Multi-size products are never posted until Nick confirms the size (`needs_size` with no `size_confirmed`). They are listed under "Needs your size check" with the Amazon size.
    - A cost that comes from an event code rather than the item's own sale price gets the note prefix "Event code — confirm brand qualifies at checkout".
 6. Updates the catalog's prices and ROI and records the run.
 
@@ -58,12 +58,16 @@ Run it once a week (for example Sunday).
 4. Builds brands with no matcher rows yet by calling `build_backlog.py` (highest lead spend first, within what's left of the budget).
 5. Screens unseen brands (≤500 tokens): can_source, Amazon demand and restrictions decide between auto-added, for Nick, or screened out.
 6. Matches new products (Keepa title search, `catalog/match.py`, restrictions, offers, `build.py`).
+6b. Re-matches ASINs whose every pair is marked wrong (`rematch.py`, no Keepa). The matcher picks one product per ASIN and never tried the runner-up, so one wrong mark used to end the ASIN (CHANEL No.5 L'Eau → N°5 EDT, Chance Eau Fraîche → the EDP). The ASIN is scored again against the brand's listing without the wrong products. A high / medium match is added only when the names agree both ways: every word of the Sephora name is in the Amazon title, and every Amazon word Sephora uses for this brand is in the Sephora name. Body cream / deodorant / tester / sample words and the men's line (Allure vs Allure Homme) count; EDT / EDP words only when the Amazon title names a concentration. Everything else is listed as a suggestion in the weekly summary. A test on Chanel, Dior, Make Up For Ever and Benefit (188 all-wrong ASINs) added 4, 3 of them right.
+6c. Brand best-seller sweep (`rematch.py`, ≤800 tokens, `--sweep-tokens`). The step 6 search only finds Amazon titles that contain a Sephora product's first name words, so "CHANEL Bleu De Paris Cologne" was never found. A few brands per run (oldest swept first): Keepa finder sorted by sales rank, one page of 50, a deeper page each rotation (4 pages, then back to page 0). ASINs not in the catalog go through the usual match/build. State: `brand_sweep`.
 7. Writes a `brand_weights` table from Nick's approvals and rejections. It only reports; it never removes brands.
 
 - **Budget and runtime:** ≤4,000 Keepa tokens; leftovers carry over to next week. Runtime 15–40 minutes.
 - **Output:** `.data/weekly_summary.md`.
 - **Adding a brand by hand:** copy an entry in `brands.json`. The next weekly run builds it.
 - **Keep the brand lists in sync.** `exclude_brands` mirrors the Hub `brands.can_source=false` list; refresh it with the Myrddin Hub `get_lead_choices` tool if Nick changes it.
+
+**A wrong mark switches on the ASIN's fallback pairs (Nov 19, 2026).** When a pair is marked wrong and the ASIN has no other active, not-wrong pair, the Hub reactivates its inactive not-wrong pairs (`mark_catalog`, returned as `reactivated`). `seed_from_leads.py` keeps every lead pair active (it used to store extra lead pairs inactive). The one-time sweep on Nov 19 reactivated 23 such pairs (e.g. B0DZV1RBGX's glitter spray, hidden after its regular spray was marked wrong).
 
 **Pairs marked wrong are never updated (Nick, Nov 19, 2026).** Only matches and possible matches matter for leads; a
 wrong pair is kept as it was, for review on the Mismatches page. The daily job, the weekly listing refresh,
@@ -153,7 +157,7 @@ After the weekly run, add: new products matched (flag ROI ≥ 21%), brands auto-
   - Prep is $1.40 per unit everywhere (Nick's Seller Snap figure).
   - The Hub stores ROI and `referral_pct` as fractions.
 - When updating existing catalog pairs, always send their current `active`: the Hub re-activates any pair sent without it.
-- Sizes: the search API gives only Sephora's price range, not sizes. A multi-size product is therefore only proposed after Nick confirms the size on the Sephora leads tab.
+- Sizes: the search API gives only Sephora's price range, not sizes. A multi-size product without a saved size is posted priced at the full size with "Size not checked" (Nov 19, 2026); section 4d's SKU reader saves the exact size.
 
 ## 4d. Reading Sephora's SKU lists (sizes, shades, prices, stock) — Nov 17, 2026
 

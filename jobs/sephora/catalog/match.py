@@ -39,7 +39,7 @@ TYPE_GROUPS = {
     "shampoo": {"shampoo"}, "conditioner": {"conditioner"}, "dryshampoo": {"dry-shampoo"},
     "deodorant": {"deodorant"}, "bodylotion": {"lotion", "emulsion"}, "bath": {"shower", "soap", "bath"},
     "nail": {"nail", "vernis", "polish"}, "patch": {"patch", "patches"},
-    "fragrance": {"parfum", "perfume", "toilette", "cologne", "edp", "edt", "fragrance", "extrait", "eau"},
+    "fragrance": {"parfum", "perfume", "toilette", "cologne", "edp", "edt", "fragrance", "extrait", "eau", "leau"},
 }
 # pairs of types that are compatible (a product may carry both words)
 TYPE_OK = {frozenset(x) for x in [("lipstick", "gloss"), ("lipstick", "lipbalm"), ("gloss", "lipbalm"), ("powder", "foundation"),
@@ -82,6 +82,7 @@ def base_text(s):
     s = strip_accents(s or "").lower().replace("’", "'")
     s = re.sub(r"\bn\s*[°ºo]\s*[._]?\s*(\d)", r"no\1", s)          # N°5, No.5, No_5 -> no5
     s = re.sub(r"\bchanel\s+(5|19|22)\b", r"chanel no\1", s)
+    s = re.sub(r"\bl\s*'?\s*eau\b", "leau", s)                      # L'Eau, L Eau, LEau -> leau (N°5 L'Eau is not N°5 EDT)
     s = re.sub(r"m\s*[·.]\s*a\s*[·.]\s*c\s*\.?\s*", "mac", s)          # M·A·C / M.A.C. -> mac
     s = re.sub(r"\bedp\b", " eau de parfum ", s)
     s = re.sub(r"\bedt\b", " eau de toilette ", s)
@@ -181,11 +182,15 @@ def size_ml(text):
     return max(vals) if vals else None
 
 
-def match_brand(slug, cfg_b):
+def match_brand(slug, cfg_b, keepa=None, exclude=None):
+    """keepa: the Amazon side ({"asins": [...]}) instead of raw/keepa/<slug>.json. exclude: {asin: {productId, ...}}
+    products never proposed for that ASIN (pairs Nick marked wrong), so the next-best product is picked instead."""
     import match_rules as MR   # rules learned from Nick's wrong-match marks (written by the weekly job before matching)
     rules = MR.load()
     seph = json.load(open(os.path.join(CAT, "raw", "sephora", slug + ".json")))
-    keepa = json.load(open(os.path.join(CAT, "raw", "keepa", slug + ".json")))
+    if keepa is None:
+        keepa = json.load(open(os.path.join(CAT, "raw", "keepa", slug + ".json")))
+    exclude = exclude or {}
     drop = set()
     for n in [cfg_b["name"]] + cfg_b.get("sephora_names", []) + cfg_b.get("keepa_brands", []) + cfg_b.get("strip", []):
         drop |= set(re.sub(r"[^a-z0-9]+", " ", base_text(n)).split())
@@ -262,7 +267,8 @@ def match_brand(slug, cfg_b):
 
     own = {}
     for a in asins:
-        sc = sorted(((score(a, x), i) for i, x in enumerate(P)), key=lambda t: -t[0][0])
+        skip = exclude.get(a["asin"]) or ()
+        sc = sorted(((score(a, x), i) for i, x in enumerate(P) if x["p"]["productId"] not in skip), key=lambda t: -t[0][0])
         top = sc[0] if sc else ((0, "", (0, None)), None)
         if top[1] is not None:
             core = P[top[1]]["core"]
