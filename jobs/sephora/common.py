@@ -220,7 +220,8 @@ def sale_size(lo, hi, sale):
 def pick_price(row: dict, lo, hi, sale, mode: str, promo: tuple | None = None):
     """Entered (pre-uplift) Sephora price for one Amazon unit of this pair.
     mode 'catalog': the catalog's convention for the stored roi_now (unknown size -> hi, conservative).
-    mode 'buy':     the buying rule: Nick's size_confirmed wins; else needs_size rows only with size_guess=hi.
+    mode 'buy':     the buying rule: Nick's size_confirmed wins; else the size guess, unknown -> the full size
+                    (Nick, Nov 19, 2026: unsized multi-size rows are no longer held for a size check).
     promo = (fraction_off, label) for a broad Sephora promo (code discount off the list price; not stacked on a markdown:
     the lower of the two is used).
     Returns (unit_price_entered, full_price_entered, label, sale_applied, promo_applied) or None when it can't be priced."""
@@ -232,9 +233,9 @@ def pick_price(row: dict, lo, hi, sale, mode: str, promo: tuple | None = None):
         if conf in ("lo", "hi"):
             basis, why = conf, "Nick confirmed " + ("mini/smaller size" if conf == "lo" else "full size")
         elif mode == "buy":
-            if guess != "hi":
-                return None
-            basis, why = "hi", "full size (guess)"
+            basis = guess if guess in ("lo", "hi") else "hi"
+            why = ("mini/smaller size (guess)" if basis == "lo" else "full size (guess)") if guess in ("lo", "hi") \
+                else "size not checked, priced at the full size"
         else:
             basis, why = (guess if guess in ("lo", "hi") else "hi"), f"size guess {guess or 'unknown'}"
         full = lo if basis == "lo" else hi

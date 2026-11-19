@@ -311,10 +311,6 @@ def main():
         problems.append(f"stock watch read failed: {e!r}")
     pool, skipped_decided, size_check = [], [], []
     for roi_, r, e in passed:
-        if r.get("needs_size") and r.get("size_confirmed") not in ("lo", "hi") and not r.get("store_size_price"):
-            if roi_ >= CAND_MIN:   # never posted until Nick confirms the size on the tab; listed in the summary
-                size_check.append((roi_, r, e))
-            continue
         dd = decided.get(r["asin"])
         if dd and (dd[1] is None or e["entered"] >= dd[1] - 0.01):
             skipped_decided.append((r["asin"], dd[0]))
@@ -394,8 +390,10 @@ def main():
             bits.append(f"Amazon size {asz}")
         if r.get("store_size"):
             bits.append(f"buy the {r['store_size']} (${C.fnum(r.get('store_size_price')) or 0:.2f} list)")
-        elif r.get("needs_size"):
+        elif r.get("needs_size") and r.get("size_confirmed") in ("lo", "hi"):
             bits.append("buy the " + ("mini/smaller size" if "lo" == r.get("size_confirmed") else "full size") + " (Nick confirmed)")
+        elif r.get("needs_size"):   # no size hold any more (Nick, Nov 19, 2026): posted, flagged
+            bits.insert(0, "Size not checked: confirm which Sephora size the Amazon listing is")
         if sc_note:
             bits.append(sc_note)
         if rules and r.get("match_ok") is not True:   # learned match rules no longer hold a pair back, they flag it (Nov 19, 2026)

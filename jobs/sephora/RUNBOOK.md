@@ -34,6 +34,7 @@ What a run does:
 2. Refreshes watched ASINs with Keepa (Buy Box, 90-day average): sale and promo rows first, then the best ROI.
 3. Applies the ROI ≥ 15% prefilter, then an SP-API live offers check.
 4. Scores the top ≤60 with Lead Score (through the Hub, ≤25 per call, one call at a time).
+4b. Multi-size rows without a known size are no longer held (Nick, Nov 19, 2026): they're priced at the size guess, or the full size when unknown, and posted with "Size not checked" at the front of the note.
 5. Posts as candidates the rows with predicted ROI ≥ 10% (Nick, Nov 19, 2026; was 21%). Every pair not marked wrong is watched: learned match rules, confidence and the Sephora-listing check no longer hold a pair back (Nick judges the match on To review).
    - Multi-size products are never posted until Nick confirms the size (`needs_size` with no `size_confirmed`). They are listed under "Needs your size check" with the Amazon size.
    - A cost that comes from an event code rather than the item's own sale price gets the note prefix "Event code — confirm brand qualifies at checkout".
