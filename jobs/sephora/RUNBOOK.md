@@ -190,3 +190,10 @@ Sephora product pages only load in Nick's Chrome. The reader posts what it reads
 4. In the cloud, `GET /api/engine/store-skus` returns everything read; match each pair's Amazon size/shade to a SKU and write `store_size` (and marks) through `/api/engine/sephora/catalog/mark`.
 
 Status Nov 17: all 1,536 active Sephora products read (11 pages empty or 404, likely discontinued). Profitable pairs and every pair within reach of profit (≥5% now or ≥10% on the 90-day Buy Box) were reviewed by hand; the rest only got their exact size/price set automatically.
+
+## 9. Checker loop (Nov 19, 2026)
+
+Five rounds of blind checks: fresh subagents read every Amazon photo and the live page and named the Sephora SKU, with no access to the matcher's answer. Every fix was regression-tested on Nick's leads (scratchpad `shade/eval_text.py`, `eval_match.py`, `eval_neg.py`) and on all checker labels (`loop/regress.py`) before committing. The summary is the project doc `claude/sephora-catalog/loop/SUMMARY.md`.
+- Shade hints the daily job skips (unless the pair is marked OK): `not_sold` (now also "size not sold: …" for travel sizes smaller than any Sephora size) and `bundle` (the listing is a set of two Sephora singles; one single's price isn't the cost).
+- The checker prompts must fetch Amazon one page at a time with desktop Safari headers, `--compressed`, and a fresh cookie jar. They must never fetch sephora.com.
+- Product re-matches found by the loop are listed, never applied, until Nick says so.
