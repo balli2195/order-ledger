@@ -1056,7 +1056,7 @@ async def stock_results(actor: Actor, results: list) -> dict:
             for r in results:
                 wid = str((r or {}).get("id") or "")
                 cur = await conn.execute(
-                    "SELECT w.*, c.shade, c.amazon_title, c.store_size FROM sephora_stock_watch w LEFT JOIN sephora_catalog c "
+                    "SELECT w.*, c.shade, c.amazon_title, c.store_size, c.extra->'store_sku_alts' AS alts FROM sephora_stock_watch w LEFT JOIN sephora_catalog c "
                     "ON c.asin = w.asin AND c.product_id = w.product_id WHERE w.id::text = %s FOR UPDATE OF w", (wid,))
                 w = await cur.fetchone()
                 if not w or w["status"] != "watching":
@@ -1069,6 +1069,11 @@ async def stock_results(actor: Actor, results: list) -> dict:
                 else:
                     sku, why = _pick_sku(dict(w), skus)
                     ins = None if sku is None or sku.get("in_stock") is None else bool(sku["in_stock"])
+                    alts = {str(x) for x in (w.get("alts") or [])}
+                    if ins is not True and alts:   # a same-size alternate SKU in stock counts (Nick, Nov 19, 2026: "use both")
+                        alt = next((x for x in skus if x["sku_id"] in alts and x.get("in_stock")), None)
+                        if alt:
+                            sku, ins, why = alt, True, why + f"; alternate SKU {alt['sku_id']} (same size) in stock"
                 detail = f"{why}; SKU {sku['sku_id']} {'in stock' if ins else 'out of stock'}" if sku and ins is not None else why
                 await conn.execute(
                     "UPDATE sephora_stock_watch SET checks = checks + 1, last_checked_at = now(), last_in_stock = %s, last_detail = %s, "

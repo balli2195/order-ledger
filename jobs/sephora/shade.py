@@ -40,8 +40,10 @@ def norm(s) -> str:
 
 def oz_amounts(text):
     m = re.fullmatch(r"\s*(\d*\.?\d+)\s*/\s*(\d+(?:\.\d+)?)\s*", text or "")   # Sephora's unitless '1.7/50' = oz / ml
-    if m:
+    if m and float(m.group(1)) > 0 and 25 <= float(m.group(2)) / float(m.group(1)) <= 35:   # not '1/1' or '16.9/300'
         return [round(float(m.group(1)), 3)]
+    if m:
+        return []
     out = []
     for m in SIZE_RX.finditer(text or ""):
         v = float(m.group(1).replace(",", "."))
@@ -159,6 +161,13 @@ def _has_phrase(text: str, phrase: str) -> bool:
     return bool(phrase) and re.search(r"(?<![a-z0-9.])" + re.escape(phrase) + r"(?![a-z0-9])", text) is not None
 
 
+def same_label(a: dict, b: dict) -> bool:
+    """Two SKUs that read the same (value and size, punctuation and 'fl' aside): '1.7 fl oz /50 ml' = '1.7 oz / 50 ml'.
+    A refill, another scent or another formulation reads differently, so it is never an alternate."""
+    f = lambda s: re.sub(r"fl|[^a-z0-9]", "", norm((s.get("value") or "") + " " + (s.get("size") or "")))
+    return f(a) == f(b) and bool(f(a))
+
+
 def _size_pick(k: dict, F: dict, skus: list) -> dict | None:
     # the title first: Keepa's size field is often another variation's (3.4 oz on a 10 ml travel spray)
     amz = oz_amounts(k.get("title") or "") or oz_amounts(F["_own_raw"]) or oz_amounts(k.get("size") or "")
@@ -179,8 +188,16 @@ def _size_pick(k: dict, F: dict, skus: list) -> dict | None:
         if best is None or d < best[0]:
             best = (d, s, so[0])
     if best and best[0] <= 0.12:
-        return {"sku_id": best[1]["sku_id"], "how": f"size {a:.2f} oz = Sephora {best[1].get('size') or best[1].get('value')}",
-                "score": 20, "margin": 20}
+        # two SKUs of the same size (Kayali sells two 10 ml bottles, $29 and $32): Nick takes either (Nov 19, 2026), so
+        # the cheaper one is the store size and the others are alternates (the stock check accepts any of them)
+        same = [s for s in skus if same_label(s, best[1])]
+        same.sort(key=lambda s: s.get("price") or 9e9)
+        if same:   # an alternate costing much more is something else (a bundle, a bigger supply): not interchangeable
+            same = [s for s in same if (s.get("price") or 0) <= (same[0].get("price") or 0) * 1.25]
+        pick = same[0] if same else best[1]
+        return {"sku_id": pick["sku_id"], "how": f"size {a:.2f} oz = Sephora {pick.get('size') or pick.get('value')}"
+                + (f" (cheapest of {len(same)} SKUs that size)" if len(same) > 1 else ""),
+                "score": 20, "margin": 20, "alts": [s["sku_id"] for s in same[1:]]}
     return None
 
 
@@ -268,16 +285,17 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
     second = next((r[0] for r in ranked[1:] if key[r[1]] != key[top[1]]), 0)
     if top[0] >= 7 and top[0] - second >= 3:
         group = [s for s in skus if key[s["sku_id"]] == key[top[1]]]
-        pick, how = top[1], top[2]
+        pick, how, alts = top[1], top[2], []
         if len(group) > 1:
             p = _size_pick(k, F, group)
             if p:
                 pick, how = p["sku_id"], how + "; " + p["how"]
+                alts = p.get("alts") or []
             else:   # no size on Amazon: the full size, unless the listing says mini
                 mini = bool(re.search(r"\b(mini|travel|deluxe sample)\b", (k.get("title") or "").lower()))
                 sz = sorted(group, key=lambda g: (oz_amounts(g.get("size") or "") or [0])[0])
                 pick = (sz[0] if mini else sz[-1])["sku_id"]; how += "; " + ("smallest" if mini else "largest") + " size of that shade"
-        return {"sku_id": pick, "score": top[0], "margin": round(top[0] - second, 2), "how": how, "ranked": ranked[:5]}
+        return {"sku_id": pick, "score": top[0], "margin": round(top[0] - second, 2), "how": how, "ranked": ranked[:5], "alts": alts}
     if "size" in (vt or "").lower():
         p = _size_pick(k, F, skus)
         if p:

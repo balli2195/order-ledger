@@ -164,6 +164,12 @@ def main():
             stats[f"decided ({how})"] += 1
             marks.append({"asin": r["asin"], "product_id": r["product_id"],
                           "store_size": {"sku_id": x["sku_id"], "size": label(x), "price": x.get("price")}, "_how": res["how"]})
+            alts = [sid for sid in (res.get("alts") or []) if sid in by]
+            if alts or (r.get("extra") or {}).get("shade_hint"):   # alternates for the stock check; an old hint no longer applies
+                ex = {k_: v for k_, v in (r.get("extra") or {}).items() if k_ != "shade_hint"}
+                if alts:
+                    ex["store_sku_alts"] = alts
+                hints.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"], "extra": ex})
         else:
             ns = SH.shade_not_sold(k, s["skus"], r["asin"]) if "olor" in (s.get("variation_type") or "") or "cent" in (s.get("variation_type") or "") else None
             if ns:   # the listing names a shade Sephora's list doesn't have: not a lead (the daily job skips it)
