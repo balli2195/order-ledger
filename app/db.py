@@ -1068,15 +1068,6 @@ MIGRATIONS: list[str] = [
       read_at         timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (store, product_id)
     );
-    -- store_pages (Nov 19, 2026): product-page details read in Nick's Chrome (description incl. set contents, highlights,
-    --   ingredients excerpt, out-of-stock SKUs), for the shade / set checkers
-    CREATE TABLE IF NOT EXISTS store_pages (
-      store       text NOT NULL DEFAULT 'Sephora',
-      product_id  text NOT NULL,
-      data        jsonb NOT NULL,
-      read_at     timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (store, product_id)
-    );
     CREATE TABLE IF NOT EXISTS upload_tokens (
       token       text PRIMARY KEY,
       purpose     text NOT NULL,
@@ -1089,6 +1080,17 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE inbound_reimb ADD COLUMN IF NOT EXISTS orig_id text;
     ALTER TABLE inbound_reimb ADD COLUMN IF NOT EXISTS orig_type text;
+    """,
+    # 68: store_pages (Nov 19, 2026): Sephora product-page details read in Nick's Chrome (description incl. set contents,
+    # highlights, ingredients excerpt, out-of-stock SKUs), for the shade / set checkers
+    """
+    CREATE TABLE IF NOT EXISTS store_pages (
+      store       text NOT NULL DEFAULT 'Sephora',
+      product_id  text NOT NULL,
+      data        jsonb NOT NULL,
+      read_at     timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (store, product_id)
+    );
     """,
 ]
 
