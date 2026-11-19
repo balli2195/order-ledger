@@ -179,6 +179,7 @@
   }
   window.addEventListener('scroll', maybeMore, { passive: true });
   window.addEventListener('resize', maybeMore);
+  $('#leadScroll')?.addEventListener('scroll', maybeMore, { passive: true });   // the table scrolls inside its own box
 
   async function rescoreDay(day) {
     S.rescore = S.rescore || {};
