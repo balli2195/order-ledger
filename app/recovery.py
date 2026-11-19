@@ -276,11 +276,22 @@ async def pipeline(year: int) -> dict:
             wh_recent += max(0.0, r["wh_lost"]["shortfall"]) + max(0.0, r["wh_damaged"]["shortfall"])
 
     def seg(kind: str, lost: float, pd: float, ip: float, cl: float) -> dict:
+        """Split the unpaid part (lost − paid) so the pieces never add up to more than the loss: disputes first
+        (filed, with invoice, needs invoice), then open cases / recent unsettled losses, then ready to file; the rest is unpaid.
+        Recent warehouse shortfalls already contain recent underpayments, so taking disputes first avoids counting them twice."""
         d = disp.get(kind) or {}
-        ip2, cl2, ni = ip + float(d.get("filed", 0)), cl + float(d.get("claimable", 0)), float(d.get("needs_invoice", 0))
-        un = max(0.0, lost - pd - ip2 - cl2 - ni)
+        left = max(0.0, lost - pd)
+
+        def take(v: float) -> float:
+            nonlocal left
+            t = max(0.0, min(float(v or 0), left))
+            left -= t
+            return t
+        d_ip, d_cl, ni = take(d.get("filed", 0)), take(d.get("claimable", 0)), take(d.get("needs_invoice", 0))
+        ip2 = d_ip + take(ip)
+        cl2 = d_cl + take(cl)
         return {k: round(v, 2) for k, v in {"lost": lost, "paid": pd, "in_process": ip2, "claimable": cl2,
-                                             "needs_invoice": ni, "unpaid": un}.items()}
+                                             "needs_invoice": ni, "unpaid": left}.items()}
 
     inb = seg("inbound", T["inbound"]["lost_v"], T["inbound"]["paid"],
               sum(p["missing_value"] for p in yp if p["state"] == "case_open"),
