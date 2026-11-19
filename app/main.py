@@ -457,6 +457,20 @@ async def api_reimbursements_recovery(request: Request, year: int | None = None,
     return await recovery.report(year or _d.today().year, by)
 
 
+@app.get("/api/engine/reimbursements")
+async def engine_reimbursements(request: Request, all: int = 0):
+    """Read-only copy of the Reimbursements page data for Claude (X-Engine-Key)."""
+    auth.require_engine_key(request)
+    return await inbound.page(include_all=bool(all))
+
+
+@app.get("/api/engine/reimbursements/recovery")
+async def engine_reimbursements_recovery(request: Request, year: int | None = None, by: str = "paid"):
+    auth.require_engine_key(request)
+    from datetime import date as _d
+    return await recovery.report(year or _d.today().year, by)
+
+
 @app.post("/api/engine/inbound/seller-central")
 async def engine_inbound_sc(request: Request, body: dict = Body(...)):
     """Seller Central's discrepancy table per shipment: {shipments: [{sid, msg, total, rows: [{sku, fnsku, expected, located, disc, status}]}]}."""
