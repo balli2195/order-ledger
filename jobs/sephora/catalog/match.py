@@ -47,7 +47,7 @@ TYPE_OK = {frozenset(x) for x in [("lipstick", "gloss"), ("lipstick", "lipbalm")
            ("blush", "palette"), ("highlighter", "palette"), ("contour", "palette"), ("bronzer", "palette"), ("bronzer", "contour"),
            ("liner", "brow"), ("powder", "brow"), ("moisturizer", "sunscreen"), ("moisturizer", "foundation"),
            ("cleanser", "bath"), ("moisturizer", "bodylotion"), ("moisturizer", "lipbalm"),
-           ("moisturizer", "mask"), ("concealer", "foundation"), ("primer", "eyeshadow"), ("liner", "lipstick"),
+           ("moisturizer", "mask"), ("primer", "eyeshadow"), ("liner", "lipstick"),
            ("cleanser", "mask"), ("primer", "moisturizer"),("blush", "lipstick"), ("blush", "bronzer"), ("highlighter", "bronzer"),
            ("moisturizer", "blush"), ("moisturizer", "bronzer"), ("moisturizer", "highlighter"), ("serum", "foundation"),
            ]}
@@ -278,7 +278,7 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
         bta = set(re.sub(r"[^a-z0-9]+", " ", bt).split())
         bsx = set(re.sub(r"[^a-z0-9]+", " ", base_text(x["p"]["name"])).split())
         for wv, pen in (("waterproof", 0.18), ("deodorant", 0.45), ("stick", 0.12), ("refillable", 0.0), ("body", 0.2), ("hair", 0.2),
-                        ("sharpener", 0.6), ("rollerball", 0.25), ("toenail", 0.4), ("toenails", 0.4), ("loose", 0.2), ("pressed", 0.2)):
+                        ("sharpener", 0.6), ("rollerball", 0.25), ("toenail", 0.6), ("toenails", 0.6), ("loose", 0.2), ("pressed", 0.2)):
             if (wv in bsx) != (wv in bta) and pen:
                 s -= pen; why.append(f"'{wv}' on one side only")
         for ex, pen in (("brush", 0.45), ("palette", 0.2)):
