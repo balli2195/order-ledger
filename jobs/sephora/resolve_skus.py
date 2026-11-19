@@ -193,6 +193,7 @@ def main():
                 hints.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"], "extra": ex})
         else:
             ns = SH.shade_not_sold(k, s["skus"], r["asin"]) if "olor" in (s.get("variation_type") or "") or "cent" in (s.get("variation_type") or "") else None
+            ns = ns or (("size not sold: " + res["size_not_sold"]) if res.get("size_not_sold") else None)
             if ns:   # the listing names a shade Sephora's list doesn't have: not a lead (the daily job skips it)
                 stats["shade not sold at Sephora"] += 1
                 hints.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"],

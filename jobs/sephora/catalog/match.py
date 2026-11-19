@@ -82,6 +82,7 @@ def base_text(s):
     s = strip_accents(s or "").lower().replace("’", "'")
     s = re.sub(r"\bn\s*[°ºo]\s*[._]?\s*(\d)", r"no\1", s)          # N°5, No.5, No_5 -> no5
     s = re.sub(r"\bchanel\s+(5|19|22)\b", r"chanel no\1", s)
+    s = re.sub(r"\beau sauvage\b", "eausauvage", s)   # Dior's Eau Sauvage is not Sauvage EDT (checker round 4)
     s = re.sub(r"\bl\s*'?\s*eau\b", "leau", s)                      # L'Eau, L Eau, LEau -> leau (N°5 L'Eau is not N°5 EDT)
     s = re.sub(r"m\s*[·.]\s*a\s*[·.]\s*c\s*\.?\s*", "mac", s)          # M·A·C / M.A.C. -> mac
     s = re.sub(r"\bedp\b", " eau de parfum ", s)

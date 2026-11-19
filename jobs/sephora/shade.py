@@ -383,13 +383,19 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
         # (tone words only: '011 Pink' / '017 Nude' on Dior's highlighter are real names)
         weak = bool(code) and set(name.split()) <= {"warm", "cool", "neutral", "deep", "light", "medium", "fair", "tan", "rich",
                                                     "dark", "lightest", "lighter", "darkest", "deepest", "olive", "golden"}
-        if weak and not any(w.startswith("code") for w in why):
+        if weak and not any(w.startswith("code") and w.split(" in ")[-1].split(" (")[0] in ("own", "color", "title") for w in why):
             name = ""
         if not name.replace(".", "").strip():
             name = ""
         if name:
             # a name that is part of a longer SKU name found in the same field doesn't count ('Juicy Pink' in 'Juicy Pink Lady')
             for f, w in FIELD_W.items():
+                if f in ("feat", "desc") and any(len(x) >= 5 and any(_near(x, y) for y in F[g].split())
+                                                 for g in ("own", "color", "title") for x in name.split()) \
+                        and all(any(_near(x, y) for g in ("own", "color", "title") for y in F[g].split()) for x in name.split() if len(x) >= 3):
+                    g = next(g for g in ("own", "color", "title") if any(_near(x, y) for x in name.split() for y in F[g].split()))
+                    sc += FIELD_W[g] * 0.9; why.append(f"name '{name}' in {g} (typo / word order)")
+                    break
                 if _has_phrase(F[f], name):
                     longer = [n for n in all_names if n != name and name in n and _has_phrase(F[f], n)]
                     if longer:
@@ -456,10 +462,21 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
             r[0] = round(r[0] - 6, 2); r[2] += "; only its code matches, another SKU's name is there"
         elif code and found_code and r[1] not in found_code and r[0] > 0:
             r[0] = round(r[0] - 6, 2); r[2] += "; its code is missing, another SKU's code is there"
+    refill_l = bool(re.search(r"\brefill", (k.get("title") or "").lower() + " " + F["own"]))
+    is_refill = {x["sku_id"]: bool(re.search(r"\brefill", (x.get("value") or "").lower())) for x in skus}
+    if any(is_refill.values()) and not all(is_refill.values()):
+        for r in ranked:
+            if r[0] > 0 and is_refill[r[1]] != refill_l:
+                r[0] = round(r[0] * 0.4, 2); r[2] += "; refill / not refill differs from the listing"
+    for r in ranked:
+        if found_name and r[1] not in found_name and "is the color field" in r[2] and not _hit(r[2], "code"):
+            r[0] = round(r[0] - 4, 2); r[2] += "; another SKU's name is in the listing (the color field is a sibling's description)"
     ranked = [tuple(r) for r in ranked]
     ranked.sort(key=lambda x: -x[0])
     # the same shade in several sizes (full size + mini) is one shade: compare shades, then pick the size
-    key = {s["sku_id"]: norm(_strip_sizes(re.split(r"\s+[-–|]\s+|\s*\(", s.get("value") or "")[0])) for s in skus}
+    # ('3 - Fair' and '3 Fair' are one shade: compare code + name)
+    key = {s["sku_id"]: " ".join(x for x in split_value(s.get("value") or "") if x) or norm(_strip_sizes(s.get("value") or ""))
+           for s in skus}
     top = ranked[0]
     second = next((r[0] for r in ranked[1:] if key[r[1]] != key[top[1]]), 0)
     if top[0] >= 7 and top[0] - second >= 3:
@@ -486,6 +503,18 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                     and (oz_amounts(x.get("size") or "") or [0])[0] and abs(1 - oz_amounts(x["size"])[0] / t_oz[0]) <= 0.12]
             if len(bare) == 1:
                 pick, how = bare[0]["sku_id"], how + f"; the title's size {t_oz[0]:.2f} oz is the unnamed {bare[0].get('size')} SKU"
+            else:
+                g_oz = [oz_amounts(g.get("size") or g.get("value") or "") for g in group]
+                tl = (k.get("title") or "").lower()
+                # only for a travel / trial size smaller than every Sephora size: title sizes are often a gram weight or
+                # another sibling's (a lead test on Nick's leads, Nov 19, 2026), a 'travel' word plus a smaller size is not
+                if re.search(r"\b(travel|trial|mini|deluxe|sample)\b", tl) and all(o and o[0] / t_oz[0] > 1.43 for o in g_oz) \
+                        and not re.search(r"\b(set|kit|duo|with|bundle|pack of [2-9])\b|\d\s*x\s*\d", tl):
+                    # the title's size isn't one Sephora sells for that shade (Benetint 4 mL travel vs Sephora's 6 / 10 mL,
+                    # Fresh Soy 20 mL vs 50 mL+): not this listing's SKU (checker rounds 3-4)
+                    return {"sku_id": None, "score": top[0], "margin": round(top[0] - second, 2), "ranked": ranked[:5],
+                            "how": how.split("; ")[0] + f"; but the title's size {t_oz[0]:.2f} oz isn't a Sephora size of that shade",
+                            "size_not_sold": f"{top[2].split(';')[0]} · {t_oz[0]:.2f} oz"}
         return {"sku_id": pick, "score": top[0], "margin": round(top[0] - second, 2), "how": how, "ranked": ranked[:5], "alts": alts}
     # the listing names two Sephora shades (title 'Say Less', color field 'Superficial'): Nick counts it as both and
     # reviews it later (Nov 19, 2026) -> the stronger one is the store size, the other an alternate, flagged
