@@ -173,9 +173,26 @@ def close_skus(k: dict, skus: list, asin: str | None = None) -> list:
     return out if len(out) <= 3 else []   # 'close' to half the list says nothing
 
 
+TITLE_SHADE = re.compile(r"(?:^|[\s,\-–(#])(\d{1,3}(?:\.\d{1,2})?[A-Za-z]{0,2})\s+([A-Z][\w'&.]*(?:\s+[A-Z][\w'&.]*){0,2})"
+                         r"(?!\s*(?:oz|ml|fl|g\b|gram|ounce|count|pack|pc|piece|spf))")
+
+
+def title_shade(k: dict) -> str | None:
+    """A 'code Name' shade written in the title ('202 Loud Lollipop', '50 Stiletto', '100B Milkshake'), the last one."""
+    t = _strip_sizes(k.get("title") or "")
+    hits = [m for m in TITLE_SHADE.finditer(t) if not re.fullmatch(r"(?i)spf|pa|hr|hour|in", m.group(2).split()[0])
+            and not re.search(r"(?i)(hr|h|x|pc|pk|mm|cm|d)$", m.group(1))]   # '12HR', '3D', '2X' aren't shades
+    return f"{hits[-1].group(1)} {hits[-1].group(2)}" if hits else None
+
+
 def shade_not_sold(k: dict, skus: list, asin: str | None = None) -> str | None:
-    """The Amazon shade when it shares no word or code with any Sephora SKU (Sephora doesn't sell that shade), else None."""
+    """The Amazon shade when it shares no word or code with any Sephora SKU (Sephora doesn't sell that shade), else None.
+    The shade comes from the selector / color field, else a 'code Name' shade in the title, but only when the product's
+    Sephora shades carry codes too (so a title code that isn't among them means another shade)."""
     a = amazon_shade(k, asin)
+    if not a:
+        coded = sum(1 for s_ in skus if split_value(s_.get("value") or "")[0]) >= max(2, len(skus) // 2)
+        a = title_shade(k) if coded else None
     if not a or close_skus(k, skus, asin):   # close shades are kept for Nick to review, not dropped
         return None
     aw = set(norm(_strip_sizes(a)).replace("#", " ").split()) - GENERIC
@@ -276,6 +293,9 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
         if code:
             for f, w in FIELD_W.items():
                 toks = F[f].replace("#", " ").split()
+                # '10 N' / '27 P' written apart on Amazon = Sephora's '10N' / '27P'
+                toks += [toks[i] + toks[i + 1] for i in range(len(toks) - 1)
+                         if re.fullmatch(r"[\d.]+", toks[i]) and re.fullmatch(r"[a-z]{1,2}", toks[i + 1])]
                 if any(_code_eq(code, t) or _code_eq(code, t.lstrip("no")) for t in toks):
                     sc += w * (1.2 if re.search(r"[a-z]", code) or len(code) >= 3 else 0.9); why.append(f"code {code} in {f}")
                     break
