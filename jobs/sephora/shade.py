@@ -167,6 +167,8 @@ def _near(a: str, b: str) -> bool:
     i = 0
     while i < min(len(a), len(b)) and a[i] == b[i]:
         i += 1
+    if len(a) == len(b) and i + 1 < len(a) and a[i] == b[i + 1] and a[i + 1] == b[i] and a[i + 2:] == b[i + 2:]:
+        return True   # two letters swapped: Sephora's 'Siene' = 'Seine' (checker round 3)
     return a[i + 1:] == b[i + 1:] or a[i:] == b[i + 1:] or a[i + 1:] == b[i:]
 
 
@@ -235,6 +237,9 @@ def shade_not_sold(k: dict, skus: list, asin: str | None = None) -> str | None:
     line = {w for w, c in df.items() if len(skus) >= 4 and c >= max(3, 0.3 * len(skus))}
     aw = set(norm(_strip_sizes(a_name)).replace("#", " ").split()) - GENERIC - line
     acode = split_value(a_name)[0]
+    m_ = re.fullmatch(r"(?:shade|color|colour|no\.?|#)\s*([\d.]+[a-z]{0,2})", norm(a_name).strip())
+    if not acode and m_:
+        acode = m_.group(1)   # 'Shade 4' (Benefit brow) is code 4
     asq = _squash(a_name)
     for s in skus:
         code, name = split_value(s.get("value") or "")
@@ -247,7 +252,8 @@ def shade_not_sold(k: dict, skus: list, asin: str | None = None) -> str | None:
         if acode and code and _code_eq(acode, code):
             return None
         if aw & sw or any(_near(x, y) for x in aw for y in sw) or (code and not acode and any(_code_eq(code, t) for t in aw)) \
-                or (_squash(name) and len(_squash(name)) >= 3 and _squash(name) in asq) or (asq and asq in _squash(s.get("value") or "")):
+                or (_squash(name) and len(_squash(name)) >= 3 and set(name.split()) - GENERIC and _squash(name) in asq) \
+                or (asq and asq in _squash(s.get("value") or "")):
             return None
         d = norm(s.get("desc") or "")
         if d and len(d.split()) >= 2 and d in norm(a):
@@ -281,7 +287,7 @@ def _size_pick(k: dict, F: dict, skus: list) -> dict | None:
             continue
         r = so[0] / a if a else 0
         d = abs(1 - r) + (0 if bool(re.search(r"\brefill", lab.lower())) == refill else 0.05)
-        if len(so) > 1 and re.search(r"\d\s*x\s*\d|,", lab) and not re.search(r"\b(set|with|duo|gift|\+)\b", (k.get("title") or "").lower()):
+        if len(so) > 1 and re.search(r"\d\s*x\s*\d|,", lab) and not re.search(r"\b(set|with|duo|gift|\+)\b|\d\s*x\s*\d", (k.get("title") or "").lower()):
             d += 0.2   # '1 x 3.4 oz , 1 x 0.34 oz' is a gift set, not the single bottle
         if best is None or d < best[0]:
             best = (d, s, so[0])
@@ -324,6 +330,9 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
         p = _size_pick(k, F, skus)
         if p:
             return p
+        if all(oz_amounts(x.get("value") or x.get("size") or "") for x in skus):
+            # the values are only sizes: their numbers aren't shade codes ('1 x 5 oz' is not code 1, checker round 3)
+            return {"sku_id": None, "score": 0.0, "margin": 0.0, "how": "no Sephora size matches the listing", "ranked": []}
     # codes are only trusted as whole tokens; names as whole phrases (longest wins), partial names count a little
     names = {}
     for s in skus:
@@ -337,9 +346,21 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
         for sid, (code, name) in list(names.items()):
             rest = " ".join(w for w in name.split() if w not in line)
             names[sid] = (code, rest)
+    # a 'name' that is only a generic word ('Shade' in Benefit's 'Shade 3') is no name
+    for sid, (code, name) in list(names.items()):
+        if name and set(name.split()) <= {"shade", "color", "colour", "no", "number", "tone"}:
+            names[sid] = (code, "")
     all_names = [n for _, n in names.values() if n]
+    all_codes = {c for c, _ in names.values() if c}
     pn = set(norm(product_name or "").split())
-    descs = collections.Counter(norm(s.get("desc") or "") for s in skus)
+    def desc_of(s):
+        # Sephora's description, else the value's tail ('toasted teddy + espresso - a toasty brown pair', checker round 3)
+        d = norm(s.get("desc") or "")
+        tail = re.split(r"\s+[-–|]\s+", s.get("value") or "")[1:]
+        if not d and tail:
+            d = " ".join(w for w in norm(tail[0]).split() if w not in ("a", "an", "the", "pair", "duo", "set"))
+        return d
+    descs = collections.Counter(desc_of(s) for s in skus)
     ranked = []
     for s in skus:
         code, name = names[s["sku_id"]]
@@ -350,8 +371,12 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                 # '10 N' / '27 P' written apart on Amazon = Sephora's '10N' / '27P'
                 toks += [toks[i] + toks[i + 1] for i in range(len(toks) - 1)
                          if re.fullmatch(r"[\d.]+", toks[i]) and re.fullmatch(r"[a-z]{1,2}", toks[i + 1])]
-                if any(_code_eq(code, t) or _code_eq(code, t.lstrip("no")) for t in toks):
+                if any(_code_eq(code, t) or _code_eq(code, re.sub(r"^no\.?(?=\d)", "", t)) for t in toks):
                     sc += w * (1.2 if re.search(r"[a-z]", code) or len(code) >= 3 else 0.9); why.append(f"code {code} in {f}")
+                    break
+                if "." in code and f in ("own", "color", "title") and re.search(r"[a-z]", code) and any(
+                        t == code.replace(".", "") and t not in all_codes for t in toks):
+                    sc += w * 0.9; why.append(f"code {code} in {f} (decimal point dropped)")
                     break
         # '1 Neutral' / 'Lightest 2': a name made only of tone words is part of the code, it counts only with the code
         name0 = name
@@ -370,8 +395,8 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                     if longer:
                         continue
                     ww = w * (1 + 0.15 * min(len(name.split()), 4))
-                    if pn and set(name.split()) <= pn:
-                        ww *= 0.3   # the shade has the product line's name
+                    if pn and set(name.split()) <= pn and f not in ("own", "color"):
+                        ww *= 0.3   # the shade has the product line's name (in the title that's the line; the selector names the shade)
                     sc += ww; why.append(f"name '{name}' in {f}")
                     break
             else:
@@ -408,7 +433,7 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
             if nd and len(nd) >= 2 and fw and nd == fw:
                 sc += FIELD_W[f]; why.append(f"name + description = {f} ('{' '.join(sorted(nd))}')")
                 break
-        d = norm(s.get("desc") or "")
+        d = desc_of(s)
         if len(d.split()) >= 2 and descs[d] == 1 and any(_has_phrase(F[f], d) for f in ("own", "color", "title")):
             whole = d in (F["color"], F["own"])   # the color field is exactly Sephora's description ('Light Warm' = 140)
             sc += 8 if whole else 4; why.append(f"description '{d}' {'is the color field' if whole else 'in the listing'}")
@@ -468,7 +493,10 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
     if len(named) >= 2 and key[named[0][1]] != key[named[1][1]] and named[0][0] - named[1][0] < 3:
         return {"sku_id": named[0][1], "score": named[0][0], "margin": round(named[0][0] - named[1][0], 2),
                 "how": f"listing names two Sephora shades ({named[0][2]} / {named[1][2]}): both kept, check the photo",
-                "ranked": ranked[:5], "alts": [named[1][1]], "two_shades": True}
+                "ranked": ranked[:5], "alts": [named[1][1]], "two_shades": True,
+                # 'The Lip Drip Set ... Watermelon Rind ... Mango Pulp', '2 Count': both shades in one listing (checker round 3)
+                "bundle": bool(re.search(r"\b(set|duo|trio|kit|bundle|[2-9] ?(pc|pcs|piece|pieces|count|pack)|pack of [2-9])\b",
+                                         norm((k.get("title") or "") + " " + str(k.get("size") or ""))))}
     if "size" in (vt or "").lower():
         p = _size_pick(k, F, skus)
         if p:

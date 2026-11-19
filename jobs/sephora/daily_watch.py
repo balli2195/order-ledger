@@ -176,6 +176,8 @@ def main():
             return False
         if (ex.get("shade_hint") or {}).get("not_sold") and not r.get("store_size") and r.get("match_ok") is not True:
             return False   # resolve_skus.py: the Amazon shade isn't on Sephora's shade list (Nov 19, 2026)
+        if (ex.get("shade_hint") or {}).get("bundle") and r.get("match_ok") is not True:
+            return False   # the listing is a set of two Sephora singles: one single's price isn't the cost (checker round 3)
         return ex.get("demand_ok") is True and ex.get("thin_price") is not True
 
     # Every watchable pair is priced, not only one per ASIN (Nov 19, 2026): an ASIN with two Sephora pairs (Nick's lead and

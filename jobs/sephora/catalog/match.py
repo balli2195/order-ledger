@@ -107,7 +107,7 @@ def tokens(s, drop):
 
 def ptypes(text):
     bt = base_text(text).replace("dry shampoo", "dry-shampoo")
-    t = set(re.sub(r"[^a-z0-9-]+", " ", bt).split())
+    t = {w.strip("-") for w in re.sub(r"[^a-z0-9-]+", " ", bt).split()}   # 'Concealer- 16 Deep' (checker round 3)
     t |= {w[:-1] for w in t if w.endswith("s")}
     found = {k for k, ws in TYPE_GROUPS.items() if t & ws}
     if "lip" in t and ("oil" in t or "tint" in t or "glaze" in t) and not found & {"lipstick", "liner"}:
@@ -121,7 +121,7 @@ def ptypes(text):
     return found
 
 
-FORMS = {"liquid": {"liquid", "fluid"}, "powder": {"powder", "pressed", "baked", "loose"}, "stick": {"stick", "balm"},
+FORMS = {"liquid": {"liquid", "fluid", "serum"}, "powder": {"powder", "pressed", "baked", "loose"}, "stick": {"stick", "balm"},
          "cream": {"cream", "creme"}}
 
 
@@ -263,8 +263,15 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
         elif at_types and not x["types"] and not (at_types & {"fragrance"}):
             s -= 0.08
         fa, fx = forms(title), x["forms"]
-        if ({"liquid", "powder"} <= (fa | fx)) and not (fa & fx) and fa and fx:
+        if (({"liquid", "powder"} <= (fa | fx)) or ({"liquid", "stick"} <= (fa | fx))) and not (fa & fx) and fa and fx:
+            # liquid vs powder; liquid vs stick (MAC Studio Radiance serum foundation vs the skin tint stick, checker rounds 1-3)
             s -= 0.30; why.append("form differs (%s vs %s)" % ("/".join(sorted(fa)), "/".join(sorted(fx))))
+        # brow pencil vs brow gel (Gimme Brow+ pencil listing vs the gel, checker round 2)
+        if "brow" in at_types and "brow" in x["types"]:
+            ga, gx = {"pencil", "gel", "pomade"} & set(re.sub(r"[^a-z0-9]+", " ", bt).split()), \
+                {"pencil", "gel", "pomade"} & set(re.sub(r"[^a-z0-9]+", " ", base_text(x["p"]["name"])).split())
+            if ga and gx and not (ga & gx):
+                s -= 0.35; why.append("brow format differs (%s vs %s)" % ("/".join(sorted(ga)), "/".join(sorted(gx))))
         # one-sided variant words (Nov 19, 2026 dry run): a Sephora 'Waterproof' mascara for a regular listing, the
         # perfume for a deodorant stick, a body / hair version for the fragrance
         bta = set(re.sub(r"[^a-z0-9]+", " ", bt).split())
