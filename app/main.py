@@ -213,8 +213,9 @@ async def timeclock_page(request: Request):
 
 @app.get("/relist", include_in_schema=False)
 async def relist_page(request: Request):
-    """Lead DB -> Archived lists: the one-off re-priced lists (relist/* docs). Part of the Lead DB tab since Nov 11, 2026."""
-    return await _page(request, "sephora_leads", "relist.html")
+    """Archived lists were removed (Nick, Nov 19, 2026): every ASIN on them is in the Lead DB, which re-prices daily.
+    The relist/* docs are kept in hub_docs as a record."""
+    return RedirectResponse("/lead-db", status_code=302)
 
 
 @app.get("/lead-db", include_in_schema=False)
