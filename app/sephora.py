@@ -943,6 +943,40 @@ async def upload_store_skus(token: str | None, body: dict) -> dict:
     return {"saved": n}
 
 
+async def upload_store_pages(token: str | None, body: dict) -> dict:
+    """{pages: {P123: {long, highlights, ingredients, oos, alt}}} from product pages in Nick's Chrome (same upload token
+    as the SKU lists). Only writes store_pages."""
+    pages = (body or {}).get("pages")
+    if not token or not isinstance(pages, dict) or not pages or len(pages) > 500:
+        raise LedgerError("Need an upload token and pages (up to 500)")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT 1 FROM upload_tokens WHERE token=%s AND purpose='store_skus' AND expires_at > now()", (token,))
+        if not await cur.fetchone():
+            raise LedgerError("Upload token is invalid or expired")
+        n = 0
+        async with conn.transaction():
+            for pid, v in pages.items():
+                if not isinstance(v, dict):
+                    continue
+                d = {"long": _txt(v.get("long"), 3000), "short": _txt(v.get("short"), 600), "usage": _txt(v.get("usage"), 600),
+                     "highlights": [_txt(h, 80) for h in (v.get("highlights") or [])[:12] if h],
+                     "ingredients": _txt(v.get("ingredients"), 600), "oos": [_txt(x, 80) for x in (v.get("oos") or [])[:80]],
+                     "alt_images": int(v.get("alt") or 0) if str(v.get("alt") or "0").isdigit() else 0}
+                await conn.execute("INSERT INTO store_pages (store, product_id, data, read_at) VALUES ('Sephora', %s, %s, now()) "
+                                   "ON CONFLICT (store, product_id) DO UPDATE SET data=EXCLUDED.data, read_at=now()", (_pid(pid), json.dumps(d)))
+                n += 1
+    return {"saved": n}
+
+
+async def store_pages(product_ids: list | None) -> dict:
+    async with db.pool.connection() as conn:
+        if product_ids:
+            cur = await conn.execute("SELECT product_id, data, read_at FROM store_pages WHERE product_id = ANY(%s)", (product_ids,))
+        else:
+            cur = await conn.execute("SELECT product_id, data, read_at FROM store_pages")
+        return {"rows": [{"product_id": r["product_id"], "data": r["data"], "read_at": r["read_at"].isoformat()} for r in await cur.fetchall()]}
+
+
 async def store_skus_todo(token: str | None, limit: int) -> dict:
     """Sephora product pages not read yet (no store_skus row), most profitable pairs first. Upload-token gated, for the
     reader script inside Nick's Chrome."""
