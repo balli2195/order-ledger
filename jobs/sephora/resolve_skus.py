@@ -13,8 +13,10 @@
    On Nick's leads (316 with one clear lead shade): decides 84%, 96% agree with the lead link.
 4. Shade pairs the text can't decide and that are near profit (ROI now >= 0 or 90-day >= 5%): photos
    (shade_image.resolve: Sephora's SKU photo vs the Amazon photos; only near-identical renders decide).
-5. Decided -> POST /catalog/mark {store_size} (doesn't change who checked the match). Undecided -> extra.shade_hint
-   (best guesses), which the daily job puts in the candidate note ("Shade not confirmed: ...").
+5. Decided -> POST /catalog/mark {store_size} (doesn't change who checked the match). Undecided -> extra.shade_hint:
+   {not_sold: <Amazon shade>} when the listing names a shade that shares no word or code with any Sephora SKU (the
+   daily job doesn't watch it: 4 of 316 lead shades were flagged on the test), else {guess: [best guesses]}, which the
+   daily job puts in the candidate note ("Shade not confirmed: ...").
 """
 from __future__ import annotations
 
@@ -97,8 +99,7 @@ def photo_pick(asin, k, skus):
     for s in skus:
         sid = s["sku_id"]
         m = _get(f"https://www.sephora.com/productimages/sku/s{sid}-main-grid.jpg?imwidth=315", os.path.join(d, f"s_{sid}_main.jpg"))
-        w = _get(f"https://www.sephora.com/productimages/sku/s{sid}+sw.jpg", os.path.join(d, f"s_{sid}_sw.jpg"))
-        imgs[sid] = {k_: v for k_, v in (("main", m), ("sw", w)) if v}
+        imgs[sid] = {"main": m} if m else {}   # swatch chips were only right 5 times in 21 on the leads: not fetched
         time.sleep(0.1)
     return SI.resolve(amz, imgs)
 
@@ -164,6 +165,13 @@ def main():
             marks.append({"asin": r["asin"], "product_id": r["product_id"],
                           "store_size": {"sku_id": x["sku_id"], "size": label(x), "price": x.get("price")}, "_how": res["how"]})
         else:
+            ns = SH.shade_not_sold(k, s["skus"], r["asin"]) if "olor" in (s.get("variation_type") or "") or "cent" in (s.get("variation_type") or "") else None
+            if ns:   # the listing names a shade Sephora's list doesn't have: not a lead (the daily job skips it)
+                stats["shade not sold at Sephora"] += 1
+                hints.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"],
+                              "extra": {**(r.get("extra") or {}), "shade_hint": {"not_sold": ns[:80], "checked": C.today().isoformat(),
+                                                                                 "sephora": [label(x) for x in s["skus"]][:12]}}})
+                continue
             stats["undecided"] += 1
             top = [by[sid] for sc_, sid, _w in (res.get("ranked") or [])[:3] if sc_ > 0]
             if res.get("photo_hint") and res["photo_hint"] in by and by[res["photo_hint"]] not in top:

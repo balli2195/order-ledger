@@ -23,6 +23,7 @@
     the wrong products left out; a high / medium match whose words agree both ways is added (no Keepa).
  5c. Brand best-seller sweep (rematch.py, <= --sweep-tokens): a few brands per run, oldest swept first, Keepa finder
     sorted by sales rank (one page of 50, deeper each rotation); ASINs not in the catalog go through the usual match.
+ 5d. resolve_skus.py: the Sephora SKU (shade / size) for pairs without a store size (RUNBOOK step 6d).
  6. Feedback (GET /api/engine/sephora/feedback): approved vs rejected / wrong match per brand -> brand_weights
     section of weekly_summary.md (report only; no automatic brand removal).
  7. POST /run {kind: 'weekly'}.
@@ -441,6 +442,19 @@ def main():
             C.log("sweep pairs upsert:", C.hub_upsert_catalog(sw["rows"]))
         except Exception as e:  # noqa: BLE001
             problems.append(f"sweep pairs upsert failed: {e!r}"[:300])
+
+    # ---- 5d. shades / sizes for pairs without a store size (resolve_skus.py; collector data, photos for near-profit pairs)
+    try:
+        rs = subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)), "resolve_skus.py"),
+                             "--max-tokens", str(max(0, min(300, budget)))] + (["--dry-run"] if a.dry_run else []),
+                            capture_output=True, text=True, timeout=3600)
+        res_line = next((x for x in rs.stdout.splitlines()[::-1] if "results:" in x), "")
+        counts["sku_resolve"] = res_line.split("results:", 1)[-1].strip()[:300]
+        C.log("resolve_skus:", counts["sku_resolve"])
+        if rs.returncode:
+            problems.append(f"resolve_skus.py exit {rs.returncode}: {rs.stderr[-200:]}")
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"resolve_skus.py failed: {e!r}"[:300])
 
     # products matched or searched leave new_products.json; the rest carry over
     left = [x for x in np_file if x["productId"] not in tried and x["productId"] not in {r_["product_id"] for r_ in new_rows}]

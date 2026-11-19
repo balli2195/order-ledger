@@ -39,6 +39,9 @@ def norm(s) -> str:
 
 
 def oz_amounts(text):
+    m = re.fullmatch(r"\s*(\d*\.?\d+)\s*/\s*(\d+(?:\.\d+)?)\s*", text or "")   # Sephora's unitless '1.7/50' = oz / ml
+    if m:
+        return [round(float(m.group(1)), 3)]
     out = []
     for m in SIZE_RX.finditer(text or ""):
         v = float(m.group(1).replace(",", "."))
@@ -92,6 +95,64 @@ def _fields(k: dict, asin: str | None) -> dict:
     return {"own": norm(_strip_sizes(" | ".join(own))), "color": norm(_strip_sizes(k.get("color") or "")),
             "title": norm(_strip_sizes(k.get("title") or "")), "feat": norm(_strip_sizes(feats)),
             "desc": norm(_strip_sizes((k.get("description") or "")[:1500])), "_own_raw": " | ".join(own)}
+
+
+def _squash(t: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", norm(t).replace(" and ", " "))
+
+
+COLOUR_WORDS = GENERIC | set("black white grey gray blue green yellow orange purple gold silver bronze multi multicolor "
+                             "clear transparent universal original regular one none cranberry multicolored multicolour "
+                             "standard translucent assorted various".split())
+
+
+def amazon_shade(k: dict, asin: str | None = None) -> str | None:
+    """The shade / style the listing names in its selector (or Keepa's color field when it isn't a generic colour)."""
+    for v in k.get("variations") or []:
+        if v.get("asin") == (asin or k.get("asin")):
+            for at in v.get("attributes") or []:
+                if (at.get("dimension") or "").lower() in ("color", "colour", "style", "scent", "style name", "pattern"):
+                    val = (at.get("value") or "").strip()
+                    if val and set(norm(_strip_sizes(val)).split()) - COLOUR_WORDS:
+                        return val
+    c = (k.get("color") or "").strip()   # Keepa's color field is often filler ('Cranberry'): only when the title says it too
+    if c and set(norm(_strip_sizes(c)).split()) - COLOUR_WORDS and norm(c) in norm(k.get("title") or ""):
+        return c
+    return None
+
+
+def _near(a: str, b: str) -> bool:
+    """Same word allowing one typo ('rasperry' / 'raspberry')."""
+    if a == b:
+        return True
+    if min(len(a), len(b)) < 5 or abs(len(a) - len(b)) > 1:
+        return False
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    return a[i + 1:] == b[i + 1:] or a[i:] == b[i + 1:] or a[i + 1:] == b[i:]
+
+
+def shade_not_sold(k: dict, skus: list, asin: str | None = None) -> str | None:
+    """The Amazon shade when it shares no word or code with any Sephora SKU (Sephora doesn't sell that shade), else None."""
+    a = amazon_shade(k, asin)
+    if not a:
+        return None
+    aw = set(norm(_strip_sizes(a)).replace("#", " ").split()) - GENERIC
+    asq = _squash(a)
+    for s in skus:
+        code, name = split_value(s.get("value") or "")
+        v = norm(_strip_sizes(s.get("value") or ""))
+        if not v:
+            return None   # size-only SKUs: no shade list to compare with
+        sw = set(v.replace("#", " ").split()) - GENERIC
+        if aw & sw or any(_near(x, y) for x in aw for y in sw) or (code and any(_code_eq(code, t) for t in aw)) or (_squash(name) and _squash(name) in asq) \
+                or (asq and asq in _squash(s.get("value") or "")):
+            return None
+        d = norm(s.get("desc") or "")
+        if d and len(d.split()) >= 2 and d in norm(a):
+            return None
+    return a
 
 
 def _has_phrase(text: str, phrase: str) -> bool:
@@ -176,6 +237,10 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                     sc += ww; why.append(f"name '{name}' in {f}")
                     break
             else:
+                if len(_squash(name)) >= 3 and any(_squash(name) == _squash(t) for t in F["_own_raw"].split(" | ") + [F["color"]] if t):
+                    sc += FIELD_W["own"]; why.append(f"name '{name}' = selector (punctuation aside)")
+                    ranked.append([round(sc, 2), s["sku_id"], "; ".join(why)])
+                    continue
                 words = [x for x in name.split() if len(x) >= 3 and x not in GENERIC]
                 if words:
                     for f in ("own", "color", "title"):
