@@ -273,9 +273,19 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
     # ('5.5 Tan' when the title says '5 Tan')
     found_code = {sid for sc_, sid, why in ranked if any(w.startswith("code") and w.split(" in ")[-1] in ("own", "color", "title")
                                                          for w in why.split("; "))}
+    # the name is the stable key: Sephora renumbers lines ('206 Secret Boudoir' is now '109 Secret Boudoir' and 206 is
+    # Golden Bronze), so a name hit beats a code-only hit (Nick, Nov 19, 2026); a code alone still counts when no
+    # SKU's name is in the listing (a renamed shade is the same shade)
+    def _hit(why, kind):
+        return any(w.startswith(kind) and w.split(" in ")[-1] in ("own", "color", "title") for w in why.split("; "))
+    found_name = {sid for sc_, sid, why in ranked if _hit(why, "name '") or "= selector" in why}
     for r in ranked:
         code = names[r[1]][0]
-        if code and found_code and r[1] not in found_code and r[0] > 0:
+        if r[1] in found_name:
+            continue
+        if found_name and _hit(r[2], "code") and r[0] > 0:
+            r[0] = round(r[0] - 6, 2); r[2] += "; only its code matches, another SKU's name is there"
+        elif code and found_code and r[1] not in found_code and r[0] > 0:
             r[0] = round(r[0] - 6, 2); r[2] += "; its code is missing, another SKU's code is there"
     ranked = [tuple(r) for r in ranked]
     ranked.sort(key=lambda x: -x[0])
@@ -295,6 +305,14 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
                 mini = bool(re.search(r"\b(mini|travel|deluxe sample)\b", (k.get("title") or "").lower()))
                 sz = sorted(group, key=lambda g: (oz_amounts(g.get("size") or "") or [0])[0])
                 pick = (sz[0] if mini else sz[-1])["sku_id"]; how += "; " + ("smallest" if mini else "largest") + " size of that shade"
+        # the title's size disagrees with the pick and a SKU with no shade name has that size (Sephora lists some minis
+        # without the shade, e.g. Size Up mascara 'Black' full size + a nameless 0.17 oz mini): take the mini
+        po = (oz_amounts(next((x.get("size") or "") for x in skus if x["sku_id"] == pick)) or [None])[0]
+        if t_oz and po and abs(1 - po / t_oz[0]) > 0.25:
+            bare = [x for x in skus if not (x.get("value") or "").strip()
+                    and (oz_amounts(x.get("size") or "") or [0])[0] and abs(1 - oz_amounts(x["size"])[0] / t_oz[0]) <= 0.12]
+            if len(bare) == 1:
+                pick, how = bare[0]["sku_id"], how + f"; the title's size {t_oz[0]:.2f} oz is the unnamed {bare[0].get('size')} SKU"
         return {"sku_id": pick, "score": top[0], "margin": round(top[0] - second, 2), "how": how, "ranked": ranked[:5], "alts": alts}
     if "size" in (vt or "").lower():
         p = _size_pick(k, F, skus)
