@@ -15,6 +15,8 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 - **Shade:** a shade Sephora doesn't sell is skipped. A close shade (Noir = Black, same description) is kept and flagged for review.
 - **Size:** the Sephora size must equal the Amazon size. Nearly the same volume is fine.
   - A different bottle size, bigger or smaller, is not the listing's product: Sephora doesn't sell that size (Nick, Nov 20: Coco Noir 1.2 oz listing, Sephora only 1.7 / 3.4 oz → not sold).
+  - **One-size products (Nick, Nov 20):** when the brand makes the product in only one size, a different size on the label is the same item (markets round grams and ounces differently: MUFE Artist Blush 4 g on the brand site = Sephora's 5 g). A real second size, such as a mini, still doesn't count.
+  - **Two Sephora SKUs of the same size are interchangeable** (Kayali's $29 and $32 10 mL): the cheaper is the store size, the other an alternate. Not knowing which of them it is never makes a match unsure.
   - A **Mini page never matches a full-size listing.**
   - A full-size page that also sells the mini is fine for a mini listing.
 - **Refill vs refillable:** a refill is a refill. "Refillable" describes the jar, not a refill.
@@ -22,6 +24,8 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 **Versions.** An older or newer version of the same product is a match: renamed, repackaged or reformulated (Easy Bake and Snatch → Easy Bake Airbrush Matte, SurrealSkin → SurrealSkin Luminous Hydrating). The listing's shade has to exist in the current line.
 - When a line renames its shades, map them by name and description ("Antibes, soft peach" = Ginger, soft peach). If there's no exact counterpart, the nearest name is acceptable only when the colour agrees too (Blondie → Kunafa Blondie). A shared word with a different colour is no match (Nick, Nov 20: old Cupcake, pink undertone ≠ Peach Cupcake; no counterpart, so not sold).
 - When a line renumbers its shades, the old numbers don't carry over (MUFE Artist Rouge C206).
+- **Discontinued items (Nick, Nov 20):** when Amazon's model or part number is an old Sephora item number that isn't in today's SKU lists, that exact item is discontinued: not sold, unless the brand names a successor and the shade carries over by name and colour (Sephora Matte Perfection Powder Foundation → not sold).
+- **Past-year sets (Nick, Nov 20):** a past-year or holiday edition is the same set as today's when it has the same products, sizes and applicators (a rollerball is not a spray). Brands often re-release a set with the same products under a new name or packaging, and Amazon keeps the old listing, so a different set name or box alone is not a difference.
 - A reformulation that made the product a little smaller is still a match at today's size: MAC Studio Fix Powder Plus, old 15 g compact = today's 12 g. The size rule is for sizes Sephora sells alongside each other, not for a version change.
 
 **How many differences.** One difference (finish, packaging or name) can still be the same product. Several together make it a different product. Waterproof vs not, glass bottle vs tube, and "blur balm" vs "foundation" all at once = different.
@@ -36,12 +40,16 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 
 ## 2. Which evidence to trust, strongest first
 
-1. **Amazon's model / part number or barcode equal to a Sephora item number.** This settles shade and size outright.
+1. **Amazon's model / part number equal to a Sephora item number, or Amazon's UPC / EAN equal to the brand's own barcode for a shade and size** (brand sites list them: REFY, Westman, Makeup by Mario, Haus Labs; Chanel and Dior barcodes map to their product references). This settles shade and size outright.
 2. **Text printed on the product in the photos:** box ends, stickers, the bottle band, shade codes and sizes on the label.
 3. **The brand's own site or Sephora's page:** what the product is called, which strengths and sizes it comes in, which shades exist.
 4. **The live Amazon page:** the selected variation, the per-ounce price and the Buy Box price. Price helps pick mini vs full size, not identity.
 5. **The Amazon title and bullets.** Often right, sometimes wrong (an "EDT" that only exists as an EDP), and sometimes copied from a sibling listing.
 6. **Keepa's color, size and model fields.** Often filler, a sibling's value or stale.
+
+**Variation family.** Amazon lists a product's shades as sibling listings. When every sibling is clearly another shade, the one left over is this listing's shade; that beats judging a photo's colour.
+
+**Missing data is fetched, not guessed.** When the right Sephora page has no SKU list in the data, or a "not sold" call rests on a list that may be stale, read that page (Nick's old MacBook Chrome, signed out) before deciding.
 
 When a weaker source contradicts a stronger one, the stronger one wins.
 
