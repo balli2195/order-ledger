@@ -95,7 +95,6 @@
   <h2 class="sl-title">Lead DB <span class="live-dot" id="live" title="Live updates"></span></h2>
   <p class="sl-sub" id="runs">Loading…</p>
   <div id="sale" class="sl-sale hidden"></div>
-  <div class="sl-stats" id="stats"></div>
 
   <div class="toolbar">
     <div class="sl-seg" id="viewSeg"><button data-v="queue" class="on">To review</button><button data-v="decided">Decided</button><button data-v="catalog">Catalog</button></div>
@@ -182,11 +181,7 @@
     const s = o.sale;
     $('#sale').classList.toggle('hidden', !s);
     if (s) $('#sale').innerHTML = `<b>Sephora sale on:</b> ${esc(s.text || '')}${s.code ? ` · code <b class="code">${esc(s.code)}</b>` : ''}${s.ends ? ` · ends ${esc(fmtDate(s.ends))}` : ''} <span class="muted">(checked ${esc(when(s.checked_at))})</span>`;
-    const c = o.catalog || {}, k = o.candidates || {};
-    const stat = (label, v, title = '') => `<div class="stat" title="${esc(title)}"><div class="k">${esc(label)}</div><div class="v">${num(v ?? 0)}</div></div>`;
-    $('#stats').innerHTML = stat('To review', k.new) + stat('Approved', k.approved) + stat('Rejected', k.rejected) +
-      stat('Catalog pairs', c.active, `${num(c.total)} total, ${num(c.brands)} brands`) + stat('Matches to check', c.unchecked, 'Active pairs nobody has marked yet') +
-      stat('Sizes to set', c.size_open, 'Pairs where Sephora sells two sizes and the right one isn\'t confirmed');
+    // the stat cards (To review, Approved, Rejected, Catalog pairs, Matches to check, Sizes to set) were removed (Nick, Nov 20 2026)
   }
 
   // ---------------------------------------------------------------- queue
