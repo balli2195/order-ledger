@@ -126,11 +126,10 @@
       <select id="fMinRoi90" title="ROI at today's Sephora price and the 90-day average Buy Box"><option value="">Any ROI 90d</option><option value="0">ROI 90d 0%+</option><option value="15">ROI 90d 15%+</option><option value="21">ROI 90d 21%+</option><option value="30">ROI 90d 30%+</option></select>
       <select id="fBy" title="Who last marked the pair OK, wrong or a size"><option value="">Checked by anyone or no one</option><option value="claude">Checked by Claude</option><option value="people">Checked by people</option><option value="any">Checked by anyone</option></select>
       <select id="fDays" title="When the pair was last marked"><option value="">Checked any time</option><option value="1">Checked in the last 24 hours</option><option value="7">Checked in the last 7 days</option><option value="30">Checked in the last 30 days</option></select>
-      <select id="fSort"><option value="">Sort: brand</option><option value="checked">Sort: recently checked first</option><option value="roi">Sort: ROI now, high first</option><option value="roi90">Sort: ROI 90d, high first</option><option value="sold">Sort: sold/mo, high first</option></select>
     </div>
     <div class="sl-brands" id="brands" hidden></div>
     <div class="table-wrap"><table id="catTable">
-      <thead><tr><th>Brand</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th class="num">Buy Box</th><th class="num">ROI now</th><th class="num">ROI 90d</th><th class="num">Sold/mo</th><th>Flags</th><th>Match</th><th>Size</th></tr></thead>
+      <thead><tr><th>Brand</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th class="num">Buy Box</th><th class="num sortable" data-sort="roi" title="Click to sort: high first, then low first, then back to brand">ROI now</th><th class="num sortable" data-sort="roi90" title="Click to sort: high first, then low first, then back to brand">ROI 90d</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th>Match</th><th>Size</th></tr></thead>
       <tbody id="catRows"></tbody></table>
       <div id="catEmpty" class="empty hidden">No catalog rows match.</div>
     </div>
@@ -147,7 +146,7 @@
 (async () => {
   const { $, $$, esc, num, money, pct, fmtDate, api, toast, fail } = LG;
   const REJ_QUICK = ['ROI too low', 'Historical price too low', 'Too many sellers', "Can't sell / gated", 'Not in stock at Sephora'];
-  const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', ov: null, size: {}, rejecting: null };
+  const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', sort: '', ov: null, size: {}, rejecting: null };
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
   const safeUrl = (u) => u && /^https?:\/\//i.test(u) ? u : null;
   const link = (u, t) => safeUrl(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : '';
@@ -316,7 +315,8 @@
     const p = new URLSearchParams({ limit: 300, offset });
     const q = $('#q').value.trim(); if (q) p.set('q', q);
     if (S.brand) p.set('brand', S.brand);
-    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['sort', '#fSort'], ['checked_by', '#fBy'], ['checked_days', '#fDays'], ['on_sale', '#fSale']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    if (S.sort) p.set('sort', S.sort);
+    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['checked_by', '#fBy'], ['checked_days', '#fDays'], ['on_sale', '#fSale']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
@@ -415,7 +415,18 @@
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
   $('#fBrand').addEventListener('change', (e) => { S.brand = e.target.value; loadCatalog().catch(fail); });
-  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fSort', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  // Sort by clicking a column title (Nick, Nov 20 2026; replaces the Sort dropdown): high first, then low first, then brand.
+  const sortMarks = () => $$('#catTable th.sortable').forEach((th) => {
+    const k = th.dataset.sort; th.dataset.label = th.dataset.label || th.textContent;
+    th.textContent = th.dataset.label + (S.sort === k ? ' ▼' : S.sort === k + '_asc' ? ' ▲' : '');
+  });
+  $$('#catTable th.sortable').forEach((th) => th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    S.sort = S.sort === k ? k + '_asc' : S.sort === k + '_asc' ? '' : k;
+    sortMarks(); loadCatalog().catch(fail);
+  }));
+  sortMarks();
   $('#catMore').addEventListener('click', () => loadCatalog(true).catch(fail));
   let qt; $('#q').addEventListener('input', () => { if (S.view === 'catalog') { clearTimeout(qt); qt = setTimeout(() => loadCatalog().catch(fail), 300); } else renderQueue(); });
   $('#viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });

@@ -612,6 +612,9 @@ CAT_SORTS = {   # Lead DB catalog sort options (whitelisted ORDER BY clauses)
     "roi": "roi_now DESC NULLS LAST, lower(brand), asin",
     "roi90": "roi_avg90 DESC NULLS LAST, lower(brand), asin",
     "sold": "monthly_sold DESC NULLS LAST, lower(brand), asin",
+    "roi_asc": "roi_now ASC NULLS LAST, lower(brand), asin",
+    "roi90_asc": "roi_avg90 ASC NULLS LAST, lower(brand), asin",
+    "sold_asc": "monthly_sold ASC NULLS LAST, lower(brand), asin",
     "checked": "marked_at DESC NULLS LAST, lower(brand), asin",
 }
 
