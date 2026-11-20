@@ -107,6 +107,16 @@ def tokens(s, drop):
     return out
 
 
+def _small_size(text: str) -> bool:
+    """A mini-sized listing that doesn't say 'mini' (15 ml, 0.5 oz, 4 g): ≤ 0.6 oz / 18 ml / 17 g."""
+    t = (text or "").lower()
+    for v, u in re.findall(r"(\d+(?:\.\d+)?)\s*(fl\.?\s*oz|oz|ounce|ml|g)\b", t):
+        v = float(v)
+        if (u in ("ml",) and v <= 18) or (u == "g" and v <= 17) or (u not in ("ml", "g") and v <= 0.6):
+            return True
+    return False
+
+
 def ptypes(text):
     bt = base_text(text).replace("dry shampoo", "dry-shampoo")
     t = {w.strip("-") for w in re.sub(r"[^a-z0-9-]+", " ", bt).split()}   # 'Concealer- 16 Deep' (checker round 3)
@@ -296,8 +306,11 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
                 if f == "set" and af[f] and not x["flags"]["set"] and pack_qty(title, a.get("size")) > 1 \
                         and not re.search(r"\b(duo|trio|quad|kit|gift|coffret|collection|vault)\b", base_text(title)):
                     continue
-                if f == "mini" and x["multi"]:
-                    continue   # Sephora sells several sizes; size_guess picks the price
+                if f == "mini" and x["multi"] and af["mini"]:
+                    continue   # a mini listing on a full-size page that sells several sizes: size_guess picks the price
+                if f == "mini" and x["flags"]["mini"] and not af["mini"] and not _small_size(title + " " + (a.get("size") or "")):
+                    # a Mini page never matches a listing whose size is the full size (Nick, Nov 20, 2026)
+                    s -= 0.40; why.append("Sephora page is a mini, the listing isn't"); continue
                 s -= pen; why.append(f"{f} mismatch")
         cap = None   # line-name check: the first words of the Sephora name must be in the Amazon title
         if x["lead"] and x["lead"] not in at:

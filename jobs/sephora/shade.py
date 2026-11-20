@@ -290,7 +290,7 @@ def _size_pick(k: dict, F: dict, skus: list) -> dict | None:
     if not amz:
         return None
     a = amz[0]
-    refill = bool(re.search(r"\brefill", (k.get("title") or "").lower()))
+    refill = bool(re.search(r"\brefill(?!able)", (k.get("title") or "").lower()))
     best = None
     for s in skus:
         lab = s.get("size") or s.get("value") or ""
@@ -298,7 +298,7 @@ def _size_pick(k: dict, F: dict, skus: list) -> dict | None:
         if not so:
             continue
         r = so[0] / a if a else 0
-        d = abs(1 - r) + (0 if bool(re.search(r"\brefill", lab.lower())) == refill else 0.05)
+        d = abs(1 - r) + (0 if bool(re.search(r"\brefill(?!able)", lab.lower())) == refill else 0.05)
         if len(so) > 1 and re.search(r"\d\s*x\s*\d|,", lab) and not re.search(r"\b(set|with|duo|gift|\+)\b|\d\s*x\s*\d", (k.get("title") or "").lower()):
             d += 0.2   # '1 x 3.4 oz , 1 x 0.34 oz' is a gift set, not the single bottle
         if best is None or d < best[0]:
@@ -532,8 +532,8 @@ def _resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None =
         if line_hit and len({key0(r[1]) for r in line_hit}) < len({key0(r[1]) for r in nm}):
             for r in line_hit:
                 r[0] = round(r[0] - 5, 2); r[2] += "; its name is the product line's"
-    refill_l = bool(re.search(r"\brefill", (k.get("title") or "").lower() + " " + F["own"]))
-    is_refill = {x["sku_id"]: bool(re.search(r"\brefill", (x.get("value") or "").lower())) for x in skus}
+    refill_l = bool(re.search(r"\brefill(?!able)", (k.get("title") or "").lower() + " " + F["own"]))
+    is_refill = {x["sku_id"]: bool(re.search(r"\brefill(?!able)", (x.get("value") or "").lower())) for x in skus}
     if any(is_refill.values()) and not all(is_refill.values()):
         for r in ranked:
             if r[0] > 0 and is_refill[r[1]] != refill_l:
