@@ -615,8 +615,15 @@ CAT_SORTS = {   # Lead DB catalog sort options (whitelisted ORDER BY clauses)
     "roi_asc": "roi_now ASC NULLS LAST, lower(brand), asin",
     "roi90_asc": "roi_avg90 ASC NULLS LAST, lower(brand), asin",
     "sold_asc": "monthly_sold ASC NULLS LAST, lower(brand), asin",
-    "checked": "marked_at DESC NULLS LAST, lower(brand), asin",
+    "checked": "GREATEST(marked_at, NULLIF(extra->'verified'->>'date', '')::date::timestamptz) DESC NULLS LAST, lower(brand), asin",
 }
+
+
+# "Last checked" = the later of a person's/Claude's OK-wrong mark and a research verification (extra.verified, Nov 20, 2026:
+# the verify step confirms right pairs without marking them, so they showed as never checked).
+VER_AT = "NULLIF(extra->'verified'->>'date', '')::date::timestamptz"
+CHK_AT = f"GREATEST(marked_at, {VER_AT})"
+CHK_BY = f"CASE WHEN marked_at IS NOT NULL AND ({VER_AT} IS NULL OR marked_at >= {VER_AT}) THEN marked_by WHEN {VER_AT} IS NOT NULL THEN 'Claude (research)' END"
 
 
 async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
@@ -657,17 +664,17 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
         w.append("COALESCE(on_sale, false)" if f["on_sale"] == "1" else "NOT COALESCE(on_sale, false)")
     by = f.get("checked_by")   # who last marked the pair OK / wrong / size (Nick, Nov 17, 2026: review Claude's recent work)
     if by == "claude":
-        w.append("marked_by ILIKE 'claude%%'")
+        w.append(f"({CHK_BY}) ILIKE 'claude%%'")
     elif by == "people":
-        w.append("marked_by IS NOT NULL AND marked_by NOT ILIKE 'claude%%'")
+        w.append(f"({CHK_BY}) IS NOT NULL AND ({CHK_BY}) NOT ILIKE 'claude%%'")
     elif by == "any":
-        w.append("marked_by IS NOT NULL")
+        w.append(f"({CHK_BY}) IS NOT NULL")
     if f.get("checked_days"):
         try:
             days = float(f["checked_days"])
         except ValueError:
             raise LedgerError("checked_days must be a number of days")
-        w.append("marked_at >= now() - make_interval(secs => %s)"); a.append(days * 86400)
+        w.append(f"{CHK_AT} >= now() - make_interval(secs => %s)"); a.append(days * 86400)
     for key, col in (("min_roi", "roi_now"), ("min_roi90", "roi_avg90")):
         if f.get(key):
             try:
@@ -683,7 +690,7 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
     limit = max(1, min(int(limit), 1000)); offset = max(0, int(offset))
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {CAT_COLS}, (SELECT count(*) FROM sephora_candidates s WHERE s.asin = c.asin AND s.product_id = c.product_id "
+            f"SELECT {CAT_COLS}, {CHK_AT} AS checked_at, {CHK_BY} AS checked_by, (SELECT count(*) FROM sephora_candidates s WHERE s.asin = c.asin AND s.product_id = c.product_id "
             f"AND s.status = 'new') AS open_candidates FROM sephora_catalog c {where} "
             f"ORDER BY {CAT_SORTS.get(f.get('sort') or '', CAT_SORTS[''])} LIMIT %s OFFSET %s", a + [limit, offset])
         rows = [jsonable(dict(r)) for r in await cur.fetchall()]

@@ -341,7 +341,7 @@
         <td class="num">${pct(r.roi_now)}</td>
         <td class="num">${num(r.monthly_sold)}</td>
         <td><div class="sl-tags" style="margin:0">${flags.map(([c, t]) => `<span class="sl-tag ${c}">${esc(t)}</span>`).join('')}</div></td>
-        <td style="white-space:nowrap;font-size:12.5px">${r.marked_at ? `${esc(new Date(r.marked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}<div class="muted" style="font-size:11px">${esc(r.marked_by || '')}</div>` : '<span class="muted">—</span>'}</td>
+        <td style="white-space:nowrap;font-size:12.5px">${r.checked_at ? `${esc(new Date(r.checked_at).toLocaleString('en-US', r.checked_by === 'Claude (research)' ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}<div class="muted" style="font-size:11px">${esc(r.checked_by || '')}${r.checked_by === 'Claude (research)' && r.match_ok == null ? ' · confirmed' : ''}</div>` : '<span class="muted">—</span>'}</td>
         <td class="mk">${mk(r, true, 'OK')} ${mk(r, false, 'Wrong', 'danger')}${r.match_ok === false && (r.wrong_tags?.length || r.wrong_note) ? `<div class="sl-why">${esc(WrongMatch.text(r.wrong_tags, r.wrong_note))}</div>` : ''}${r.match_ok === false && r.correct_asin ? `<div style="font-size:11.5px">Correct: <a href="${amzUrl(r.correct_asin)}" target="_blank" rel="noopener" class="mono">${esc(r.correct_asin)}</a></div>` : ''}</td>
 </tr>`;
     }).join('');
