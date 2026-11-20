@@ -126,7 +126,7 @@
     </div>
     <div class="sl-brands" id="brands" hidden></div>
     <div class="table-wrap"><table id="catTable">
-      <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th id="thSale" class="sortable" title="Sephora's own sale price on the product (not promo codes). Click to filter.">On sale ▾</th><th class="num">Buy Box</th><th id="thConf" class="sortable" title="How sure the matcher is. Click to filter.">Confidence ▾</th><th class="num sortable" id="thRoi" data-roi="roi" title="ROI at today's Sephora price and Buy Box. Click to sort or filter.">ROI now ▾</th><th class="num sortable" id="thRoi90" data-roi="roi90" title="ROI at today's Sephora price and the 90-day average Buy Box. Click to sort or filter.">ROI 90d ▾</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th>Match</th></tr></thead>
+      <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th id="thSale" class="sortable" title="Sephora's own sale price on the product (not promo codes). Click to filter.">On sale ▾</th><th class="num">Buy Box</th><th id="thConf" class="sortable" title="How sure the matcher is. Click to filter.">Confidence ▾</th><th class="num sortable" id="thRoi" data-roi="roi" title="ROI at today's Sephora price and Buy Box. Click to sort or filter.">ROI now ▾</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th>Match</th></tr></thead>
       <tbody id="catRows"></tbody></table>
       <div id="catEmpty" class="empty hidden">No catalog rows match.</div>
     </div>
@@ -284,7 +284,6 @@
     $('#thConf').textContent = S.conf ? `Confidence: ${S.conf} ▾` : 'Confidence ▾';
     const roiLabel = (name, k, min) => `${name}${min !== '' && min != null ? ` ≥${min}%` : ''}${S.sort === k ? ' ▼' : S.sort === k + '_asc' ? ' ▲' : ''} ▾`;
     $('#thRoi').textContent = roiLabel('ROI now', 'roi', S.minRoi);
-    $('#thRoi90').textContent = roiLabel('ROI 90d', 'roi90', S.minRoi90);
     $('#thSale').textContent = S.sale === '1' ? 'On sale: yes ▾' : S.sale === '0' ? 'On sale: no ▾' : 'On sale ▾';
     const ed = editor();
     const mk = (r, v, label, cls = '') => `<button class="btn small ${cls} ${r.match_ok === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="match" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${label}</button>`;
@@ -306,7 +305,6 @@
         <td class="num">${money(r.buybox)}</td>
         <td>${r.confidence ? `<span class="sl-tag ${r.confidence === 'low' ? 'warn' : r.confidence === 'high' ? 'good' : ''}">${esc(r.confidence)}</span>` : '<span class="muted">—</span>'}</td>
         <td class="num">${pct(r.roi_now)}</td>
-        <td class="num">${pct(r.roi_avg90)}</td>
         <td class="num">${num(r.monthly_sold)}</td>
         <td><div class="sl-tags" style="margin:0">${flags.map(([c, t]) => `<span class="sl-tag ${c}">${esc(t)}</span>`).join('')}</div></td>
         <td class="mk">${mk(r, true, 'OK')} ${mk(r, false, 'Wrong', 'danger')}${r.marked_by ? `<div class="muted" style="font-size:11px">${esc(r.marked_by)}${r.marked_at ? ' · ' + esc(new Date(r.marked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) : ''}</div>` : ''}${r.match_ok === false && (r.wrong_tags?.length || r.wrong_note) ? `<div class="sl-why">${esc(WrongMatch.text(r.wrong_tags, r.wrong_note))}</div>` : ''}${r.match_ok === false && r.correct_asin ? `<div style="font-size:11.5px">Correct: <a href="${amzUrl(r.correct_asin)}" target="_blank" rel="noopener" class="mono">${esc(r.correct_asin)}</a></div>` : ''}</td>
@@ -324,7 +322,6 @@
     if (S.conf) p.set('confidence', S.conf);
     if (S.sale) p.set('on_sale', S.sale);
     if (S.minRoi) p.set('min_roi', S.minRoi);
-    if (S.minRoi90) p.set('min_roi90', S.minRoi90);
     [['store', '#fStore'], ['sellable', '#fSell'], ['match', '#fMatch'], ['checked_by', '#fBy'], ['checked_days', '#fDays']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
@@ -484,7 +481,6 @@
     document.body.append(pop);
   }
   $('#thRoi').addEventListener('click', (e) => roiPick(e.currentTarget));
-  $('#thRoi90').addEventListener('click', (e) => roiPick(e.currentTarget));
   $('#thConf').addEventListener('click', (e) => colPick(e.currentTarget, [['', 'Any confidence'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']], 'conf'));
   $('#thSale').addEventListener('click', (e) => colPick(e.currentTarget, [['', 'On sale or not'], ['1', 'On sale at Sephora'], ['0', 'Not on sale']], 'sale'));
   $('#thBrand').addEventListener('click', () => document.querySelector('.brand-pop') ? document.querySelector('.brand-pop').remove() : openBrandPop());
