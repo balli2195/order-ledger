@@ -895,8 +895,8 @@ async def approve(actor: Actor, cid: str, size: str | None = None) -> dict:
 async def new_upload_token(purpose: str, hours: float) -> dict:
     """A short-lived token that only allows posting SKU lists (store_skus), for scripts running inside a store's page."""
     import secrets
-    if purpose != "store_skus":
-        raise LedgerError("purpose must be store_skus")
+    if purpose not in ("store_skus", "amazon_pages"):
+        raise LedgerError("purpose must be store_skus or amazon_pages")
     hours = max(0.25, min(float(hours or 8), 24))
     tok = secrets.token_urlsafe(24)
     async with db.pool.connection() as conn:
@@ -966,6 +966,44 @@ async def upload_store_pages(token: str | None, body: dict) -> dict:
                                    "ON CONFLICT (store, product_id) DO UPDATE SET data=EXCLUDED.data, read_at=now()", (_pid(pid), json.dumps(d)))
                 n += 1
     return {"saved": n}
+
+
+async def upload_amazon_pages(token: str | None, body: dict) -> dict:
+    """{pages: {ASIN: {title, selected, price, bullets, details}}} read from Amazon product pages in Nick's Chrome for the
+    verify step (Nov 20, 2026: the cloud's Amazon fetches were mostly blocked). Token purpose 'amazon_pages'; only writes
+    store_pages rows with store 'Amazon'."""
+    pages = (body or {}).get("pages")
+    if not token or not isinstance(pages, dict) or not pages or len(pages) > 500:
+        raise LedgerError("Need an upload token and pages (up to 500)")
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT 1 FROM upload_tokens WHERE token=%s AND purpose='amazon_pages' AND expires_at > now()", (token,))
+        if not await cur.fetchone():
+            raise LedgerError("Upload token is invalid or expired")
+        n = 0
+        async with conn.transaction():
+            for asin, v in pages.items():
+                a = str(asin or "").strip().upper()
+                if not re.fullmatch(r"[A-Z0-9]{10}", a) or not isinstance(v, dict):
+                    continue
+                det = v.get("details") if isinstance(v.get("details"), dict) else {}
+                d = {"title": _txt(v.get("title"), 300), "price": _txt(v.get("price"), 20), "blocked": bool(v.get("blocked")),
+                     "selected": [_txt(x, 120) for x in (v.get("selected") or [])[:6] if x],
+                     "bullets": [_txt(x, 300) for x in (v.get("bullets") or [])[:8] if x],
+                     "details": {_txt(k, 60): _txt(x, 200) for k, x in list(det.items())[:40] if k and x}}
+                await conn.execute("INSERT INTO store_pages (store, product_id, data, read_at) VALUES ('Amazon', %s, %s, now()) "
+                                   "ON CONFLICT (store, product_id) DO UPDATE SET data=EXCLUDED.data, read_at=now()", (a, json.dumps(d)))
+                n += 1
+    return {"saved": n}
+
+
+async def amazon_pages(asins: list | None) -> dict:
+    async with db.pool.connection() as conn:
+        if asins:
+            cur = await conn.execute("SELECT product_id, data, read_at FROM store_pages WHERE store='Amazon' AND product_id = ANY(%s)",
+                                     ([str(a).strip().upper() for a in asins],))
+        else:
+            cur = await conn.execute("SELECT product_id, data, read_at FROM store_pages WHERE store='Amazon'")
+        return {"rows": [{"asin": r["product_id"], "data": r["data"], "read_at": r["read_at"].isoformat()} for r in await cur.fetchall()]}
 
 
 async def store_pages(product_ids: list | None) -> dict:

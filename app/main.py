@@ -80,7 +80,7 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
-_CORS_PATHS = ("/api/store-skus/upload", "/api/store-skus/todo", "/api/store-pages/upload", "/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
+_CORS_PATHS = ("/api/amazon-pages/upload", "/api/store-skus/upload", "/api/store-skus/todo", "/api/store-pages/upload", "/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
                "/api/engine/giftcards/to-check", "/api/engine/giftcards/check-results", "/api/engine/giftcards/order-dates")
 # The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
 _GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
@@ -93,7 +93,7 @@ _STORE_ORIGINS = {"https://www.macys.com", "https://macys.com"}
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    allowed = {"/api/store-skus/upload": {"https://www.sephora.com"}, "/api/store-skus/todo": {"https://www.sephora.com"}, "/api/store-pages/upload": {"https://www.sephora.com"}, "/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
+    allowed = {"/api/amazon-pages/upload": {"https://www.amazon.com"}, "/api/store-skus/upload": {"https://www.sephora.com"}, "/api/store-skus/todo": {"https://www.sephora.com"}, "/api/store-pages/upload": {"https://www.sephora.com"}, "/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
                "/api/engine/giftcards/to-check": _STORE_ORIGINS, "/api/engine/giftcards/check-results": _STORE_ORIGINS}.get(request.url.path, _IL_ORIGINS)
     if request.url.path in _CORS_PATHS and origin in allowed:
         h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -1600,6 +1600,21 @@ async def store_pages_upload(request: Request, body: dict = Body(...)):
         return await sephora.upload_store_pages(request.headers.get("x-upload-token"), body)
     except LedgerError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/amazon-pages/upload")
+async def amazon_pages_upload(request: Request, body: dict = Body(...)):
+    """Amazon product-page details (title, selected variation, price, bullets, Product details) read in Nick's Chrome."""
+    try:
+        return await sephora.upload_amazon_pages(request.headers.get("x-upload-token"), body)
+    except LedgerError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/engine/amazon-pages")
+async def engine_amazon_pages(request: Request, asins: str | None = None):
+    auth.require_engine_key(request)
+    return await sephora.amazon_pages([a for a in (asins or "").split(",") if a] or None)
 
 
 @app.get("/api/engine/store-pages")
