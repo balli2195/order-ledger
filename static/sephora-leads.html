@@ -52,6 +52,12 @@
   .sl-seg button { border: 0; background: transparent; padding: 6px 14px; font-size: 13.5px; cursor: pointer; color: var(--ink); }
   .sl-seg button.on { background: var(--accent); color: var(--accent-ink); }
   .sl-filters select { width: auto; padding: 5px 7px; }
+  .brand-pop { position: absolute; z-index: 45; width: 300px; max-height: 380px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(20,16,10,.18); overflow: hidden; }
+  .brand-pop input { margin: 8px; width: calc(100% - 16px); }
+  .brand-pop ul { list-style: none; margin: 0; padding: 0 0 6px; overflow: auto; }
+  .brand-pop li { padding: 6px 12px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; }
+  .brand-pop li:hover, .brand-pop li.on { background: var(--accent-soft); color: var(--accent); }
+  .brand-pop li .n { color: var(--muted); font-variant-numeric: tabular-nums; }
   .sl-brands { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; }
   .sl-brands[hidden], #fStore[hidden], #qSale[hidden] { display: none; }
   .sl-brands button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 1px 9px; font-size: 12px; cursor: pointer; color: var(--ink); }
@@ -113,7 +119,6 @@
   <section id="catalogView" hidden>
     <div class="toolbar sl-filters" style="margin-top:0">
       <select id="fStore" hidden><option value="">All stores</option></select>
-      <select id="fBrand" title="Brand"><option value="">All brands</option></select>
       <select id="fConf"><option value="">Any confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
       <select id="fSell" title="Listings you're restricted from selling are hidden unless you pick Restricted or Any"><option value="">Sellable (hides restricted)</option><option value="open">Open</option><option value="approval_required">Approval required</option><option value="restricted">Restricted</option><option value="any">Any, incl. restricted</option></select>
       <select id="fSize"><option value="">Any size</option><option value="open">Needs size, not set</option><option value="1">Needs size</option></select>
@@ -126,7 +131,7 @@
     </div>
     <div class="sl-brands" id="brands" hidden></div>
     <div class="table-wrap"><table id="catTable">
-      <thead><tr><th>Brand</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th class="num">Buy Box</th><th class="num sortable" data-sort="roi" title="Click to sort: high first, then low first, then back to brand">ROI now</th><th class="num sortable" data-sort="roi90" title="Click to sort: high first, then low first, then back to brand">ROI 90d</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th>Match</th><th>Size</th></tr></thead>
+      <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th class="num">Buy Box</th><th class="num sortable" data-sort="roi" title="Click to sort: high first, then low first, then back to brand">ROI now</th><th class="num sortable" data-sort="roi90" title="Click to sort: high first, then low first, then back to brand">ROI 90d</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th>Match</th><th>Size</th></tr></thead>
       <tbody id="catRows"></tbody></table>
       <div id="catEmpty" class="empty hidden">No catalog rows match.</div>
     </div>
@@ -279,13 +284,8 @@
   // ---------------------------------------------------------------- catalog
   function renderCatalog() {
     const rows = S.cat.rows;
-    // brand filter: a dropdown, A–Z with pair counts (Nick, Nov 17, 2026: replaces the row of brand chips)
-    const fb = $('#fBrand');
-    const opts = [...S.cat.brands].filter((b) => b.brand).sort((x, y) => String(x.brand).localeCompare(String(y.brand), undefined, { sensitivity: 'base' }));
-    fb.innerHTML = '<option value="">All brands</option>' + opts.map((b) =>
-      `<option value="${esc(b.brand)}" title="${num(b.unchecked)} not checked · ${num(b.ok)} OK · ${num(b.wrong)} on the Mismatches page">${esc(b.brand)} (${num(b.n)}${b.wrong ? ` · ${num(b.wrong)} mismatched` : ''})</option>`).join('');
-    const cur = opts.find((b) => S.brand && b.brand.toLowerCase() === S.brand.toLowerCase());
-    fb.value = cur ? cur.brand : '';
+    // brand filter: the Brand column title opens a searchable list (Nick, Nov 20 2026: replaces the brand dropdown)
+    $('#thBrand').textContent = S.brand ? `Brand: ${S.brand} ▾` : 'Brand ▾';
     const ed = editor();
     const mk = (r, v, label, cls = '') => `<button class="btn small ${cls} ${r.match_ok === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="match" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${label}</button>`;
     const sz = (r, v) => `<button class="btn small ${r.size_confirmed === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="size" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${v === 'lo' ? 'Mini' : 'Full'}</button>`;
@@ -420,14 +420,38 @@
       renderCatalog(); loadOverview().catch(() => {}); } catch (err) { fail(err); }
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
-  $('#fBrand').addEventListener('change', (e) => { S.brand = e.target.value; loadCatalog().catch(fail); });
+  function openBrandPop() {
+    document.querySelector('.brand-pop')?.remove();
+    const th = $('#thBrand'), rc = th.getBoundingClientRect();
+    const opts = [...(S.cat.brands || [])].filter((b) => b.brand).sort((x, y) => String(x.brand).localeCompare(String(y.brand), undefined, { sensitivity: 'base' }));
+    const pop = document.createElement('div'); pop.className = 'brand-pop';
+    pop.style.left = (rc.left + window.scrollX) + 'px'; pop.style.top = (rc.bottom + window.scrollY + 4) + 'px';
+    pop.innerHTML = '<input type="search" placeholder="Search brands…" autocomplete="off"><ul></ul>';
+    const list = pop.querySelector('ul'), inp = pop.querySelector('input');
+    const draw = () => {
+      const q = inp.value.trim().toLowerCase();
+      const hit = opts.filter((b) => !q || b.brand.toLowerCase().includes(q));
+      list.innerHTML = (q ? '' : `<li data-b="" class="${S.brand ? '' : 'on'}">All brands</li>`) + hit.map((b) =>
+        `<li data-b="${esc(b.brand)}" class="${S.brand && S.brand.toLowerCase() === b.brand.toLowerCase() ? 'on' : ''}" title="${num(b.unchecked)} not checked · ${num(b.ok)} OK · ${num(b.wrong)} mismatched"><span>${esc(b.brand)}</span><span class="n">${num(b.n)}</span></li>`).join('')
+        || '<li class="muted" style="cursor:default">No brand matches</li>';
+    };
+    const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', onKey); };
+    const pick = (b) => { S.brand = b; close(); loadCatalog().catch(fail); };
+    const outside = (e) => { if (!pop.contains(e.target) && e.target !== th) close(); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter') { const f = list.querySelector('li[data-b]:not([data-b=""])') || list.querySelector('li[data-b]'); if (f && inp.value.trim()) pick(f.dataset.b); } };
+    list.addEventListener('click', (e) => { const li = e.target.closest('li[data-b]'); if (li) pick(li.dataset.b); });
+    inp.addEventListener('input', draw);
+    document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', onKey);
+    document.body.append(pop); draw(); inp.focus();
+  }
+  $('#thBrand').addEventListener('click', () => document.querySelector('.brand-pop') ? document.querySelector('.brand-pop').remove() : openBrandPop());
   ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fMinRoi', '#fMinRoi90', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   // Sort by clicking a column title (Nick, Nov 20 2026; replaces the Sort dropdown): high first, then low first, then brand.
-  const sortMarks = () => $$('#catTable th.sortable').forEach((th) => {
+  const sortMarks = () => $$('#catTable th[data-sort]').forEach((th) => {
     const k = th.dataset.sort; th.dataset.label = th.dataset.label || th.textContent;
     th.textContent = th.dataset.label + (S.sort === k ? ' ▼' : S.sort === k + '_asc' ? ' ▲' : '');
   });
-  $$('#catTable th.sortable').forEach((th) => th.addEventListener('click', () => {
+  $$('#catTable th[data-sort]').forEach((th) => th.addEventListener('click', () => {
     const k = th.dataset.sort;
     S.sort = S.sort === k ? k + '_asc' : S.sort === k + '_asc' ? '' : k;
     sortMarks(); loadCatalog().catch(fail);
