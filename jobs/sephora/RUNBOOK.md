@@ -208,3 +208,17 @@ Five rounds of blind checks: fresh subagents read every Amazon photo and the liv
   - After-shave is not the fragrance.
   - "If a product doesn't match it doesn't match; if you can find the right pair, match it." A pair marked wrong only for size / shade / pack had the right product, so `rematch.py` only re-matches it to the same product on another Sephora page (mini page, another size), never a sibling scent or line. On Nov 20 this blocked 54 sibling proposals (Allure Homme Sport → Allure, Chance → Chance Eau Fraîche, …).
   - A face cream is never a serum. "Regular Size" with a size means the full size. "36-Hour" / "48hr" are marketing words; waterproof on one side only counts against a match. A duo / 2-pack of one Sephora single is a bundle of 2. "Refillable" is the jar, not a refill. A Mini page never matches a full-size listing.
+
+## 10. Verify step: settle conflicting matches with outside evidence (Nov 20, 2026)
+
+The principles are in `MATCHING_PRINCIPLES.md` (project doc `claude/sephora-catalog/MATCHING_PRINCIPLES.md`). When a pair's evidence conflicts, the scripts don't decide it by score; a research pass does, the way Nick does (web search, brand page, photos, model number), and it records its sources.
+1. `python3 -I verify_queue.py --limit 40` lists the conflicts: sibling named in the title, concentration, form / type, line word missing, mini page vs full-size listing, set vs single, low close calls, shade guesses, unsized multi-size pairs. Only undecided, active, live, unverified pairs are listed. Near-profit pairs come first, then each kind in turn. Output: Hub doc `sephora_jobs/verify_queue`.
+2. Research pass: a Claude session follows `verify_prompt.md` for the queued cases and writes `.data/verify_results.json`. It never loads sephora.com; the Sephora side is the SKU lists (`/api/engine/store-skus`) and the brand listings.
+3. `python3 -I verify_apply.py` applies only high-confidence results with a source. Everything is logged in `.data/verify_undo.json`.
+   - **same:** sets `extra.verified` and the store size.
+   - **other:** marks the pair wrong and adds the right pair.
+   - **not sold:** marks the pair wrong.
+   - **Otherwise:** the case goes to Nick (`sephora_jobs/verify_for_nick`).
+
+   Pairs Nick decided are never touched. Every result is added to `sephora_jobs/verify_labels`, the test set every matcher change must not get worse on.
+4. Each result's `lesson` line is read before changing the matcher. A change is made only when it follows a principle and passes the tests: Nick's leads, his OK and wrong marks, the checker labels, and the verify labels.
