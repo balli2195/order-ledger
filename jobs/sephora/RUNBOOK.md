@@ -206,3 +206,5 @@ Five rounds of blind checks: fresh subagents read every Amazon photo and the liv
   - A set of Sephora singles is a lead at the real cost, one of each (`pack_qty`), with the note "Bundle: buy one each of …" (Fresh Lip Drip Set).
   - Press-on nails: the design must match; a design Sephora doesn't sell is no match.
   - After-shave is not the fragrance.
+  - "If a product doesn't match it doesn't match; if you can find the right pair, match it." A pair marked wrong only for size / shade / pack had the right product, so `rematch.py` only re-matches it to the same product on another Sephora page (mini page, another size), never a sibling scent or line. On Nov 20 this blocked 54 sibling proposals (Allure Homme Sport → Allure, Chance → Chance Eau Fraîche, …).
+  - A face cream is never a serum. "Regular Size" with a size means the full size. "36-Hour" / "48hr" are marketing words; waterproof on one side only counts against a match. A duo / 2-pack of one Sephora single is a bundle of 2. "Refillable" is the jar, not a refill. A Mini page never matches a full-size listing.

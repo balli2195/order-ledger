@@ -102,6 +102,15 @@ def rematch_wrong(cat: list, cfg: dict, brand_of, listing: dict, log=print) -> t
             # carry the same words: every word of the Sephora name is in the Amazon title, and every Amazon title word that
             # Sephora uses in this brand's names is in the Sephora name (shade, spray / for men words and, when the Amazon
             # title names no concentration, eau de toilette / parfum don't count). Anything else is only a suggestion.
+            # Nick, Nov 20, 2026: "if a product doesn't match it doesn't match; if you can find the right pair, match it".
+            # A pair marked wrong only for size / shade / pack had the right product: another Sephora page counts only when
+            # it is that same product (its mini page, a page with another size), never a sibling scent or line.
+            tags = set().union(*[set(x.get("wrong_tags") or []) for x in by_asin[m["asin"]]])
+            if tags and tags <= {"size", "shade", "multipack", "bonus"}:
+                core = lambda n: " ".join(w_ for w_ in M.base_text(n).split()
+                                          if w_ not in drop and w_ not in {"mini", "travel", "size", "spray", "refill", "deluxe"})
+                if not any(core(m["sephora_name"]) == core(x.get("sephora_name") or "") for x in by_asin[m["asin"]]):
+                    continue
             why = _word_gap(M, w, m["sephora_name"], drop, vocab)
             if why and m["confidence"] != "low":
                 m["confidence"] = "low"
