@@ -32,7 +32,8 @@ def seph_product(pid: str):
 
 
 def label(x: dict) -> str:
-    return " · ".join(v for v in [(x.get("value") or "").strip(), (x.get("size") or "").strip()] if v)
+    v, z = (x.get("value") or "").strip(), (x.get("size") or "").strip()
+    return v if v == z or not z else " · ".join(p for p in (v, z) if p)
 
 
 def main():
