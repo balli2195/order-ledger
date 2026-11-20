@@ -22,6 +22,7 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 **Versions.** An older or newer version of the same product is a match: renamed, repackaged or reformulated (Easy Bake and Snatch → Easy Bake Airbrush Matte, SurrealSkin → SurrealSkin Luminous Hydrating). The listing's shade has to exist in the current line.
 - When a line renames its shades, map them by name and description ("Antibes, soft peach" = Ginger, soft peach). If there's no exact counterpart, the nearest name is acceptable (Blondie → Kunafa Blondie).
 - When a line renumbers its shades, the old numbers don't carry over (MUFE Artist Rouge C206).
+- A reformulation that made the product a little smaller is still a match at today's size: MAC Studio Fix Powder Plus, old 15 g compact = today's 12 g. The "smaller Sephora size isn't acceptable" rule is for sizes Sephora sells alongside each other, not for a version change.
 
 **How many differences.** One difference (finish, packaging or name) can still be the same product. Several together make it a different product. Waterproof vs not, glass bottle vs tube, and "blur balm" vs "foundation" all at once = different.
 

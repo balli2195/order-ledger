@@ -45,6 +45,8 @@ The Sephora side: the product's SKU list (sizes, shades, prices) from `GET /api/
 - **Sephora products with no SKUs in the data** haven't been read yet (or were discontinued). Don't treat that as "not sold". Settle the size from other sources if you can, else medium confidence.
 - A page that sells only a travel size counts as a mini page, whatever its name.
 - Write the results where the run tells you to (default `.data/verify_results.json`). Running `verify_apply.py` is the session's job, not yours, if you were given only the cases file.
+- A shade judged only by how a photo looks (no printed label, selector value or model number) is medium at most: Nick corrected two such calls (LYS Worthy, MERIT Light Brown). The SKU names, the Amazon selector and printed packaging decide shades.
+- The Sephora SKU lists were read on Nov 17, 2026 and can be stale (shades come and go). A bundle that depends on several shades needs them confirmed; otherwise medium.
 - `high` confidence needs a source that settles it (a model number match, printed packaging, or the brand's page). Without one, say medium and explain what's missing.
 - Never invent a URL; cite only pages you actually loaded.
 
