@@ -36,7 +36,8 @@ buyer_notes, feedback, buy_qty (planned), qty_ordered (actually bought), lead_sc
 expected_spend = cost*buy_qty, actual_spend = cost*qty_ordered, left_to_buy = buy_qty-qty_ordered (= buy_qty while nothing is ordered).
 The VA commission (bonus_rate, 1.2%) is earned on the actual spend of leads the bonus sourcer sourced AND added himself;
 leads someone else added don't count even if he sourced that product before (see get_lead_choices; Commissions page).
-Stores and brands have a can_source flag. While leads mode is "mirror", leads are copied from Airtable every minute
+Stores have a can_source flag (brands don't: which brands Nick can sell comes from Amazon's restriction check,
+sephora_catalog.sellable, refreshed monthly). While leads mode is "mirror", leads are copied from Airtable every minute
 (this site never writes to Airtable); leads added or edited here stay here and edited fields aren't overwritten by
 the copy. After the owner's cutover ("home") the copy stops.
 
@@ -252,7 +253,7 @@ async def run_sql(sql: Annotated[str, Field(description="One read-only SELECT/WI
     brands text[], store_link, cost, promo_code, va_notes, feedback, buy_qty, qty_ordered, buyer_notes,
     lead_score_band, lead_score_roi, lead_score_notes, claude_buy_qty, claude_buy_note, replen, extra jsonb,
     expected_spend, actual_spend, left_to_buy, created_at, updated_at), stores(name, can_source),
-    brands(name, can_source), audit_log(at, user_id, source, action, entity, entity_id, order_id, before, after),
+    brands(name), audit_log(at, user_id, source, action, entity, entity_id, order_id, before, after),
     users(id, email, name, role), settings(key, value), sephora_catalog(asin, product_id, brand, sephora_name, sephora_url,
     price_lo, price_hi, sale_price, needs_size, size_confirmed, confidence, sellable, buybox, roi_now, match_ok, active, ...),
     sephora_candidates(id, asin, product_id, found_on, reason, cost, roi_now, status, lead_id, decided_at),
@@ -380,15 +381,15 @@ async def list_stores_or_brands(
     query: str | None = None,
     limit: int = 100,
 ) -> dict:
-    """Stores or brands with can_source flag, lead count, total actual spend, units and days since last lead."""
+    """Stores (with their can_source flag) or brands, with lead count, total actual spend, units and days since last lead."""
     await _actor(tab=("stores", "leads"))
     rows = await L.store_stats(kind, query)
     return {"total": len(rows), "rows": rows[: max(1, min(limit, 1000))]}
 
 
 @mcp.tool()
-async def set_can_source(kind: Literal["stores", "brands"], name: str, can_source: bool) -> dict:
-    """Mark a store or brand as OK (or not) to source from (after cutover)."""
+async def set_can_source(kind: Literal["stores"], name: str, can_source: bool) -> dict:
+    """Mark a store as OK (or not) to source from. Brands have no such flag: Amazon's restriction check decides."""
     actor = await _actor("editor", tab="stores")
     await L.set_can_source(actor, kind, name, can_source)
     return {"kind": kind, "name": name, "can_source": can_source}

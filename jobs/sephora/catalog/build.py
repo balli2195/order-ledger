@@ -183,7 +183,7 @@ def fill_family_fees(slug):
 
 def main():
     cfg = json.load(open(os.path.join(os.path.dirname(HERE), "brands.json")))
-    excluded = {b.lower() for b in cfg["exclude_brands"]}
+    excluded = {b.lower() for b in cfg.get("exclude_brands", [])}   # brands.json no longer has the list (Nov 20, 2026)
     rp = os.path.join(CAT, "raw", "sp", "restrictions.json")
     restr = json.load(open(rp)) if os.path.exists(rp) else {}
     op = os.path.join(CAT, "raw", "sp", "offers.json")

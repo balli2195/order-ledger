@@ -87,6 +87,10 @@ async def _sync_named(conn, client, table: str, name_fld: str, can_fld: str, kin
         if not name:
             continue
         idmap[r["id"]] = name
+        if kind == "brands":   # brands have no can_source since Nov 20, 2026 (migration 69)
+            await conn.execute("INSERT INTO brands (name, airtable_id) VALUES (%s,%s) "
+                               "ON CONFLICT (name) DO UPDATE SET airtable_id=EXCLUDED.airtable_id", (name, r["id"]))
+            continue
         await conn.execute(
             f"INSERT INTO {kind} (name, can_source, airtable_id) VALUES (%s,%s,%s) "
             f"ON CONFLICT (name) DO UPDATE SET can_source=EXCLUDED.can_source, airtable_id=EXCLUDED.airtable_id, "

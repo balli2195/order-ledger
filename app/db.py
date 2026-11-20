@@ -1092,6 +1092,11 @@ MIGRATIONS: list[str] = [
       PRIMARY KEY (store, product_id)
     );
     """,
+    # 69 (Nick, Nov 20 2026): brands lose the Airtable "can source" flag. Which brands he can sell comes only from
+    # Amazon's restriction check (sephora_catalog.sellable, refreshed monthly; Hub doc sephora_jobs/brand_restrictions).
+    """
+    ALTER TABLE brands DROP COLUMN IF EXISTS can_source;
+    """,
 ]
 
 

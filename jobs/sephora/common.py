@@ -56,6 +56,10 @@ def load_brands() -> dict:
     """brands.json plus brands the jobs added since (state 'brands_added': auto-added by the weekly brand screen or found
     in Nick's leads), so a fresh session that can't push brands.json still covers them."""
     cfg = json.load(open(BRANDS_JSON))
+    # Brand skip list = brands Amazon's monthly restriction check found restricted (brand_restrictions.py), never a
+    # hand-kept list (Nick, Nov 20 2026: the Hub's old brand "can source" switches conflicted with that check).
+    br = (state_get("brand_restrictions", {}) or {}).get("brands", {})
+    cfg["exclude_brands"] = sorted(b for b, x in br.items() if x.get("status") == "restricted")
     have = {b["name"].lower() for b in cfg["brands"]}
     for b in (state_get("brands_added", {}) or {}).values():
         if b["name"].lower() not in have:

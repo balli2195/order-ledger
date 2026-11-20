@@ -12,7 +12,7 @@
  3. Nick's new Sephora leads (last 14 days) -> seed_from_leads.py (human-verified pairs; may add brands).
  4. Brands with no matcher rows in the Hub yet (added by hand, auto-added or lead-found): full catalog build (Keepa
     brand finder, catalog/match.py, sp_restrictions.py, sp_offers.py, build.py) sized to the remaining Keepa budget.
- 4b. New-brand screen (<= --screen-tokens Keepa tokens): unseen Sephora brands, feed brands first. (a) can_source=false
+ 4b. New-brand screen (<= --screen-tokens Keepa tokens): unseen Sephora brands, feed brands first. (a) restricted in the monthly restriction check
     -> screened out; (b) Keepa finder: any of the top 5 ASINs with >= 10 sold/mo or rank <= 150k; (c) SP-API listing
     restrictions on those 5. Pass all -> auto-added (state 'brands_added', status 'auto-added <date>', built next run);
     thin demand / approval required -> 'for Nick'; else 'screened out' with the reason. Re-screened after 90 days.
@@ -100,7 +100,7 @@ def screen_brand(name, excl, day):
     import keepa_pull as kp
     import sp_restrictions as spr
     if norm(name) in excl:
-        return "screened_out", "can't source (Hub brands.can_source=false)", {}
+        return "screened_out", "restricted on Amazon (monthly restriction check)", {}
     variants = list(dict.fromkeys([name, re.split(r"\s+by\s+", name, flags=re.I)[0].strip(), name.title(), name.upper()]))
     sel = {"brand": variants, "rootCategory": [3760911], "current_COUNT_NEW_gte": 1, "sort": [["current_SALES", "asc"]],
            "perPage": 50, "page": 0}

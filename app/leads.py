@@ -363,7 +363,7 @@ async def lead_choices() -> dict:
         out = {}
         cur = await conn.execute("SELECT name, can_source FROM stores ORDER BY name")
         out["stores"] = [jsonable(dict(r)) for r in await cur.fetchall()]
-        cur = await conn.execute("SELECT name, can_source FROM brands ORDER BY name")
+        cur = await conn.execute("SELECT name FROM brands ORDER BY name")
         out["brands"] = [jsonable(dict(r)) for r in await cur.fetchall()]
     out["sourcers"] = await get_setting("sourcers", ["Ariane", "Nick"])
     out["mode"] = await mode()
@@ -382,7 +382,7 @@ async def store_stats(kind: str = "stores", q: str | None = None) -> list[dict]:
         where = "WHERE t.name ILIKE %s"; args.append(f"%{q}%")
     async with db.pool.connection() as conn:
         cur = await conn.execute(
-            f"""SELECT t.name, t.can_source, COALESCE(s.leads,0) leads, COALESCE(s.spend,0) spend,
+            f"""SELECT t.name, {'t.can_source, ' if kind == 'stores' else ''}COALESCE(s.leads,0) leads, COALESCE(s.spend,0) spend,
                        COALESCE(s.units,0) units, s.last_date,
                        CASE WHEN s.last_date IS NULL THEN NULL ELSE (current_date - s.last_date) END AS days_since
                 FROM {kind} t
@@ -409,12 +409,12 @@ async def _notify(conn, op: str, ids: Iterable, by: str | None, src: str) -> Non
 
 async def _ensure_names(conn, kind: str, names: list[str]) -> list[str]:
     """Add store / brand names that don't exist yet and return the names to store on the lead. A name that exists in
-    another capitalisation ('DIOR' from the Sephora catalog vs Nick's 'Dior') reuses the existing one, so the lead keeps
-    Nick's can_source setting (Nov 20, 2026: 'DIOR' and 'SEPHORA COLLECTION' had been added as new can't-source brands)."""
+    another capitalisation ('DIOR' from the Sephora catalog vs Nick's 'Dior') reuses the existing one (Nov 20, 2026)."""
     out = []
+    pref = "can_source DESC, " if kind == "stores" else ""
     for n in names:
         cur = await conn.execute(f"SELECT name FROM {kind} WHERE lower(name)=lower(%s) ORDER BY (name=%s) DESC, "
-                                 f"can_source DESC, created_at LIMIT 1", (n, n))
+                                 f"{pref}created_at LIMIT 1", (n, n))
         hit = await cur.fetchone()
         if hit:
             out.append(hit["name"])
@@ -536,8 +536,9 @@ async def delete_leads(actor: Actor, ids: list[str]) -> int:
 
 async def set_can_source(actor: Actor, kind: str, name: str, value: bool) -> None:
     await require_home()
-    if kind not in ("stores", "brands"):
-        raise LedgerError("kind must be stores or brands")
+    if kind != "stores":
+        # Nick, Nov 20 2026: brands have no can-source flag; Amazon's restriction check decides which brands he can sell.
+        raise LedgerError("Only stores have a can-source setting. Brand restrictions come from Amazon's restriction check.")
     async with db.pool.connection() as conn:
         async with conn.transaction():
             cur = await conn.execute(

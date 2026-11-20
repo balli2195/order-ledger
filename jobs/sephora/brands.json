@@ -5,23 +5,6 @@
   "note": "Nick (Nov 2026): Sephora sale lead costs are 25% below the price shown on Sephora. event_exclude_brands: brands the Savings Event fine print excludes (the terms are in a modal the API doesn't return; fill in when known).",
   "event_exclude_brands": []
  },
- "exclude_brands": [
-  "Aramore",
-  "BIOptimizers",
-  "Ciele",
-  "Dieux",
-  "Glo Skin",
-  "Kavu",
-  "Kosas",
-  "Mango People",
-  "Messy by Alli Webb",
-  "Najeau",
-  "PYUNKANG YUL",
-  "Soft Services",
-  "Tarte",
-  "Vacation",
-  "Verso"
- ],
  "brands": [
   {
    "name": "rhode",

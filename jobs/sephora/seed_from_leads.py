@@ -10,7 +10,8 @@
    so the weekly job and the sale watcher cover them; --write-brands-json also writes them into brands.json);
    productIds still unknown get one keyword search on their product-link words. Unknown after that = not on Sephora
    now: priced at the last lead cost, extra.listing_seen=false (the daily job skips those).
-3. Brands Nick can't source (brands.json exclude_brands = Hub brands.can_source=false) are skipped and logged.
+3. Brands Amazon's monthly restriction check found restricted (load_brands exclude_brands, from brand_restrictions.py)
+   are skipped and logged.
 4. Pairs not yet in the Hub get a row: confidence high, match_reason 'Nick lead <date>'. Every lead pair is active
    (Nov 19, 2026; before, extra lead pairs for an ASIN were stored inactive and could hide the right match). When the
    lead's product is live on Sephora, the matcher's other pairs for that ASIN are deactivated (never pairs Nick marked

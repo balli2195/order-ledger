@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stores &amp; brands · Myrddin Hub</title>
+<title>Stores · Myrddin Hub</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -28,7 +28,6 @@
   <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads" class="on">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/lead-db" data-tab="sephora_leads">Lead DB</a><a href="/repricer" data-tab="repricer">Repricer</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
 
   <div class="toolbar">
-    <div class="chips" id="kind"><button class="chip on" data-kind="stores">Stores</button><button class="chip" data-kind="brands">Brands</button></div>
     <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Search names…" autocomplete="off"></div>
     <div class="chips" id="cs"><button class="chip on" data-cs="">All</button><button class="chip" data-cs="1">Can source</button><button class="chip" data-cs="0">Can't</button></div>
@@ -77,17 +76,16 @@
     const g = e.target.closest('[data-goto]');
     if (g) { e.preventDefault(); sessionStorage.setItem('leadFilter', JSON.stringify({ [S.kind === 'stores' ? 'store' : 'brand']: g.dataset.goto })); location.href = '/leads'; }
   });
-  // Stores/brands, the Can source filter and the search are remembered per browser (Nick, Nov 1 2026).
+  // The Can source filter and the search are remembered per browser (Nick, Nov 1 2026). The Brands tab was removed
+  // on Nov 20, 2026 (Nick): which brands he can sell comes only from Amazon's restriction check.
   const saveFilters = () => { try { localStorage.setItem('storeFilters', JSON.stringify({ kind: S.kind, cs: S.cs, q: $('#q').value })); } catch { /* storage blocked */ } };
   try {
     const v = JSON.parse(localStorage.getItem('storeFilters') || 'null');
     if (v) {
-      if (['stores', 'brands'].includes(v.kind)) { S.kind = v.kind; $$('#kind .chip').forEach((x) => x.classList.toggle('on', x.dataset.kind === v.kind)); }
       if (['', '0', '1'].includes(v.cs)) { S.cs = v.cs; $$('#cs .chip').forEach((x) => x.classList.toggle('on', x.dataset.cs === v.cs)); }
       if (typeof v.q === 'string') $('#q').value = v.q;
     }
   } catch { /* storage blocked or old value */ }
-  $$('#kind .chip').forEach((c) => c.addEventListener('click', () => { $$('#kind .chip').forEach((x) => x.classList.toggle('on', x === c)); S.kind = c.dataset.kind; saveFilters(); load().catch(fail); }));
   $$('#cs .chip').forEach((c) => c.addEventListener('click', () => { $$('#cs .chip').forEach((x) => x.classList.toggle('on', x === c)); S.cs = c.dataset.cs; saveFilters(); render(); }));
   $('#q').addEventListener('input', () => { saveFilters(); render(); });
   (async () => { await LG.header(); await load(); LG.live((m) => { if (m.t === 'store' || (m.t === 'lead' && (m.op === 'reload' || m.op === 'mode'))) load(); }); })().catch(fail);

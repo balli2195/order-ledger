@@ -32,7 +32,7 @@ ROLE_RANK = {"viewer": 1, "editor": 2, "owner": 3}
 TABS = {
     "leads": ("Leads", "/leads"),
     "orders": ("Orders", "/"),
-    "stores": ("Stores & brands", "/stores"),
+    "stores": ("Stores", "/stores"),
     "prepos": ("PrepOS", "/"),
     "inventory_health": ("Inventory health", "/inventory-health"),
     "sephora_leads": ("Lead DB", "/lead-db"),   # was "Sephora leads"; also holds the archived relist lists (Nov 11, 2026)

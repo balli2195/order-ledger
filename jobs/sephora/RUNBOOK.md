@@ -56,7 +56,7 @@ Run it once a week (for example Sunday).
 2. Reads Sephora New arrivals and the full Sephora brand list.
 3. Seeds Nick's new Sephora leads (`seed_from_leads.py --since` 14 days ago).
 4. Builds brands with no matcher rows yet by calling `build_backlog.py` (highest lead spend first, within what's left of the budget).
-5. Screens unseen brands (≤500 tokens): can_source, Amazon demand and restrictions decide between auto-added, for Nick, or screened out.
+5. Screens unseen brands (≤500 tokens): the monthly restriction check, Amazon demand and restrictions decide between auto-added, for Nick, or screened out.
 6. Matches new products (Keepa title search, `catalog/match.py`, restrictions, offers, `build.py`).
 6b. Re-matches ASINs whose every pair is marked wrong (`rematch.py`, no Keepa). The matcher picks one product per ASIN and never tried the runner-up, so one wrong mark used to end the ASIN (CHANEL No.5 L'Eau → N°5 EDT, Chance Eau Fraîche → the EDP). The ASIN is scored again against the brand's listing without the wrong products. A high / medium match is added only when the names agree both ways: every word of the Sephora name is in the Amazon title, and every Amazon word Sephora uses for this brand is in the Sephora name. Body cream / deodorant / tester / sample words and the men's line (Allure vs Allure Homme) count; EDT / EDP words only when the Amazon title names a concentration. Everything else is listed as a suggestion in the weekly summary. A test on Chanel, Dior, Make Up For Ever and Benefit (188 all-wrong ASINs) added 4, 3 of them right.
 6c. Brand best-seller sweep (`rematch.py`, ≤800 tokens, `--sweep-tokens`). The step 6 search only finds Amazon titles that contain a Sephora product's first name words, so "CHANEL Bleu De Paris Cologne" was never found. A few brands per run (oldest swept first): Keepa finder sorted by sales rank, one page of 50, a deeper page each rotation (4 pages, then back to page 0). ASINs not in the catalog go through the usual match/build. State: `brand_sweep`.
@@ -83,7 +83,7 @@ Run it once a week (for example Sunday).
 - **Budget and runtime:** ≤4,000 Keepa tokens; leftovers carry over to next week. Runtime 15–40 minutes.
 - **Output:** `.data/weekly_summary.md`.
 - **Adding a brand by hand:** copy an entry in `brands.json`. The next weekly run builds it.
-- **Keep the brand lists in sync.** `exclude_brands` mirrors the Hub `brands.can_source=false` list; refresh it with the Myrddin Hub `get_lead_choices` tool if Nick changes it.
+- **Brand restrictions come only from Amazon.** The brand skip list (`exclude_brands`, built by `common.load_brands()`) is the brands the monthly restriction check (section 11) found restricted. The Hub's old brand "can source" switches were removed on Nov 20, 2026 (Nick: they conflicted with his restriction check). Never keep a hand list of brands.
 
 **A wrong mark switches on the ASIN's fallback pairs (Nov 19, 2026).** When a pair is marked wrong and the ASIN has no other active, not-wrong pair, the Hub reactivates its inactive not-wrong pairs (`mark_catalog`, returned as `reactivated`). `seed_from_leads.py` keeps every lead pair active (it used to store extra lead pairs inactive). The one-time sweep on Nov 19 reactivated 23 such pairs (e.g. B0DZV1RBGX's glitter spray, hidden after its regular spray was marked wrong).
 
@@ -222,3 +222,11 @@ The principles are in `MATCHING_PRINCIPLES.md` (project doc `claude/sephora-cata
 
    Pairs Nick decided are never touched. Every result is added to `sephora_jobs/verify_labels`, the test set every matcher change must not get worse on.
 4. Each result's `lesson` line is read before changing the matcher. A change is made only when it follows a principle and passes the tests: Nick's leads, his OK and wrong marks, the checker labels, and the verify labels.
+
+## 11. Monthly Amazon restriction check (Nov 20, 2026)
+
+Nick: "the once a month sephora run should update this data". `brand_restrictions.py` re-checks every active Lead DB listing with Amazon's Listing Restrictions API on his seller account (new condition), the method of the Nov 2, 2026 brand eligibility run:
+- changed `sellable` values are written back to the catalog (the daily job watches only `open` rows);
+- the per-brand counts go to Hub doc `sephora_jobs/brand_restrictions`; a brand is `restricted` when ≥90% of at least 3 checked listings are restricted, and the jobs skip those brands;
+- `.data/brand_restrictions_summary.md` is the message: brand status changes, listings that opened up or became restricted.
+Run: `python3 -I brand_restrictions.py` (about 30 minutes for ~6,700 ASINs). It writes nothing if more than 20% of checks fail. Scheduled task: "Monthly Sephora restriction check", the 1st of each month.
