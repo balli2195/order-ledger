@@ -239,6 +239,14 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
         x["lead"] = next((w for w in x["tok"][:2] if w not in GENERIC and df[w] <= 4), None)
     idf = {w: math.log(1 + N / c) * (0.35 if w in GENERIC else 1.0) for w, c in df.items()}
     vocab = set(df)
+    # Words that tell siblings apart, from the brand's own Sephora catalog (MATCHING_PRINCIPLES §1, §5; Nov 20, 2026):
+    # products sharing a line word (a non-generic word used by ≤ 6 products) are siblings; a sibling's word that this product
+    # lacks names the sibling ('tendre', 'extreme', 'superleggera', 'luminous'). A title carrying one is about the sibling.
+    line_w = {w for w, c in df.items() if w not in GENERIC and c <= 6}
+    for x in P:
+        sib = [y for y in P if y is not x and (x["set"] & y["set"] & line_w)]
+        # each sibling's own words that this product lacks; it counts only when ALL of them are in the title
+        x["sibs"] = [(d, y["flags"]["mini"]) for d, y in (({w for w in y["set"] - x["set"] if w not in GENERIC}, y) for y in sib) if d]
 
     asins = keepa["asins"]
     # Amazon-side word weights: words common across this brand's Amazon titles (marketing filler) weigh little
@@ -279,6 +287,13 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
             s -= 0.60; why.append("type differs (%s vs %s)" % ("/".join(sorted(at_types)), "/".join(sorted(x["types"]))))
         elif at_types and not x["types"] and not (at_types & {"fragrance"}):
             s -= 0.08
+        if not flags(title)["set"]:   # (a set's title names its contents, i.e. siblings: not evidence against it)
+            sh_ = shade | set(x.get("shade_tok") or ())
+            am = flags(title + " " + (a.get("size") or ""))["mini"]
+            # (only siblings of the listing's own kind: a Mini page's name is not evidence about a full-size listing)
+            named_sib = next((d for d, ym in x.get("sibs", ()) if ym == am and d <= at and not d <= sh_), None)
+            if named_sib:
+                s -= 0.25; why.append("the title names a sibling product (%s)" % "/".join(sorted(named_sib)))
         fa, fx = forms(title), x["forms"]
         if (({"liquid", "powder"} <= (fa | fx)) or ({"liquid", "stick"} <= (fa | fx))) and not (fa & fx) and fa and fx:
             # liquid vs powder; liquid vs stick (MAC Studio Radiance serum foundation vs the skin tint stick, checker rounds 1-3)
