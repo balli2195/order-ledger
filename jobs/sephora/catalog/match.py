@@ -118,6 +118,8 @@ def ptypes(text):
         found.discard("fragrance"); found.add("hairmist")
     if ("mist" in t and ({"body", "moisture", "moisturizing"} & t)) or ("body" in t and "spray" in t and "fragrance" not in found):
         found.discard("fragrance"); found.add("bodymist")
+    if not found and "cream" in t and not ({"eye", "body", "hand", "foot", "lip", "cleansing", "shave", "hair"} & t):
+        found.add("moisturizer")   # a face cream with no other type word ('Black Tea Advanced Age Renewal Cream' is not a serum, Nick Nov 20)
     if "fragrance" in found:   # "Bleu de Chanel Eau de Parfum" style names are fragrances whatever else they say
         found -= {"lipstick"}
     return found
