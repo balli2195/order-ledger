@@ -92,8 +92,7 @@
   </header>
   <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/lead-db" data-tab="sephora_leads" class="on">Lead DB</a><a href="/repricer" data-tab="repricer">Repricer</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
 
-  <h2 class="sl-title">Lead DB <span class="live-dot" id="live" title="Live updates"></span></h2>
-  <p class="sl-sub" id="runs">Loading…</p>
+  <h2 class="sl-title">Lead DB <span class="live-dot" id="live" title="Live updates. Click for the last job runs." role="button" tabindex="0" style="cursor:pointer"></span></h2>
   <div id="sale" class="sl-sale hidden"></div>
 
   <div class="toolbar">
@@ -173,16 +172,29 @@
   // ---------------------------------------------------------------- header: runs, sale, counts
   function renderOverview() {
     const o = S.ov; if (!o) return;
-    const runs = (o.runs || []).map((r) => {
-      const c = r.counts || {}; const bits = Object.entries(c).slice(0, 4).map(([k, v]) => `${num(v)} ${k.replace(/_/g, ' ')}`);
-      return `${esc(r.kind)} run ${esc(when(r.at))}${bits.length ? ` (${esc(bits.join(', '))})` : ''}`;
-    });
-    $('#runs').textContent = runs.length ? 'Last checked: ' + runs.join(' · ') : 'The Sephora job hasn\'t run yet.';
+    // the "Last checked" line moved into a dialog opened from the green dot (Nick, Nov 20 2026): see openRuns()
     const s = o.sale;
     $('#sale').classList.toggle('hidden', !s);
     if (s) $('#sale').innerHTML = `<b>Sephora sale on:</b> ${esc(s.text || '')}${s.code ? ` · code <b class="code">${esc(s.code)}</b>` : ''}${s.ends ? ` · ends ${esc(fmtDate(s.ends))}` : ''} <span class="muted">(checked ${esc(when(s.checked_at))})</span>`;
     // the stat cards (To review, Approved, Rejected, Catalog pairs, Matches to check, Sizes to set) were removed (Nick, Nov 20 2026)
   }
+
+  function openRuns() {
+    const runs = (S.ov && S.ov.runs) || [];
+    const fmt = (v) => typeof v === 'number' ? num(v) : esc(String(v));
+    const rows = runs.map((r) => `<tr><td style="white-space:nowrap"><b>${esc(String(r.kind || '').replace(/_/g, ' '))}</b></td><td style="white-space:nowrap">${esc(when(r.at))}</td>
+      <td>${Object.entries(r.counts || {}).map(([k, v]) => `${fmt(v)} ${esc(k.replace(/_/g, ' '))}`).join(' · ')}</td></tr>`).join('');
+    const scrim = document.createElement('div'); scrim.className = 'scrim';
+    const dlg = document.createElement('div'); dlg.className = 'drawer narrow'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
+    dlg.innerHTML = `<div class="drawer-head"><h2>Last job runs</h2><button class="btn small" data-close>Close</button></div>
+      <div class="drawer-body">${rows ? `<table><thead><tr><th>Job</th><th>Ran</th><th>Results</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">The Sephora jobs haven\'t run yet.</p>'}</div>`;
+    const close = () => { scrim.remove(); dlg.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    scrim.addEventListener('click', close); dlg.querySelector('[data-close]').addEventListener('click', close); document.addEventListener('keydown', onKey);
+    document.body.append(scrim, dlg);
+  }
+  $('#live').addEventListener('click', openRuns);
+  $('#live').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRuns(); } });
 
   // ---------------------------------------------------------------- queue
   function matches(c, q) {
