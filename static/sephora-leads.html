@@ -119,12 +119,11 @@
   <section id="catalogView" hidden>
     <div class="toolbar sl-filters" style="margin-top:0">
       <select id="fStore" hidden><option value="">All stores</option></select>
-      <select id="fSell" title="Listings you're restricted from selling are hidden unless you pick Restricted or Any"><option value="">Sellable (hides restricted)</option><option value="open">Open</option><option value="approval_required">Approval required</option><option value="restricted">Restricted</option><option value="any">Any, incl. restricted</option></select>
       <span id="cSlot" style="margin-left:auto;display:flex;flex:0 1 380px;min-width:240px"></span>
     </div>
     <div class="sl-brands" id="brands" hidden></div>
     <div class="table-wrap"><table id="catTable">
-      <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th id="thSale" class="sortable" title="Sephora's own sale price on the product (not promo codes). Click to filter.">On sale ▾</th><th class="num">Buy Box</th><th id="thConf" class="sortable" title="How sure the matcher is. Click to filter.">Confidence ▾</th><th class="num sortable" id="thRoi" data-roi="roi" title="ROI at today's Sephora price and Buy Box. Click to sort or filter.">ROI now ▾</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th id="thChecked" class="sortable" title="Who last marked the pair OK or wrong, and when. Click to filter or sort.">Last checked ▾</th><th id="thMatch" class="sortable" title="Wrong matches are hidden unless picked here. On a wrong row, OK makes it a match again; clicking Wrong again clears the mark.">Match ▾</th></tr></thead>
+      <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th id="thSale" class="sortable" title="Sephora's own sale price on the product (not promo codes). Click to filter.">On sale ▾</th><th class="num">Buy Box</th><th id="thSell" class="sortable" title="Whether Amazon lets you sell this listing (monthly restriction check). Restricted listings are hidden unless picked here.">Sellable ▾</th><th id="thConf" class="sortable" title="How sure the matcher is. Click to filter.">Confidence ▾</th><th class="num sortable" id="thRoi" data-roi="roi" title="ROI at today's Sephora price and Buy Box. Click to sort or filter.">ROI now ▾</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th id="thChecked" class="sortable" title="Who last marked the pair OK or wrong, and when. Click to filter or sort.">Last checked ▾</th><th id="thMatch" class="sortable" title="Wrong matches are hidden unless picked here. On a wrong row, OK makes it a match again; clicking Wrong again clears the mark.">Match ▾</th></tr></thead>
       <tbody id="catRows"></tbody></table>
       <div id="catEmpty" class="empty hidden">No catalog rows match.</div>
     </div>
@@ -141,7 +140,7 @@
 (async () => {
   const { $, $$, esc, num, money, pct, fmtDate, api, toast, fail } = LG;
   const REJ_QUICK = ['ROI too low', 'Historical price too low', 'Too many sellers', "Can't sell / gated", 'Not in stock at Sephora'];
-  const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', sort: '', conf: '', sale: '', match: '', by: '', days: '', minRoi: '', minRoi90: '', ov: null, size: {}, rejecting: null };
+  const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', sort: '', conf: '', sale: '', match: '', sell: '', by: '', days: '', minRoi: '', minRoi90: '', ov: null, size: {}, rejecting: null };
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
   const safeUrl = (u) => u && /^https?:\/\//i.test(u) ? u : null;
   const link = (u, t) => safeUrl(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : '';
@@ -284,13 +283,13 @@
     $('#thRoi').textContent = roiLabel('ROI now', 'roi', S.minRoi);
     const byT = { claude: 'Claude', people: 'people', any: 'anyone' }[S.by], dT = { 1: '24h', 7: '7 days', 30: '30 days' }[S.days];
     $('#thChecked').textContent = 'Last checked' + (byT || dT ? `: ${[byT, dT && 'last ' + dT].filter(Boolean).join(', ')}` : '') + (S.sort === 'checked' ? ' ▼' : '') + ' ▾';
+    $('#thSell').textContent = ({ open: 'Sellable: open', approval_required: 'Sellable: approval', restricted: 'Sellable: restricted', any: 'Sellable: all' })[S.sell] ? ({ open: 'Sellable: open', approval_required: 'Sellable: approval', restricted: 'Sellable: restricted', any: 'Sellable: all' })[S.sell] + ' ▾' : 'Sellable ▾';
     $('#thMatch').textContent = ({ unchecked: 'Match: not checked', ok: 'Match: OK', wrong: 'Match: wrong', all: 'Match: all' })[S.match] ? ({ unchecked: 'Match: not checked', ok: 'Match: OK', wrong: 'Match: wrong', all: 'Match: all' })[S.match] + ' ▾' : 'Match ▾';
     $('#thSale').textContent = S.sale === '1' ? 'On sale: yes ▾' : S.sale === '0' ? 'On sale: no ▾' : 'On sale ▾';
     const ed = editor();
     const mk = (r, v, label, cls = '') => `<button class="btn small ${cls} ${r.match_ok === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="match" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${label}</button>`;
     $('#catRows').innerHTML = rows.map((r) => {
       const flags = [];
-      if (r.sellable && r.sellable !== 'open') flags.push(['warn', SELL[r.sellable]]);
       if (r.amazon_on) flags.push(['warn', 'Amazon on']);
       if (!r.active) flags.push(['', 'Inactive']);
       if (r.open_candidates) flags.push(['reason', `${r.open_candidates} to review`]);
@@ -302,6 +301,7 @@
         <td class="num">${r.on_sale && r.sale_price != null ? `<span class="sl-strike">${list}</span>${money(r.sale_price)}` : list}</td>
         <td>${r.on_sale ? '<span class="sl-tag reason">On sale</span>' : '<span class="muted">—</span>'}</td>
         <td class="num">${money(r.buybox)}</td>
+        <td>${r.sellable === 'open' ? '<span class="sl-tag good">Open</span>' : r.sellable === 'approval_required' ? '<span class="sl-tag warn">Approval</span>' : r.sellable === 'restricted' ? '<span class="sl-tag warn">Restricted</span>' : '<span class="muted">?</span>'}</td>
         <td>${r.confidence ? `<span class="sl-tag ${r.confidence === 'low' ? 'warn' : r.confidence === 'high' ? 'good' : ''}">${esc(r.confidence)}</span>` : '<span class="muted">—</span>'}</td>
         <td class="num">${pct(r.roi_now)}</td>
         <td class="num">${num(r.monthly_sold)}</td>
@@ -322,10 +322,11 @@
     if (S.conf) p.set('confidence', S.conf);
     if (S.sale) p.set('on_sale', S.sale);
     if (S.match) p.set('match', S.match);
+    if (S.sell) p.set('sellable', S.sell);
     if (S.by) p.set('checked_by', S.by);
     if (S.days) p.set('checked_days', S.days);
     if (S.minRoi) p.set('min_roi', S.minRoi);
-    [['store', '#fStore'], ['sellable', '#fSell']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    [['store', '#fStore']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
@@ -505,10 +506,11 @@
     document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', onKey);
     document.body.append(pop);
   });
+  $('#thSell').addEventListener('click', (e) => colPick(e.currentTarget, [['', 'Hide restricted'], ['open', 'Open'], ['approval_required', 'Approval required'], ['restricted', 'Restricted'], ['any', 'All, incl. restricted']], 'sell'));
   $('#thMatch').addEventListener('click', (e) => colPick(e.currentTarget, [['', 'Wrong matches hidden'], ['unchecked', 'Not checked'], ['ok', 'Match OK'], ['wrong', 'Wrong match only'], ['all', 'Everything, incl. wrong']], 'match'));
   $('#thSale').addEventListener('click', (e) => colPick(e.currentTarget, [['', 'On sale or not'], ['1', 'On sale at Sephora'], ['0', 'Not on sale']], 'sale'));
   $('#thBrand').addEventListener('click', () => document.querySelector('.brand-pop') ? document.querySelector('.brand-pop').remove() : openBrandPop());
-  ['#fStore', '#fSell'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   // Sort by clicking a column title (Nick, Nov 20 2026; replaces the Sort dropdown): high first, then low first, then brand.
   const sortMarks = () => $$('#catTable th[data-sort]').forEach((th) => {
     const k = th.dataset.sort; th.dataset.label = th.dataset.label || th.textContent;
