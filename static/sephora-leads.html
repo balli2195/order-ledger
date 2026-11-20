@@ -119,7 +119,6 @@
   <section id="catalogView" hidden>
     <div class="toolbar sl-filters" style="margin-top:0">
       <select id="fStore" hidden><option value="">All stores</option></select>
-      <select id="fConf"><option value="">Any confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
       <select id="fSell" title="Listings you're restricted from selling are hidden unless you pick Restricted or Any"><option value="">Sellable (hides restricted)</option><option value="open">Open</option><option value="approval_required">Approval required</option><option value="restricted">Restricted</option><option value="any">Any, incl. restricted</option></select>
       <select id="fSize"><option value="">Any size</option><option value="open">Needs size, not set</option><option value="1">Needs size</option></select>
       <select id="fMatch" title="Pairs marked wrong or held back by a match rule are on the Mismatches page"><option value="">Mismatches hidden</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match only</option><option value="held">Held back by rules only</option><option value="all">Everything, incl. mismatches</option></select>
@@ -131,7 +130,7 @@
     </div>
     <div class="sl-brands" id="brands" hidden></div>
     <div class="table-wrap"><table id="catTable">
-      <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th class="num">Buy Box</th><th class="num sortable" data-sort="roi" title="Click to sort: high first, then low first, then back to brand">ROI now</th><th class="num sortable" data-sort="roi90" title="Click to sort: high first, then low first, then back to brand">ROI 90d</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th>Match</th><th>Size</th></tr></thead>
+      <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th class="num">Buy Box</th><th id="thConf" class="sortable" title="How sure the matcher is. Click to filter.">Confidence ▾</th><th class="num sortable" data-sort="roi" title="Click to sort: high first, then low first, then back to brand">ROI now</th><th class="num sortable" data-sort="roi90" title="Click to sort: high first, then low first, then back to brand">ROI 90d</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th>Match</th><th>Size</th></tr></thead>
       <tbody id="catRows"></tbody></table>
       <div id="catEmpty" class="empty hidden">No catalog rows match.</div>
     </div>
@@ -148,7 +147,7 @@
 (async () => {
   const { $, $$, esc, num, money, pct, fmtDate, api, toast, fail } = LG;
   const REJ_QUICK = ['ROI too low', 'Historical price too low', 'Too many sellers', "Can't sell / gated", 'Not in stock at Sephora'];
-  const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', sort: '', ov: null, size: {}, rejecting: null };
+  const S = { view: 'queue', cands: [], decided: [], cat: { rows: [], total: 0, brands: [] }, brand: '', sort: '', conf: '', ov: null, size: {}, rejecting: null };
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } } };
   const safeUrl = (u) => u && /^https?:\/\//i.test(u) ? u : null;
   const link = (u, t) => safeUrl(u) ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>` : '';
@@ -286,12 +285,12 @@
     const rows = S.cat.rows;
     // brand filter: the Brand column title opens a searchable list (Nick, Nov 20 2026: replaces the brand dropdown)
     $('#thBrand').textContent = S.brand ? `Brand: ${S.brand} ▾` : 'Brand ▾';
+    $('#thConf').textContent = S.conf ? `Confidence: ${S.conf} ▾` : 'Confidence ▾';
     const ed = editor();
     const mk = (r, v, label, cls = '') => `<button class="btn small ${cls} ${r.match_ok === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="match" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${label}</button>`;
     const sz = (r, v) => `<button class="btn small ${r.size_confirmed === v ? 'on' : ''}" ${ed ? '' : 'disabled'} data-mark="size" data-v="${v}" data-asin="${esc(r.asin)}" data-pid="${esc(r.product_id)}">${v === 'lo' ? 'Mini' : 'Full'}</button>`;
     $('#catRows').innerHTML = rows.map((r) => {
       const flags = [];
-      if (r.confidence) flags.push([r.confidence === 'low' ? 'warn' : r.confidence === 'high' ? 'good' : '', r.confidence]);
       if (r.sellable && r.sellable !== 'open') flags.push(['warn', SELL[r.sellable]]);
       if (r.amazon_on) flags.push(['warn', 'Amazon on']);
       if (r.on_sale) flags.push(['reason', 'On sale']);
@@ -306,6 +305,7 @@
         <td><a href="${amzUrl(r.asin)}" target="_blank" rel="noopener" class="mono">${esc(r.asin)}</a><br><a href="${keepaUrl(r.asin)}" target="_blank" rel="noopener" style="font-size:12px">Keepa</a></td>
         <td class="num">${r.on_sale && r.sale_price != null ? `<span class="sl-strike">${list}</span>${money(r.sale_price)}` : list}</td>
         <td class="num">${money(r.buybox)}</td>
+        <td>${r.confidence ? `<span class="sl-tag ${r.confidence === 'low' ? 'warn' : r.confidence === 'high' ? 'good' : ''}">${esc(r.confidence)}</span>` : '<span class="muted">—</span>'}</td>
         <td class="num">${pct(r.roi_now)}</td>
         <td class="num">${pct(r.roi_avg90)}</td>
         <td class="num">${num(r.monthly_sold)}</td>
@@ -322,7 +322,8 @@
     const q = $('#q').value.trim(); if (q) p.set('q', q);
     if (S.brand) p.set('brand', S.brand);
     if (S.sort) p.set('sort', S.sort);
-    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['checked_by', '#fBy'], ['checked_days', '#fDays'], ['on_sale', '#fSale']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    if (S.conf) p.set('confidence', S.conf);
+    [['store', '#fStore'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['checked_by', '#fBy'], ['checked_days', '#fDays'], ['on_sale', '#fSale']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
@@ -444,8 +445,23 @@
     document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', onKey);
     document.body.append(pop); draw(); inp.focus();
   }
+  // confidence filter on its column title (Nick, Nov 20 2026: replaces the "Any confidence" dropdown)
+  $('#thConf').addEventListener('click', () => {
+    if (document.querySelector('.brand-pop')) { document.querySelector('.brand-pop').remove(); return; }
+    const th = $('#thConf'), rc = th.getBoundingClientRect();
+    const pop = document.createElement('div'); pop.className = 'brand-pop'; pop.style.width = '180px';
+    pop.style.left = (rc.left + window.scrollX) + 'px'; pop.style.top = (rc.bottom + window.scrollY + 4) + 'px';
+    pop.innerHTML = '<ul style="padding:6px 0">' + [['', 'Any confidence'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']]
+      .map(([v, t]) => `<li data-v="${v}" class="${(S.conf || '') === v ? 'on' : ''}">${t}</li>`).join('') + '</ul>';
+    const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', onKey); };
+    const outside = (e) => { if (!pop.contains(e.target) && e.target !== th) close(); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    pop.addEventListener('click', (e) => { const li = e.target.closest('li[data-v]'); if (!li) return; S.conf = li.dataset.v; close(); loadCatalog().catch(fail); });
+    document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', onKey);
+    document.body.append(pop);
+  });
   $('#thBrand').addEventListener('click', () => document.querySelector('.brand-pop') ? document.querySelector('.brand-pop').remove() : openBrandPop());
-  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fMinRoi', '#fMinRoi90', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore', '#fSell', '#fSize', '#fMatch', '#fMinRoi', '#fMinRoi90', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   // Sort by clicking a column title (Nick, Nov 20 2026; replaces the Sort dropdown): high first, then low first, then brand.
   const sortMarks = () => $$('#catTable th[data-sort]').forEach((th) => {
     const k = th.dataset.sort; th.dataset.label = th.dataset.label || th.textContent;
