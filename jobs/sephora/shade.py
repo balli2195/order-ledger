@@ -317,7 +317,31 @@ def _size_pick(k: dict, F: dict, skus: list) -> dict | None:
     return None
 
 
+ACCESSORY = re.compile(r"\b(puff|brush|sponge|pouch|bag|sharpener|applicator|case)\b")
+
+
 def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = None, product_name: str | None = None) -> dict:
+    """_resolve_text, plus product + accessory sets: 'Translucent Loose Setting Powder & Velour Puff' picks the puff SKU
+    by name, but the listing is the powder and the puff together (Nick, Nov 20, 2026: a bundle lead at the real cost)."""
+    r = _resolve_text(k, skus, vt, asin, product_name)
+    by = {s["sku_id"]: s for s in skus}
+    x = by.get(r.get("sku_id"))
+    title = norm(k.get("title") or "")
+    if x and ACCESSORY.search(norm(x.get("value") or "")) and re.search(r"\s(&|\+|and|with)\s", (k.get("title") or "").lower()):
+        main = [s for s in skus if s is not x and (s.get("value") or "").strip() and not ACCESSORY.search(norm(s.get("value") or ""))]
+        # the main item: a SKU named in the title / color field, at the title's size, else the largest
+        named = [s for s in main if _has_phrase(title + " " + norm(k.get("color") or ""), norm(split_value(s.get("value") or "")[1] or "~"))]
+        cand = named or main
+        t_oz = oz_amounts(k.get("title") or "") or oz_amounts(str(k.get("size") or ""))
+        if cand:
+            sz = lambda s: (oz_amounts(s.get("size") or s.get("value") or "") or [0])[0]
+            m = min(cand, key=lambda s: abs(sz(s) - t_oz[0])) if t_oz else max(cand, key=sz)
+            return {**r, "sku_id": m["sku_id"], "alts": [x["sku_id"]], "bundle": True,
+                    "how": r["how"] + f"; a set: {m.get('value')} {m.get('size') or ''} + {x.get('value')}"}
+    return r
+
+
+def _resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = None, product_name: str | None = None) -> dict:
     """{sku_id | None, score, margin, how, ranked: [(score, sku_id, why)]}. product_name = the Sephora product's name
     (a SKU called 'Benetint' on the Benetint page is weak evidence: every listing of the line says Benetint)."""
     if not skus:

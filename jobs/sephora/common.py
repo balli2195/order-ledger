@@ -226,6 +226,19 @@ def pick_price(row: dict, lo, hi, sale, mode: str, promo: tuple | None = None):
     the lower of the two is used).
     Returns (unit_price_entered, full_price_entered, label, sale_applied, promo_applied) or None when it can't be priced."""
     pq = int(fnum((row.get("extra") or {}).get("pack_qty")) or 1)
+    bundle = (row.get("extra") or {}).get("bundle_skus")
+    if bundle:
+        # a set of Sephora items bought separately for one Amazon unit (Nick, Nov 20, 2026): the cost is their list
+        # prices added up (a broad promo applies to each; item markdowns aren't tracked per SKU)
+        full = round(sum(fnum(b.get("price")) or 0 for b in bundle), 2)
+        if not full:
+            return None
+        price, label, promo_used = full, "bundle list $%.2f (%s)" % (full, " + ".join(
+            f"{b.get('label')} ${fnum(b.get('price')):.2f}" for b in bundle)), False
+        if promo and promo[0]:
+            price, promo_used = round(full * (1 - promo[0]), 2), True
+            label = f"${price:.2f} = " + label + f" - {promo[0] * 100:.0f}% ({promo[1]})"
+        return price, full, label, False, promo_used
     needs = bool(row.get("needs_size")) and lo is not None and hi is not None and hi > lo
     if needs:
         conf = row.get("size_confirmed")

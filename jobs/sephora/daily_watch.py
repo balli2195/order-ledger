@@ -176,7 +176,7 @@ def main():
             return False
         if (ex.get("shade_hint") or {}).get("not_sold") and not r.get("store_size") and r.get("match_ok") is not True:
             return False   # resolve_skus.py: the Amazon shade isn't on Sephora's shade list (Nov 19, 2026)
-        if (ex.get("shade_hint") or {}).get("bundle") and int(C.fnum(ex.get("pack_qty")) or 1) < 2:
+        if (ex.get("shade_hint") or {}).get("bundle") and not ex.get("bundle_skus") and int(C.fnum(ex.get("pack_qty")) or 1) < 2:
             return False   # a set of Sephora singles priced as one single: the cost would be wrong (checker round 3)
         return ex.get("demand_ok") is True and ex.get("thin_price") is not True
 

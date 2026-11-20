@@ -174,11 +174,13 @@ def main():
             # single's price isn't the cost, so it isn't a lead as it stands (checker round 3); Nick can still mark it OK
             stats["bundle of Sephora singles"] += 1
             names = [label(by[res["sku_id"]])] + [label(by[a_]) for a_ in (res.get("alts") or []) if a_ in by]
-            # Nick, Nov 20, 2026: a set of Sephora singles is a lead at the real cost (one of each), not a skip.
-            # pack_qty = number of singles; with different prices this is priced at the product's price, i.e. close.
+            # Nick, Nov 20, 2026: a set of Sephora items is a lead at the real cost (one of each, their prices added up;
+            # common.pick_price reads extra.bundle_skus), not a skip.
             x = by[res["sku_id"]]
+            items = [by[res["sku_id"]]] + [by[a_] for a_ in (res.get("alts") or []) if a_ in by]
             hints.append({"asin": r["asin"], "product_id": r["product_id"], "active": r["active"],
-                          "extra": {**(r.get("extra") or {}), "pack_qty": len(names),
+                          "extra": {**(r.get("extra") or {}),
+                                    "bundle_skus": [{"sku_id": i["sku_id"], "label": label(i), "price": i.get("price")} for i in items],
                                     "shade_hint": {"bundle": names, "checked": C.today().isoformat()}}})
             marks.append({"asin": r["asin"], "product_id": r["product_id"],
                           "store_size": {"sku_id": x["sku_id"], "size": label(x), "price": x.get("price")}, "_how": res["how"]})
