@@ -120,7 +120,6 @@
       <select id="fSell" title="Listings you're restricted from selling are hidden unless you pick Restricted or Any"><option value="">Sellable (hides restricted)</option><option value="open">Open</option><option value="approval_required">Approval required</option><option value="restricted">Restricted</option><option value="any">Any, incl. restricted</option></select>
       <select id="fSize"><option value="">Any size</option><option value="open">Needs size, not set</option><option value="1">Needs size</option></select>
       <select id="fMatch" title="Pairs marked wrong or held back by a match rule are on the Mismatches page"><option value="">Mismatches hidden</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match only</option><option value="held">Held back by rules only</option><option value="all">Everything, incl. mismatches</option></select>
-      <select id="fActive"><option value="1">Active</option><option value="0">Inactive</option><option value="all">Active + inactive</option></select>
       <select id="fSale" title="Sephora's own sale price on the product (not promo codes)"><option value="">On sale or not</option><option value="1">On sale at Sephora</option><option value="0">Not on sale</option></select>
       <select id="fMinRoi" title="ROI at today's Sephora price and Buy Box"><option value="">Any ROI now</option><option value="0">ROI now 0%+</option><option value="15">ROI now 15%+</option><option value="21">ROI now 21%+</option><option value="30">ROI now 30%+</option><option value="50">ROI now 50%+</option></select>
       <select id="fMinRoi90" title="ROI at today's Sephora price and the 90-day average Buy Box"><option value="">Any ROI 90d</option><option value="0">ROI 90d 0%+</option><option value="15">ROI 90d 15%+</option><option value="21">ROI 90d 21%+</option><option value="30">ROI 90d 30%+</option></select>
@@ -316,7 +315,7 @@
     const q = $('#q').value.trim(); if (q) p.set('q', q);
     if (S.brand) p.set('brand', S.brand);
     if (S.sort) p.set('sort', S.sort);
-    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['active', '#fActive'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['checked_by', '#fBy'], ['checked_days', '#fDays'], ['on_sale', '#fSale']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
+    [['store', '#fStore'], ['confidence', '#fConf'], ['sellable', '#fSell'], ['needs_size', '#fSize'], ['match', '#fMatch'], ['min_roi', '#fMinRoi'], ['min_roi90', '#fMinRoi90'], ['checked_by', '#fBy'], ['checked_days', '#fDays'], ['on_sale', '#fSale']].forEach(([k, id]) => { const v = $(id).value; if (v) p.set(k, v); });
     return p;
   }
   async function loadCatalog(more = false) {
@@ -415,7 +414,7 @@
   });
   $('#brands').addEventListener('click', (e) => { const b = e.target.closest('button[data-brand]'); if (!b) return; S.brand = b.dataset.brand; loadCatalog().catch(fail); });
   $('#fBrand').addEventListener('change', (e) => { S.brand = e.target.value; loadCatalog().catch(fail); });
-  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fActive', '#fMinRoi', '#fMinRoi90', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
+  ['#fStore', '#fConf', '#fSell', '#fSize', '#fMatch', '#fMinRoi', '#fMinRoi90', '#fBy', '#fDays', '#fSale'].forEach((id) => $(id).addEventListener('change', () => loadCatalog().catch(fail)));
   // Sort by clicking a column title (Nick, Nov 20 2026; replaces the Sort dropdown): high first, then low first, then brand.
   const sortMarks = () => $$('#catTable th.sortable').forEach((th) => {
     const k = th.dataset.sort; th.dataset.label = th.dataset.label || th.textContent;
