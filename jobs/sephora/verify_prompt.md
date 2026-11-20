@@ -13,7 +13,7 @@ The Sephora side: the product's SKU list (sizes, shades, prices) from `GET /api/
 
 ## For each case
 
-1. **Read the live Amazon page** with curl: desktop Safari user agent, `--compressed`, a fresh cookie jar, no Accept header, one page at a time with a few seconds between, and retry once after a pause if blocked. Note:
+1. **Read the live Amazon page**, including the "Features & Specs" / "Product details" table: its Flavor, Color, Scent, Size and Item Form rows often name every item of a set (Nick found a Party of 4's flavors there). Load it with curl: desktop Safari user agent, `--compressed`, a fresh cookie jar, no Accept header, one page at a time with a few seconds between, and retry once after a pause if blocked. Note:
    - the full title
    - the selected variation (shade / size)
    - the model or part number
@@ -38,7 +38,7 @@ The Sephora side: the product's SKU list (sizes, shades, prices) from `GET /api/
  "lesson": "if the matcher got it wrong: the general reason, in one line"}
 ```
 
-- `bundle` is for listings that are a set of Sephora items. Use `{"product_id", "sku_id" (or null), "qty", "note"}` per item. A set that also holds things Sephora doesn't sell (a pouch, another brand's sheet mask) is still a bundle when the Sephora items are the point of the set. Say what's extra in `evidence`, and use medium confidence.
+- `bundle` is for listings that are a set of Sephora items. Use `{"product_id", "sku_id" (or null), "qty", "note"}` per item. A set that also holds things Sephora doesn't sell (a pouch, another brand's sheet mask) is still a bundle when the Sephora items are the point of the set. A set with one of its *products* not at Sephora (a flavor or shade Sephora lacks) can't be bought there: verdict `not_sold`. Say what's extra in `evidence`, and use medium confidence.
 - `verdict`:
   - `other`: the listing is a different product. Give `correct_product_id`, or null when Sephora doesn't sell it at all.
   - `not_sold`: the product is right, but Sephora doesn't sell the listing's shade or size.

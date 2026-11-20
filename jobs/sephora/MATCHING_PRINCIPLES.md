@@ -29,6 +29,7 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 - A set is not its contents, and its contents are not the set.
 - When Sephora sells the single, the single's page is the match, not a Sephora set that contains it.
 - When the Amazon listing is a set of Sephora items (two lip creams, powder + puff, a duo of one mascara), it's a **bundle lead at the real cost**: one of each item, prices added up.
+- If any product in the set isn't sold at Sephora, the set can't be built there and it's no lead (Ole Henriksen Party of 4: Blood Orange isn't at Sephora).
 
 **No near-misses.** If a product doesn't match, it doesn't match. When a pair is wrong, the only acceptable replacement is the right pair: the same product on another Sephora page. A sibling scent or the "next closest" product never replaces it.
 
