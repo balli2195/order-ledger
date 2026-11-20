@@ -65,6 +65,8 @@
   .sl-brands button .n { color: var(--muted); margin-left: 3px; font-variant-numeric: tabular-nums; }
   #catTable td { vertical-align: top; font-size: 13px; }
   #catTable tbody tr { cursor: default; }
+  #qTable .prod { min-width: 200px; max-width: 300px; white-space: normal; }
+  #qTable td { vertical-align: top; }
   #catTable .prod { min-width: 220px; max-width: 320px; white-space: normal; }
   #catTable .mk { white-space: nowrap; }
   #catTable .mk .btn { padding: 2px 7px; font-size: 12px; }
@@ -106,7 +108,6 @@
   <div class="toolbar">
     <div class="sl-seg" id="viewSeg"><button data-v="queue" class="on">To review</button><button data-v="decided">Decided</button><button data-v="catalog">Catalog</button></div>
     <a class="btn small ghost" href="/lead-db/guide" title="How the Lead DB tables, jobs and model training work">How it works</a>
-    <select id="qSale" title="Leads priced with a store sale, promo code or event discount"><option value="">On sale or not</option><option value="1">On sale only</option><option value="0">Not on sale</option></select>
     <span class="muted" id="count" style="font-size:13px"></span>
   </div>
 
@@ -209,69 +210,106 @@
     if (c.catalog_active === false) w.push(['warn', 'Catalog row inactive']);
     return w;
   }
-  function card(c) {
+  // To review / Decided as a table like the Catalog (Nick, Nov 20 2026; was cards grouped by day). Filters and sorts
+  // are on the column titles and work on the loaded rows.
+  function qActs(c) {
     const sz = c.size_confirmed || S.size[c.id] || '';
-    const tags = [['reason', REASON[c.reason] || c.reason], [c.confidence === 'high' ? 'good' : '', `${c.confidence || '?'} confidence`],
-      ...(c.sellable === 'open' ? [['good', 'Open to sell']] : c.sellable ? [] : [['', 'Sellable ?']]), ...warnings(c)];   // not open: shown as a warning below
-    if (c.match_ok === true) tags.push(['good', 'Match OK']);
-    if (c.rechecked_at && c.status === 'new') tags.push(['', `Re-priced ${when(c.rechecked_at)}`]);
-    const list = listPrice(c);
-    const salePart = c.on_sale && c.sale_price != null ? `<span class="sl-strike">${list}</span>${money(c.sale_price)}` : list;
-    const decided = c.status !== 'new';
-    let acts = '';
-    if (!decided && editor()) {
-      const size = c.needs_size ? `<div class="sl-size" title="Sephora sells two sizes; which one matches the Amazon listing?">
-          <button class="btn small ${sz === 'lo' ? 'on' : ''}" data-size="lo" data-id="${esc(c.id)}">Mini / smaller size</button>
-          <button class="btn small ${sz === 'hi' ? 'on' : ''}" data-size="hi" data-id="${esc(c.id)}">Full size</button></div>` : '';
-      const rej = S.rejecting === c.id
-        ? `<div class="sl-rejbox"><div class="sl-rejq">${REJ_QUICK.map((q) => `<button type="button" class="btn small" data-rq="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-            <div class="sl-rej"><input id="rejReason" placeholder="Why? (optional)" maxlength="300"><button class="btn small danger" data-act="reject-go" data-id="${esc(c.id)}">Reject</button></div>
-            <button type="button" class="btn small ghost" data-act="reject-cancel">Cancel</button></div>`
-        : `<button class="btn small" data-act="reject" data-id="${esc(c.id)}">Reject</button>`;
-      acts = `<div class="sl-acts">${size}
-        <button class="btn primary small" data-act="approve" data-id="${esc(c.id)}" ${c.needs_size && !sz ? 'disabled title="Pick the size first"' : ''}>Approve → lead</button>
-        ${rej}
-        <button class="btn small ghost danger" data-act="wrong" data-id="${esc(c.id)}" title="This Sephora product isn't the Amazon listing; it won't be suggested again">Wrong match</button></div>`;
+    if (c.status !== 'new') {
+      return c.status === 'approved'
+        ? `<span class="sl-tag good">Approved</span><div class="muted" style="font-size:11px">${esc(c.decided_by || '')} ${esc(when(c.decided_at))}</div>${c.lead_id ? `<a href="/leads#lead=${esc(c.lead_id)}" style="font-size:12px">open lead</a>` : ''}${c.lead_qty_ordered != null ? `<div class="muted" style="font-size:11px">ordered ${num(c.lead_qty_ordered)}</div>` : ''}`
+        : `<span class="sl-tag ${c.status === 'rejected' ? 'warn' : ''}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span>${c.decided_by ? `<div class="muted" style="font-size:11px">${esc(c.decided_by)} ${esc(when(c.decided_at))}</div>` : ''}${c.reject_reason || c.expired_reason ? `<div class="sl-why">${esc(c.reject_reason || c.expired_reason)}</div>` : ''}${stockLine(c)}`;
     }
-    const done = decided ? `<div class="sl-done">${c.status === 'approved'
-      ? `<span class="sl-tag good">Approved</span> by ${esc(c.decided_by || '')} ${esc(when(c.decided_at))}${c.lead_id ? ` · <a href="/leads#lead=${esc(c.lead_id)}">open lead</a>` : ''}${c.lead_qty_ordered != null ? ` · ordered ${num(c.lead_qty_ordered)}` : ''}`
-      : `<span class="sl-tag ${c.status === 'rejected' ? 'warn' : ''}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span>${c.decided_by ? ` by ${esc(c.decided_by)} ${esc(when(c.decided_at))}` : ''}${c.reject_reason ? ` · ${esc(c.reject_reason)}` : ''}${c.expired_reason ? ` · ${esc(c.expired_reason)}` : ''}${stockLine(c)}`}</div>` : '';
-    return `<div class="sl-card" data-card="${esc(c.id)}"><div>
-      <div class="sl-brand">${multiStore() || (c.store && c.store !== 'Sephora') ? `${esc(c.store)} · ` : ''}${esc(c.brand || '—')}</div>
-      <div><span class="sl-name">${esc(c.sephora_name || c.product_id)}</span>${c.shade ? ` <span class="sl-shade">· ${esc(c.shade)}</span>` : ''}</div>
-      ${c.amazon_title ? `<div class="sl-amz">Amazon: ${esc(c.amazon_title)}</div>` : ''}
-      <div class="sl-figs">
-        <div><span class="k">Cost</span><span class="v big">${money(c.cost)}</span></div>
-        <div><span class="k">Sephora price</span><span class="v">${salePart}</span></div>
-        <div><span class="k">Buy Box</span><span class="v">${money(c.buybox)}</span></div>
-        <div><span class="k">ROI now</span><span class="v big ${roiCls(c.roi_now)}">${pct(c.roi_now)}</span></div>
-        <div><span class="k">Lead Score</span><span class="v">${c.lead_score_band != null ? `<span class="band b${esc(c.lead_score_band)}">${esc(c.lead_score_band)}</span> ${pct(c.lead_score_pred_roi)}` : '—'}</span></div>
-        <div><span class="k">90d BB avg</span><span class="v">${money(c.bb_avg90)}</span></div>
-        <div><span class="k">Sold/mo</span><span class="v">${num(c.monthly_sold)}</span></div>
-        <div><span class="k">FBA offers</span><span class="v">${num(c.offers_fba)}</span></div>
-      </div>
-      <div class="sl-tags">${tags.map(([cls, t]) => `<span class="sl-tag ${cls}">${esc(t)}</span>`).join('')}</div>
-      ${c.note || c.price_basis ? `<div class="sl-note">${esc([c.price_basis, c.note].filter(Boolean).join(' · '))}</div>` : ''}
-      ${c.lead_score_notes ? `<details class="sl-note"><summary>Lead Score notes</summary><div style="white-space:pre-wrap">${esc(c.lead_score_notes)}</div></details>` : ''}
-      <div class="sl-links">${link(storeUrl(c), 'Sephora')}<a href="${amzUrl(c.asin)}" target="_blank" rel="noopener" class="mono">${esc(c.asin)}</a><a href="${keepaUrl(c.asin)}" target="_blank" rel="noopener">Keepa</a></div>
-    </div>${acts}${done}</div>`;
+    if (!editor()) return '';
+    const size = c.needs_size ? `<div class="sl-size" title="Sephora sells two sizes; which one matches the Amazon listing?">
+        <button class="btn small ${sz === 'lo' ? 'on' : ''}" data-size="lo" data-id="${esc(c.id)}">Mini</button>
+        <button class="btn small ${sz === 'hi' ? 'on' : ''}" data-size="hi" data-id="${esc(c.id)}">Full</button></div>` : '';
+    const rej = S.rejecting === c.id
+      ? `<div class="sl-rejbox"><div class="sl-rejq">${REJ_QUICK.map((q) => `<button type="button" class="btn small" data-rq="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+          <div class="sl-rej"><input id="rejReason" placeholder="Why? (optional)" maxlength="300"><button class="btn small danger" data-act="reject-go" data-id="${esc(c.id)}">Reject</button></div>
+          <button type="button" class="btn small ghost" data-act="reject-cancel">Cancel</button></div>`
+      : `<button class="btn small" data-act="reject" data-id="${esc(c.id)}">Reject</button>`;
+    return `<div class="sl-acts" style="min-width:130px">${size}
+      <button class="btn primary small" data-act="approve" data-id="${esc(c.id)}" ${c.needs_size && !sz ? 'disabled title="Pick the size first"' : ''}>Approve → lead</button>
+      ${rej}
+      <button class="btn small ghost danger" data-act="wrong" data-id="${esc(c.id)}" title="This Sephora product isn't the Amazon listing; it won't be suggested again">Wrong match</button></div>`;
+  }
+  function qRow(c) {
+    const list = listPrice(c);
+    const sephora = c.on_sale && c.sale_price != null ? `<span class="sl-strike">${list}</span>${money(c.sale_price)}` : list;
+    const notes = [];
+    if (c.amazon_on) notes.push('<span class="sl-tag warn">Amazon on listing</span>');
+    if (c.match_ok === true) notes.push('<span class="sl-tag good">Match OK</span>');
+    if (c.rechecked_at && c.status === 'new') notes.push(`<span class="sl-tag">Re-priced ${esc(when(c.rechecked_at))}</span>`);
+    const txt = [c.price_basis, c.note].filter(Boolean).join(' · ');
+    return `<tr data-card="${esc(c.id)}">
+      <td style="white-space:nowrap">${esc(fmtDate(c.found_on))}</td>
+      <td>${esc(c.brand || '—')}${multiStore() || (c.store && c.store !== 'Sephora') ? `<div class="muted" style="font-size:11px">${esc(c.store)}</div>` : ''}</td>
+      <td class="prod">${link(storeUrl(c), c.sephora_name || c.product_id) || esc(c.sephora_name || c.product_id)}${c.shade ? ` <span class="muted">· ${esc(c.shade)}</span>` : ''}</td>
+      <td><a href="${amzUrl(c.asin)}" target="_blank" rel="noopener" class="mono" title="${esc(c.amazon_title || '')}">${esc(c.asin)}</a><br><a href="${keepaUrl(c.asin)}" target="_blank" rel="noopener" style="font-size:12px">Keepa</a></td>
+      <td class="num"><b>${money(c.cost)}</b></td>
+      <td class="num">${sephora}</td>
+      <td>${isSale(c) ? '<span class="sl-tag reason">On sale</span>' : '<span class="muted">—</span>'}</td>
+      <td class="num">${money(c.buybox)}</td>
+      <td>${c.sellable === 'open' ? '<span class="sl-tag good">Open</span>' : c.sellable === 'approval_required' ? '<span class="sl-tag warn">Approval</span>' : c.sellable === 'restricted' ? '<span class="sl-tag warn">Restricted</span>' : '<span class="muted">?</span>'}</td>
+      <td>${c.confidence ? `<span class="sl-tag ${c.confidence === 'low' ? 'warn' : c.confidence === 'high' ? 'good' : ''}">${esc(c.confidence)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="num"><b class="${roiCls(c.roi_now)}">${pct(c.roi_now)}</b></td>
+      <td class="num">${c.lead_score_band != null ? `<span class="band b${esc(c.lead_score_band)}">${esc(c.lead_score_band)}</span> ${pct(c.lead_score_pred_roi)}` : '<span class="muted">—</span>'}</td>
+      <td class="num">${num(c.monthly_sold)}</td>
+      <td class="num">${num(c.offers_fba)}</td>
+      <td style="min-width:180px;max-width:320px;white-space:normal;font-size:12px">${notes.join(' ')}${txt ? `<div class="muted">${esc(txt)}</div>` : ''}${c.lead_score_notes ? `<details><summary class="muted">Lead Score notes</summary><div style="white-space:pre-wrap">${esc(c.lead_score_notes)}</div></details>` : ''}</td>
+      <td class="mk">${qActs(c)}</td></tr>`;
   }
   // a lead is "on sale" when its cost came from the item's sale price, a promo code or a store event discount
   const isSale = (c) => c.reason === 'sale' || !!c.on_sale || /\b(sale|code|event|% off)\b/i.test(String(c.price_basis || ''));
+  const QF = { sale: '', sell: '', conf: '', sort: '' };
+  const QSORT = { roi: (c) => c.roi_now, score: (c) => c.lead_score_pred_roi, sold: (c) => c.monthly_sold, found: (c) => c.found_on };
   function renderQueue() {
     const q = $('#q').value.trim().toLowerCase();
     const src = S.view === 'decided' ? S.decided : S.cands;
-    const sf = $('#qSale').value;   // on-sale filter (Nick, Nov 17, 2026)
-    const rows = src.filter((c) => matches(c, q) && (sf === '' || (sf === '1') === isSale(c)));
-    const days = {};
-    rows.forEach((c) => { (days[c.found_on] = days[c.found_on] || []).push(c); });
-    const keys = Object.keys(days).sort().reverse();
-    $('#queue').innerHTML = keys.map((d) => `<div class="sl-day">${esc(fmtDate(d))} · ${days[d].length}</div>${days[d].map(card).join('')}`).join('');
+    const rows = src.filter((c) => matches(c, q)
+      && (QF.sale === '' || (QF.sale === '1') === isSale(c))
+      && (QF.sell === '' || (QF.sell === 'other' ? c.sellable !== 'open' : c.sellable === QF.sell))
+      && (QF.conf === '' || c.confidence === QF.conf));
+    const [sk, sd] = QF.sort ? QF.sort.split(':') : ['found', 'desc'];
+    rows.sort((a, b) => { const x = QSORT[sk](a), y = QSORT[sk](b); if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * (sd === 'asc' ? 1 : -1); });
+    const arrow = (k) => sk === k && QF.sort ? (sd === 'asc' ? ' ▲' : ' ▼') : '';
+    const lab = (base, v, names) => base + (v !== '' ? ': ' + names[v] : '') + ' ▾';
+    const decided = S.view === 'decided';
+    $('#queue').innerHTML = rows.length ? `<div class="table-wrap"><table id="qTable"><thead><tr>
+      <th class="sortable" data-qs="found">Found${arrow('found')}</th><th>Brand</th><th>Product</th><th>Amazon</th><th class="num">Cost</th><th class="num">Sephora</th>
+      <th class="sortable" data-qf="sale">${lab('On sale', QF.sale, { 1: 'yes', 0: 'no' })}</th><th class="num">Buy Box</th>
+      <th class="sortable" data-qf="sell">${lab('Sellable', QF.sell, { open: 'open', other: 'not open' })}</th>
+      <th class="sortable" data-qf="conf">${lab('Confidence', QF.conf, { high: 'high', medium: 'medium', low: 'low' })}</th>
+      <th class="num sortable" data-qs="roi" title="Click to sort: high first, low first, then newest first">ROI now${arrow('roi')}</th>
+      <th class="num sortable" data-qs="score" title="Lead Score band and predicted ROI. Click to sort.">Lead Score${arrow('score')}</th>
+      <th class="num sortable" data-qs="sold">Sold/mo${arrow('sold')}</th><th class="num">FBA offers</th><th>Notes</th><th>${decided ? 'Decision' : ''}</th>
+      </tr></thead><tbody>${rows.map(qRow).join('')}</tbody></table></div>` : '';
     $('#queueEmpty').classList.toggle('hidden', rows.length > 0);
-    $('#queueEmpty').textContent = S.view === 'decided' ? 'No decisions in the last 30 days.' : 'Nothing to review right now.';
-    $('#count').textContent = `${rows.length} ${S.view === 'decided' ? 'decided (last 30 days)' : 'to review'}`;
+    $('#queueEmpty').textContent = decided ? 'No decisions in the last 30 days.' : 'Nothing to review right now.';
+    $('#count').textContent = `${rows.length} ${decided ? 'decided (last 30 days)' : 'to review'}`;
     $('#rejReason')?.focus();
   }
+  $('#queue').addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-qs], th[data-qf]'); if (!th) return;
+    e.stopPropagation();
+    if (th.dataset.qs) {   // high first, low first, then back to newest first
+      const k = th.dataset.qs, cur = QF.sort;
+      QF.sort = cur === `${k}:desc` ? `${k}:asc` : cur === `${k}:asc` ? '' : `${k}:desc`;
+      return renderQueue();
+    }
+    const key = th.dataset.qf;
+    const choices = { sale: [['', 'On sale or not'], ['1', 'On sale'], ['0', 'Not on sale']], sell: [['', 'Any'], ['open', 'Open'], ['other', 'Not open']],
+      conf: [['', 'Any confidence'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']] }[key];
+    if (document.querySelector('.brand-pop')) { document.querySelector('.brand-pop').remove(); return; }
+    const rc = th.getBoundingClientRect();
+    const pop = document.createElement('div'); pop.className = 'brand-pop'; pop.style.width = '180px';
+    pop.style.left = (rc.left + window.scrollX) + 'px'; pop.style.top = (rc.bottom + window.scrollY + 4) + 'px';
+    pop.innerHTML = '<ul style="padding:6px 0">' + choices.map(([v, t]) => `<li data-v="${v}" class="${QF[key] === v ? 'on' : ''}">${t}</li>`).join('') + '</ul>';
+    const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); };
+    const outside = (ev) => { if (!pop.contains(ev.target) && !th.contains(ev.target)) close(); };
+    pop.addEventListener('click', (ev) => { const li = ev.target.closest('li[data-v]'); if (!li) return; QF[key] = li.dataset.v; close(); renderQueue(); });
+    document.addEventListener('mousedown', outside, true); document.body.append(pop);
+  }, true);
 
   // ---------------------------------------------------------------- catalog
   function renderCatalog() {
@@ -358,7 +396,6 @@
     S.view = v; store.set('sephView', v);
     $$('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
     $('#queueView').hidden = v === 'catalog'; $('#catalogView').hidden = v !== 'catalog';
-    $('#qSale').hidden = v === 'catalog';
     // the search box sits on the right, just above the table or the review cards (Nick, Nov 20 2026)
     (v === 'catalog' ? $('#cSlot') : $('#qSlot')).append($('#searchBox'));
     $('#q').placeholder = v === 'catalog' ? 'Search brand, product, shade, ASIN or product id…' : 'Search brand, product, shade or ASIN…';
@@ -525,7 +562,6 @@
   $('#catMore').addEventListener('click', () => loadCatalog(true).catch(fail));
   let qt; $('#q').addEventListener('input', () => { if (S.view === 'catalog') { clearTimeout(qt); qt = setTimeout(() => loadCatalog().catch(fail), 300); } else renderQueue(); });
   $('#viewSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });
-  $('#qSale').addEventListener('change', () => renderQueue());
 
   try {
     await LG.header();
