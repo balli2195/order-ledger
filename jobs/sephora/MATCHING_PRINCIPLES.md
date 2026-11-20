@@ -14,15 +14,15 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 **Attributes are checked against what exists.** Size, strength (EDT / EDP), finish, packaging and shade don't decide identity alone. Each has to be one Sephora sells for that product:
 - **Shade:** a shade Sephora doesn't sell is skipped. A close shade (Noir = Black, same description) is kept and flagged for review.
 - **Size:** the Sephora size must equal the Amazon size. Nearly the same volume is fine.
-  - A Sephora size bigger than the listing is acceptable; a smaller one is not.
+  - A different bottle size, bigger or smaller, is not the listing's product: Sephora doesn't sell that size (Nick, Nov 20: Coco Noir 1.2 oz listing, Sephora only 1.7 / 3.4 oz → not sold).
   - A **Mini page never matches a full-size listing.**
   - A full-size page that also sells the mini is fine for a mini listing.
 - **Refill vs refillable:** a refill is a refill. "Refillable" describes the jar, not a refill.
 
 **Versions.** An older or newer version of the same product is a match: renamed, repackaged or reformulated (Easy Bake and Snatch → Easy Bake Airbrush Matte, SurrealSkin → SurrealSkin Luminous Hydrating). The listing's shade has to exist in the current line.
-- When a line renames its shades, map them by name and description ("Antibes, soft peach" = Ginger, soft peach). If there's no exact counterpart, the nearest name is acceptable (Blondie → Kunafa Blondie).
+- When a line renames its shades, map them by name and description ("Antibes, soft peach" = Ginger, soft peach). If there's no exact counterpart, the nearest name is acceptable only when the colour agrees too (Blondie → Kunafa Blondie). A shared word with a different colour is no match (Nick, Nov 20: old Cupcake, pink undertone ≠ Peach Cupcake; no counterpart, so not sold).
 - When a line renumbers its shades, the old numbers don't carry over (MUFE Artist Rouge C206).
-- A reformulation that made the product a little smaller is still a match at today's size: MAC Studio Fix Powder Plus, old 15 g compact = today's 12 g. The "smaller Sephora size isn't acceptable" rule is for sizes Sephora sells alongside each other, not for a version change.
+- A reformulation that made the product a little smaller is still a match at today's size: MAC Studio Fix Powder Plus, old 15 g compact = today's 12 g. The size rule is for sizes Sephora sells alongside each other, not for a version change.
 
 **How many differences.** One difference (finish, packaging or name) can still be the same product. Several together make it a different product. Waterproof vs not, glass bottle vs tube, and "blur balm" vs "foundation" all at once = different.
 
