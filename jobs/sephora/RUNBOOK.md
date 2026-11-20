@@ -212,7 +212,7 @@ Five rounds of blind checks: fresh subagents read every Amazon photo and the liv
 ## 10. Verify step: settle conflicting matches with outside evidence (Nov 20, 2026)
 
 The principles are in `MATCHING_PRINCIPLES.md` (project doc `claude/sephora-catalog/MATCHING_PRINCIPLES.md`). When a pair's evidence conflicts, the scripts don't decide it by score; a research pass does, the way Nick does (web search, brand page, photos, model number), and it records its sources.
-1. `python3 -I verify_queue.py --limit 40` lists the conflicts: sibling named in the title, concentration, form / type, line word missing, mini page vs full-size listing, set vs single, low close calls, shade guesses, unsized multi-size pairs. Only undecided, active, live, unverified pairs are listed. Near-profit pairs come first, then each kind in turn. Output: Hub doc `sephora_jobs/verify_queue`.
+1. `python3 -I verify_queue.py --limit 40` lists the conflicts: sibling named in the title, concentration, form / type, line word missing, mini page vs full-size listing, set vs single, low close calls, shade guesses, unsized multi-size pairs. Only undecided, active, live, unverified pairs are listed, and none Nick is restricted from selling (`sellable = restricted`). Near-profit pairs come first, then each kind in turn. Output: Hub doc `sephora_jobs/verify_queue`.
 2. Research pass: a Claude session follows `verify_prompt.md` for the queued cases and writes `.data/verify_results.json`. It never loads sephora.com; the Sephora side is the SKU lists (`/api/engine/store-skus`) and the brand listings.
 3. `python3 -I verify_apply.py` applies only high-confidence results with a source. Everything is logged in `.data/verify_undo.json`.
    - **same:** sets `extra.verified` and the store size.

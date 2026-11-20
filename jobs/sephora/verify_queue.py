@@ -83,7 +83,8 @@ def main():
     cases = []
     for r in cat:
         ex = r.get("extra") or {}
-        if r.get("match_ok") is not None or ex.get("listing_dead") or ex.get("verified"):
+        if r.get("match_ok") is not None or ex.get("listing_dead") or ex.get("verified") or r.get("sellable") == "restricted":
+            # (Nick, Nov 20, 2026: skip listings his account is restricted from selling)
             continue
         ks = kinds_of(r)
         if not ks:
