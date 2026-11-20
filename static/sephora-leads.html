@@ -109,19 +109,16 @@
     <div class="sl-seg" id="viewSeg"><button data-v="queue" class="on">To review</button><button data-v="decided">Decided</button><button data-v="catalog">Catalog</button></div>
     <a class="btn small ghost" href="/lead-db/guide" title="How the Lead DB tables, jobs and model training work">How it works</a>
     <span class="muted" id="count" style="font-size:13px"></span>
+    <select id="fStore" hidden><option value="">All stores</option></select>
+    <span id="sSlot" style="margin-left:auto;display:flex;flex:0 1 380px;min-width:240px"></span>
   </div>
 
   <section id="queueView">
-    <div class="toolbar" id="qSlot" style="margin-top:0;justify-content:flex-end"></div>
     <div id="queue"></div>
     <div id="queueEmpty" class="empty hidden">Nothing to review right now.</div>
   </section>
 
   <section id="catalogView" hidden>
-    <div class="toolbar sl-filters" style="margin-top:0">
-      <select id="fStore" hidden><option value="">All stores</option></select>
-      <span id="cSlot" style="margin-left:auto;display:flex;flex:0 1 380px;min-width:240px"></span>
-    </div>
     <div class="sl-brands" id="brands" hidden></div>
     <div class="table-wrap"><table id="catTable">
       <thead><tr><th id="thBrand" class="sortable" title="Click to filter by brand">Brand ▾</th><th>Product</th><th>Amazon</th><th class="num">Sephora</th><th id="thSale" class="sortable" title="Sephora's own sale price on the product (not promo codes). Click to filter.">On sale ▾</th><th class="num">Buy Box</th><th id="thSell" class="sortable" title="Whether Amazon lets you sell this listing (monthly restriction check). Restricted listings are hidden unless picked here.">Sellable ▾</th><th id="thConf" class="sortable" title="How sure the matcher is. Click to filter.">Confidence ▾</th><th class="num sortable" id="thRoi" data-roi="roi" title="ROI at today's Sephora price and Buy Box. Click to sort or filter.">ROI now ▾</th><th class="num sortable" data-sort="sold" title="Click to sort: high first, then low first, then back to brand">Sold/mo</th><th>Flags</th><th id="thChecked" class="sortable" title="Who last marked the pair OK or wrong, and when. Click to filter or sort.">Last checked ▾</th><th id="thMatch" class="sortable" title="Wrong matches are hidden unless picked here. On a wrong row, OK makes it a match again; clicking Wrong again clears the mark.">Match ▾</th></tr></thead>
@@ -396,8 +393,8 @@
     S.view = v; store.set('sephView', v);
     $$('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
     $('#queueView').hidden = v === 'catalog'; $('#catalogView').hidden = v !== 'catalog';
-    // the search box sits on the right, just above the table or the review cards (Nick, Nov 20 2026)
-    (v === 'catalog' ? $('#cSlot') : $('#qSlot')).append($('#searchBox'));
+    // the search box sits on the right of the tab row, right above the table (Nick, Nov 20 2026)
+    $('#sSlot').append($('#searchBox'));
     $('#q').placeholder = v === 'catalog' ? 'Search brand, product, shade, ASIN or product id…' : 'Search brand, product, shade or ASIN…';
     refresh();
   }
