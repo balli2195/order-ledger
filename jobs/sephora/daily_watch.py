@@ -176,8 +176,8 @@ def main():
             return False
         if (ex.get("shade_hint") or {}).get("not_sold") and not r.get("store_size") and r.get("match_ok") is not True:
             return False   # resolve_skus.py: the Amazon shade isn't on Sephora's shade list (Nov 19, 2026)
-        if (ex.get("shade_hint") or {}).get("bundle") and r.get("match_ok") is not True:
-            return False   # the listing is a set of two Sephora singles: one single's price isn't the cost (checker round 3)
+        if (ex.get("shade_hint") or {}).get("bundle") and int(C.fnum(ex.get("pack_qty")) or 1) < 2:
+            return False   # a set of Sephora singles priced as one single: the cost would be wrong (checker round 3)
         return ex.get("demand_ok") is True and ex.get("thin_price") is not True
 
     # Every watchable pair is priced, not only one per ASIN (Nov 19, 2026): an ASIN with two Sephora pairs (Nick's lead and
@@ -419,6 +419,8 @@ def main():
         if not r.get("store_size") and sh_ and sh_.get("guess"):   # resolve_skus.py couldn't tell the shade
             bits.insert(0, ("Close shade, check it: Amazon's shade is near " if sh_.get("close") else "Shade not confirmed: looks like ")
                         + " or ".join(sh_["guess"][:3]))
+        elif sh_ and sh_.get("bundle"):   # a set of Sephora singles, priced as one of each (Nick, Nov 20, 2026)
+            bits.insert(0, "Bundle: buy one each of " + " + ".join(sh_["bundle"][:4]) + " for one Amazon unit")
         elif sh_ and sh_.get("two_shades"):   # the listing names two Sephora shades: both kept (Nick, Nov 19, 2026)
             bits.insert(0, "Two shades named: " + " or ".join(sh_["two_shades"][:2]) + " (check the photo)")
         if sc_note:
