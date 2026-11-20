@@ -197,3 +197,12 @@ Five rounds of blind checks: fresh subagents read every Amazon photo and the liv
 - Shade hints the daily job skips (unless the pair is marked OK): `not_sold` (now also "size not sold: …" for travel sizes smaller than any Sephora size) and `bundle` (the listing is a set of two Sephora singles; one single's price isn't the cost).
 - The checker prompts must fetch Amazon one page at a time with desktop Safari headers, `--compressed`, and a fresh cookie jar. They must never fetch sephora.com.
 - Product re-matches found by the loop are listed, never applied, until Nick says so.
+- **Nick's calls from the one-by-one review (Nov 20, 2026; log in the scratchpad `review/decisions.json`):**
+  - One difference between two products (finish, packaging, name) may still be the same product; three together (waterproof vs not, glass bottle vs tube, "blur balm" vs "foundation") are a mismatch (ONE/SIZE BBB Cream ≠ Full Beat foundation).
+  - A trio is not a duo (LYS mini cream blush trio ≠ the cream + powder duo).
+  - A finish word alone can be the same product, and the shade goes by its description: Merit Signature Lip *Matte* Antibes (soft peach) = Signature Lip in Ginger (soft peach). Merit sells no separate matte line.
+  - An older version of a line maps to the new line's shades by name. When the old shade has no exact counterpart, the nearest name is acceptable (Huda Easy Bake and Snatch Blondie = Easy Bake Airbrush Matte Kunafa Blondie; plain Blondie doesn't exist in the new line).
+  - The original SurrealSkin liquid foundation is Sephora's SurrealSkin *Luminous Hydrating* Foundation, not Natural Finish.
+  - A set of Sephora singles is a lead at the real cost, one of each (`pack_qty`), with the note "Bundle: buy one each of …" (Fresh Lip Drip Set).
+  - Press-on nails: the design must match; a design Sephora doesn't sell is no match.
+  - After-shave is not the fragrance.
