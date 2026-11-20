@@ -40,7 +40,7 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 
 ## 2. Which evidence to trust, strongest first
 
-1. **Amazon's model / part number equal to a Sephora item number, or Amazon's UPC / EAN equal to the brand's own barcode for a shade and size** (brand sites list them: REFY, Westman, Makeup by Mario, Haus Labs; Chanel and Dior barcodes map to their product references). This settles shade and size outright.
+1. **Amazon's model / part number equal to a Sephora item number.** This settles shade and size outright.
 2. **Text printed on the product in the photos:** box ends, stickers, the bottle band, shade codes and sizes on the label.
 3. **The brand's own site or Sephora's page:** what the product is called, which strengths and sizes it comes in, which shades exist.
 4. **The live Amazon page:** the selected variation, the per-ounce price and the Buy Box price. Price helps pick mini vs full size, not identity.
@@ -52,6 +52,8 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 **Missing data is fetched, not guessed.** When the right Sephora page has no SKU list in the data, or a "not sold" call rests on a list that may be stale, read that page (Nick's old MacBook Chrome, signed out) before deciding.
 
 When a weaker source contradicts a stronger one, the stronger one wins.
+
+**Barcodes are a later step (Nick, Nov 20).** Amazon UPCs / EANs are often seller-assigned or regional, so they can differ even when the product is the same. Check a barcode against the brand's own list (brand sites publish one per shade and size: Westman, Makeup by Mario, Haus Labs, Natasha Denona, Merit, ONE/SIZE, Josie Maran, LYS, REFY; Chanel and Dior barcodes map to their product references) only when the title and photos don't settle the shade or size, for example when no shade is named or printed. When the title and photos agree on the product, ignore a barcode that disagrees.
 
 ## 3. When the evidence conflicts, verify instead of guessing
 
