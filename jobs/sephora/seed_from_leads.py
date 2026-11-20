@@ -10,8 +10,7 @@
    so the weekly job and the sale watcher cover them; --write-brands-json also writes them into brands.json);
    productIds still unknown get one keyword search on their product-link words. Unknown after that = not on Sephora
    now: priced at the last lead cost, extra.listing_seen=false (the daily job skips those).
-3. Brands Amazon's monthly restriction check found restricted (load_brands exclude_brands, from brand_restrictions.py)
-   are skipped and logged.
+3. No brand is skipped: each lead ASIN's own Listing Restrictions result sets its `sellable` (Nov 20, 2026).
 4. Pairs not yet in the Hub get a row: confidence high, match_reason 'Nick lead <date>'. Every lead pair is active
    (Nov 19, 2026; before, extra lead pairs for an ASIN were stored inactive and could hide the right match). When the
    lead's product is live on Sephora, the matcher's other pairs for that ASIN are deactivated (never pairs Nick marked
@@ -124,7 +123,9 @@ def main():
     C.need_env("ENGINE_KEY", "KEEPA_KEY", "SPAPI_CLIENT_ID", "SPAPI_CLIENT_SECRET", "SPAPI_REFRESH_TOKEN")
     C.DRY_RUN = a.dry_run
     cfg = C.load_brands()
-    excl = {norm(x) for x in cfg.get("exclude_brands", [])}
+    # Nick's own leads are never skipped by brand (Nov 20, 2026): the brand skip list is brands mostly restricted on
+    # Amazon, but a lead he bought may be one of the open listings; each lead ASIN's own restriction check decides.
+    excl = set()
     log = []
 
     # ---- 1. leads
