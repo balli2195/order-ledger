@@ -338,6 +338,13 @@ def resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None = 
             m = min(cand, key=lambda s: abs(sz(s) - t_oz[0])) if t_oz else max(cand, key=sz)
             return {**r, "sku_id": m["sku_id"], "alts": [x["sku_id"]], "bundle": True,
                     "how": r["how"] + f"; a set: {m.get('value')} {m.get('size') or ''} + {x.get('value')}"}
+    # a duo / 2-pack of one Sephora single ('BADgal Bang! Double The Volume Mascara Duo'): two of that SKU (Nick, Nov 20)
+    m2 = re.search(r"\b(duo|twin|pack of ([2-4])|([2-4]) ?(pack|pk|count|ct|pc|pcs|piece|pieces)|set of ([2-4]))\b", title)
+    if x and m2 and not r.get("bundle") and not r.get("two_shades") and not re.search(r"\b(duo|set|pack|kit)\b", norm(product_name or "")) \
+            and not re.search(r"\d\s*x\s*\d|\bduo\b|\bset\b", ((x.get("value") or "") + " " + (x.get("size") or "")).lower()):
+        # (not when Sephora's SKU is itself the pack: Huda Legit Lashes '2 x 0.28 oz')
+        n = int(next((g for g in m2.groups()[1:] if g and g.isdigit()), 2))
+        return {**r, "alts": [x["sku_id"]] * (n - 1), "bundle": True, "how": r["how"] + f"; {n} of this SKU in one listing"}
     return r
 
 
@@ -540,6 +547,13 @@ def _resolve_text(k: dict, skus: list, vt: str | None = None, asin: str | None =
     # ('3 - Fair' and '3 Fair' are one shade: compare code + name)
     key = {s["sku_id"]: " ".join(x for x in split_value(s.get("value") or "") if x) or norm(_strip_sizes(s.get("value") or ""))
            for s in skus}
+    # a mini whose size text names another SKU's shade ('Black' · 'Mini Intense Pitch Black – 0.14 oz') is that shade's
+    # mini: group them, so the title's size picks between them (BADgal BANG! 'Regular Size, 0.3 fl oz', Nick Nov 20)
+    for s_ in skus:
+        sz_ = norm(s_.get("size") or "")
+        for o in skus:
+            if o is not s_ and key[o["sku_id"]] and len(key[o["sku_id"]]) >= 5 and key[o["sku_id"]] in sz_:
+                key[s_["sku_id"]] = key[o["sku_id"]]
     top = ranked[0]
     second = next((r[0] for r in ranked[1:] if key[r[1]] != key[top[1]]), 0)
     if top[0] >= 7 and top[0] - second >= 3:

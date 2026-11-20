@@ -69,7 +69,7 @@ sheer dewy glow glossy hydrating moisturizing nourishing longwear long wear wear
 mist tint tinted balm after shave lotion wash color colour finish plumping volumizing lengthening curling setting
 blush bronzer highlighter powder foundation concealer primer mascara liner eyeliner pencil lipstick gloss serum
 toner cleanser mask moisturizer eyeshadow shadow palette brush eau de parfum toilette perfume fragrance cologne
-spf daily all day over hour hr 24hr 12hr 24 natural soft smooth radiant buildable lightweight full coverage
+spf daily all day over hour hr 24hr 12hr 24 16hr 16 36hr 36 48hr 48 72hr natural soft smooth radiant buildable lightweight full coverage
 treatment repair daily clear brightening firming refillable new formula shampoo conditioner deodorant soap bath
 shower women men pour homme femme vaporisateur vapo natural""".split())
 
@@ -280,7 +280,7 @@ def match_brand(slug, cfg_b, keepa=None, exclude=None, shades=None):
         # perfume for a deodorant stick, a body / hair version for the fragrance
         bta = set(re.sub(r"[^a-z0-9]+", " ", bt).split())
         bsx = set(re.sub(r"[^a-z0-9]+", " ", base_text(x["p"]["name"])).split())
-        for wv, pen in (("waterproof", 0.18), ("deodorant", 0.45), ("stick", 0.12), ("refillable", 0.0), ("body", 0.2), ("hair", 0.2),
+        for wv, pen in (("waterproof", 0.30), ("deodorant", 0.45), ("stick", 0.12), ("refillable", 0.0), ("body", 0.2), ("hair", 0.2),
                         ("sharpener", 0.6), ("rollerball", 0.25), ("toenail", 0.6), ("toenails", 0.6), ("loose", 0.2), ("pressed", 0.2), ("aftershave", 0.5)):
             if (wv in bsx) != (wv in bta) and pen:
                 s -= pen; why.append(f"'{wv}' on one side only")

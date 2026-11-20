@@ -169,7 +169,7 @@ def main():
             if res["sku_id"] and res["sku_id"] != r["store_sku_id"] and label(by[res["sku_id"]]) != (r.get("store_size") or ""):
                 recheck.append((r["asin"], r["product_id"], r.get("store_size"), label(by[res["sku_id"]]), res["how"][:100]))
             continue
-        if res.get("bundle") and res["sku_id"]:
+        if res.get("bundle") and res["sku_id"] and int(C.fnum((r.get("extra") or {}).get("pack_qty")) or 1) < 2:
             # the listing is a set of two Sephora singles ('The Lip Drip Set ... Watermelon Rind ... Mango Pulp'): one
             # single's price isn't the cost, so it isn't a lead as it stands (checker round 3); Nick can still mark it OK
             stats["bundle of Sephora singles"] += 1
