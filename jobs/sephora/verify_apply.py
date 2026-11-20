@@ -44,12 +44,23 @@ def main():
     res = json.load(open(a.results))
     queue = {(c["asin"], c["product_id"]): c for c in (C.state_get("verify_queue", {}) or {}).get("cases", [])}
     skus = {r["product_id"]: r for r in C.hub("GET", "/api/engine/store-skus")["rows"]}
-    undo, for_nick, labels, done = [], [], [], {"same": 0, "other": 0, "not_sold": 0, "for Nick": 0}
+    undo, for_nick, labels, done, errors = [], [], [], {"same": 0, "other": 0, "not_sold": 0, "for Nick": 0}, []
     today = C.today().isoformat()
 
     def mark(body):
+        ss = body.get("store_size")
+        if ss is not None and not (str(ss.get("sku_id") or "").isdigit() and ss.get("size") and ss.get("price")):
+            print("  skip store size (SKU without size or price):", body["asin"], ss)
+            return None
         print("  mark", body["asin"], body["product_id"], {k: v for k, v in body.items() if k not in ("asin", "product_id", "note")})
-        return None if a.dry_run else C.hub("POST", "/api/engine/sephora/catalog/mark", body)
+        if a.dry_run:
+            return None
+        try:
+            return C.hub("POST", "/api/engine/sephora/catalog/mark", body)
+        except Exception as e:  # noqa: BLE001  (one bad write doesn't stop the rest; the undo log is still written)
+            print("  FAILED", body["asin"], body["product_id"], e)
+            errors.append({"body": body, "error": str(e)})
+            return None
 
     for r in res:
         rows = C.hub("GET", "/api/engine/sephora/catalog", params={"asin": r["asin"]})["rows"]
@@ -114,12 +125,14 @@ def main():
     if not a.dry_run:
         old = json.load(open(os.path.join(C.DATA, "verify_undo.json"))) if os.path.exists(os.path.join(C.DATA, "verify_undo.json")) else []
         json.dump(old + undo, open(os.path.join(C.DATA, "verify_undo.json"), "w"), indent=0)
-        prev = (C.state_get("verify_labels", {}) or {}).get("items", [])
+        prev = C.state_get("verify_labels", []) or []
+        prev = prev.get("items", []) if isinstance(prev, dict) else prev
         C.state_put("verify_labels", {"items": prev + labels})
-        keep = [x for x in ((C.state_get("verify_for_nick", {}) or {}).get("items") or [])
+        vf = C.state_get("verify_for_nick", []) or []
+        keep = [x for x in ((vf.get("items") if isinstance(vf, dict) else vf) or [])
                 if (x["asin"], x["product_id"]) not in {(y["asin"], y["product_id"]) for y in res}]
         C.state_put("verify_for_nick", {"built": today, "items": keep + for_nick})
-    print(f"applied: {done}")
+    print(f"applied: {done}" + (f"; {len(errors)} writes failed (listed above)" if errors else ""))
 
 
 if __name__ == "__main__":
