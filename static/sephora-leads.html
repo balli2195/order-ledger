@@ -101,17 +101,18 @@
   <h2 class="sl-title">Lead DB <span class="live-dot" id="live" title="Live updates. Click for the last job runs." role="button" tabindex="0" style="cursor:pointer"></span></h2>
   <div id="sale" class="sl-sale hidden"></div>
 
+  <div class="search" id="searchBox"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="q" type="search" placeholder="Search brand, product, shade or ASIN…" autocomplete="off"></div>
   <div class="toolbar">
     <div class="sl-seg" id="viewSeg"><button data-v="queue" class="on">To review</button><button data-v="decided">Decided</button><button data-v="catalog">Catalog</button></div>
     <a class="btn small ghost" href="/lead-db/mismatches" title="Pairs marked wrong, held back by match rules, or rejected: check for false mismatches">Mismatches</a>
     <a class="btn small ghost" href="/lead-db/guide" title="How the Lead DB tables, jobs and model training work">How it works</a>
-    <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" placeholder="Search brand, product, shade or ASIN…" autocomplete="off"></div>
     <select id="qSale" title="Leads priced with a store sale, promo code or event discount"><option value="">On sale or not</option><option value="1">On sale only</option><option value="0">Not on sale</option></select>
     <span class="muted" id="count" style="font-size:13px"></span>
   </div>
 
   <section id="queueView">
+    <div class="toolbar" id="qSlot" style="margin-top:0;justify-content:flex-end"></div>
     <div id="queue"></div>
     <div id="queueEmpty" class="empty hidden">Nothing to review right now.</div>
   </section>
@@ -123,6 +124,7 @@
       <select id="fMatch" title="Pairs marked wrong or held back by a match rule are on the Mismatches page"><option value="">Mismatches hidden</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match only</option><option value="held">Held back by rules only</option><option value="all">Everything, incl. mismatches</option></select>
       <select id="fBy" title="Who last marked the pair OK, wrong or a size"><option value="">Checked by anyone or no one</option><option value="claude">Checked by Claude</option><option value="people">Checked by people</option><option value="any">Checked by anyone</option></select>
       <select id="fDays" title="When the pair was last marked"><option value="">Checked any time</option><option value="1">Checked in the last 24 hours</option><option value="7">Checked in the last 7 days</option><option value="30">Checked in the last 30 days</option></select>
+      <span id="cSlot" style="margin-left:auto;display:flex;flex:0 1 380px;min-width:240px"></span>
     </div>
     <div class="sl-brands" id="brands" hidden></div>
     <div class="table-wrap"><table id="catTable">
@@ -355,6 +357,8 @@
     $$('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
     $('#queueView').hidden = v === 'catalog'; $('#catalogView').hidden = v !== 'catalog';
     $('#qSale').hidden = v === 'catalog';
+    // the search box sits on the right, just above the table or the review cards (Nick, Nov 20 2026)
+    (v === 'catalog' ? $('#cSlot') : $('#qSlot')).append($('#searchBox'));
     $('#q').placeholder = v === 'catalog' ? 'Search brand, product, shade, ASIN or product id…' : 'Search brand, product, shade or ASIN…';
     refresh();
   }
