@@ -10,6 +10,7 @@ What it does, forever:
      - hot: Lead DB pairs the daily finder watches (active, open to sell, not marked wrong), pairs on sale or with open candidates, and Nick's leads from the last 30 days -> pulled every HOT_HOURS
      - cold: every other active Lead DB ASIN -> pulled every COLD_HOURS
      Pairs Nick or Claude marked wrong are left out (Nov 19, 2026): they only matter for review, not for leads.
+     Listings Nick is restricted from selling are left out too (Nov 20, 2026), unless they're one of his recent leads.
   2. Pulls the most overdue ASINs from Keepa, 20 per request (history, stats, Buy Box, 20 offers with stock, rating).
   3. Writes keepa_raw (latest full pull, gzipped, replaced) and one keepa_snapshots row (today's offers/stock).
   4. Spends only spare tokens: it never takes the shared key below KEEPA_RESERVE and averages at most
@@ -107,7 +108,10 @@ WITH cat AS (
   SELECT asin,
          bool_or(active AND sellable = 'open' AND match_ok IS NOT FALSE) AS watched,   -- any confidence (Nick, Nov 19, 2026)
          bool_or(active AND on_sale) AS on_sale
-    FROM sephora_catalog WHERE active AND match_ok IS NOT FALSE GROUP BY asin),   -- pairs marked wrong aren't pulled (Nick, Nov 19, 2026)
+    FROM sephora_catalog WHERE active AND match_ok IS NOT FALSE GROUP BY asin
+  -- listings Nick can't sell (every pair restricted) aren't pulled (Nick, Nov 20, 2026); the monthly restriction check
+  -- (jobs/sephora/brand_restrictions.py, SP-API, no Keepa) re-checks them and an opened listing is pulled again
+  HAVING bool_or(sellable IS DISTINCT FROM 'restricted')),   -- pairs marked wrong aren't pulled (Nick, Nov 19, 2026)
 cand AS (SELECT DISTINCT asin FROM sephora_candidates WHERE status = 'new'),
 lead AS (SELECT DISTINCT upper(btrim(asin)) AS asin FROM leads
           WHERE asin IS NOT NULL AND btrim(asin) <> '' AND COALESCE(lead_date, created_at::date) >= current_date - 30),

@@ -628,8 +628,12 @@ async def page_catalog(f: dict, limit: int = 300, offset: int = 0) -> dict:
         w.append("store = %s"); a.append(f["store"].strip())
     if f.get("confidence"):
         w.append("confidence = %s"); a.append(f["confidence"])
-    if f.get("sellable"):
+    if f.get("sellable") and f["sellable"] != "any":
         w.append("sellable = %s"); a.append(f["sellable"])
+    elif not f.get("sellable") and not f.get("q"):
+        # Nick, Nov 20, 2026: listings he can't sell are kept (the monthly restriction check re-checks them) but hidden
+        # by default; pick Restricted or Any to see them. A search still finds them.
+        w.append("sellable IS DISTINCT FROM 'restricted'")
     if f.get("needs_size") in ("1", "true"):
         w.append("needs_size")
     if f.get("needs_size") == "open":

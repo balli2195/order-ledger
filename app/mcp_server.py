@@ -451,13 +451,14 @@ async def search_sephora_catalog(
     match: Annotated[Literal["ok", "wrong", "unchecked"] | None, Field(description="Nick's match check")] = None,
     needs_size_open: Annotated[bool, Field(description="Only pairs that need a size Nick hasn't confirmed")] = False,
     include_inactive: bool = False,
+    include_restricted: Annotated[bool, Field(description="Also list pairs Nick is restricted from selling (hidden by default unless a query is given)")] = False,
     limit: int = 100,
 ) -> dict:
     """The Amazon ASIN <-> Sephora product catalog behind the Sephora leads tab, with per-brand counts."""
     from . import sephora
     await _actor(tab="sephora_leads")
     f = {"q": query, "brand": brand, "match": match, "needs_size": "open" if needs_size_open else None,
-         "active": "all" if include_inactive else "1"}
+         "active": "all" if include_inactive else "1", "sellable": "any" if include_restricted else None}
     return await sephora.page_catalog({k: v for k, v in f.items() if v}, min(max(limit, 1), 500), 0)
 
 
