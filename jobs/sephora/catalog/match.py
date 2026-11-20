@@ -39,6 +39,7 @@ TYPE_GROUPS = {
     "shampoo": {"shampoo"}, "conditioner": {"conditioner"}, "dryshampoo": {"dry-shampoo"},
     "deodorant": {"deodorant"}, "bodylotion": {"lotion", "emulsion"}, "bath": {"shower", "soap", "bath"},
     "nail": {"nail", "vernis", "polish"}, "patch": {"patch", "patches"},
+    "candle": {"candle", "votive"}, "diffuser": {"diffuser", "reed"},   # home scent (NEST soap is not the candle, Nick's marks)
     "fragrance": {"parfum", "perfume", "toilette", "cologne", "edp", "edt", "fragrance", "extrait", "eau", "leau"},
 }
 # pairs of types that are compatible (a product may carry both words)
@@ -130,6 +131,8 @@ def ptypes(text):
         found.discard("fragrance"); found.add("bodymist")
     if not found and "cream" in t and not ({"eye", "body", "hand", "foot", "lip", "cleansing", "shave", "hair"} & t):
         found.add("moisturizer")   # a face cream with no other type word ('Black Tea Advanced Age Renewal Cream' is not a serum, Nick Nov 20)
+    if "body" in t and ({"cream", "veil", "oil", "butter", "milk", "lotion", "balm", "gel", "scrub", "wash"} & t):
+        found.discard("fragrance"); found.discard("moisturizer"); found.add("bodylotion")   # Coco Mademoiselle Body Cream is not the EDP
     if "fragrance" in found:   # "Bleu de Chanel Eau de Parfum" style names are fragrances whatever else they say
         found -= {"lipstick"}
     return found
