@@ -407,9 +407,21 @@ async def _notify(conn, op: str, ids: Iterable, by: str | None, src: str) -> Non
     await conn.execute("SELECT pg_notify('ledger', %s)", (json.dumps(payload),))
 
 
-async def _ensure_names(conn, kind: str, names: list[str]) -> None:
+async def _ensure_names(conn, kind: str, names: list[str]) -> list[str]:
+    """Add store / brand names that don't exist yet and return the names to store on the lead. A name that exists in
+    another capitalisation ('DIOR' from the Sephora catalog vs Nick's 'Dior') reuses the existing one, so the lead keeps
+    Nick's can_source setting (Nov 20, 2026: 'DIOR' and 'SEPHORA COLLECTION' had been added as new can't-source brands)."""
+    out = []
     for n in names:
+        cur = await conn.execute(f"SELECT name FROM {kind} WHERE lower(name)=lower(%s) ORDER BY (name=%s) DESC, "
+                                 f"can_source DESC, created_at LIMIT 1", (n, n))
+        hit = await cur.fetchone()
+        if hit:
+            out.append(hit["name"])
+            continue
         await conn.execute(f"INSERT INTO {kind} (name) VALUES (%s) ON CONFLICT DO NOTHING", (n,))
+        out.append(n)
+    return out
 
 
 async def create_lead(actor: Actor, data: dict) -> dict:
@@ -435,8 +447,9 @@ async def create_lead(actor: Actor, data: dict) -> dict:
             log.warning("eligibility check failed for %s: %s", f["asin"], e)
     async with db.pool.connection() as conn:
         async with conn.transaction():
-            await _ensure_names(conn, "stores", f.get("stores", []))
-            await _ensure_names(conn, "brands", f.get("brands", []))
+            for k_ in ("stores", "brands"):
+                if f.get(k_):
+                    f[k_] = await _ensure_names(conn, k_, f[k_])
             cols = list(f) + ["created_by", "updated_by"]
             cur = await conn.execute(
                 f"INSERT INTO leads ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING *",
@@ -464,8 +477,9 @@ async def update_leads(actor: Actor, changes: list[dict]) -> list[str]:
                 before = await cur.fetchone()
                 if not before:
                     raise LedgerError(f"Lead {lid} not found")
-                await _ensure_names(conn, "stores", f.get("stores", []))
-                await _ensure_names(conn, "brands", f.get("brands", []))
+                for k_ in ("stores", "brands"):
+                    if f.get(k_):
+                        f[k_] = await _ensure_names(conn, k_, f[k_])
                 sets = ", ".join(f"{k}=%s" for k in f)
                 extra_set = ""
                 extra_args: list = []
