@@ -297,10 +297,8 @@
       const list = listPrice(r);
       return `<tr>
         <td>${esc(r.brand || '')}${multiStore() ? `<div class="muted" style="font-size:11px">${esc(r.store || '')}</div>` : ''}</td>
-        <td class="prod">${link(storeUrl(r), r.sephora_name || r.product_id) || esc(r.sephora_name || r.product_id)}${r.shade ? ` <span class="muted">· ${esc(r.shade)}</span>` : ''}
-          ${r.amazon_title ? `<div class="muted" style="font-size:12px">${esc(r.amazon_title)}</div>` : ''}
-          ${r.match_reason ? `<div class="muted" style="font-size:11.5px">${esc(r.match_reason)}</div>` : ''}</td>
-        <td><a href="${amzUrl(r.asin)}" target="_blank" rel="noopener" class="mono">${esc(r.asin)}</a><br><a href="${keepaUrl(r.asin)}" target="_blank" rel="noopener" style="font-size:12px">Keepa</a></td>
+        <td class="prod">${link(storeUrl(r), r.sephora_name || r.product_id) || esc(r.sephora_name || r.product_id)}</td>
+        <td><a href="${amzUrl(r.asin)}" target="_blank" rel="noopener" class="mono" title="${esc(r.amazon_title || '')}">${esc(r.asin)}</a><br><a href="${keepaUrl(r.asin)}" target="_blank" rel="noopener" style="font-size:12px">Keepa</a></td>
         <td class="num">${r.on_sale && r.sale_price != null ? `<span class="sl-strike">${list}</span>${money(r.sale_price)}` : list}</td>
         <td>${r.on_sale ? '<span class="sl-tag reason">On sale</span>' : '<span class="muted">—</span>'}</td>
         <td class="num">${money(r.buybox)}</td>
