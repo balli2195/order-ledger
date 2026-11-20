@@ -58,6 +58,9 @@ def main():
         if not pair or pair.get("match_ok") is not None:
             continue
         ok = r.get("confidence") == "high" and r.get("sources")
+        bundle = [b for b in (r.get("bundle") or []) if b]
+        if bundle and any(not b.get("sku_id") for b in bundle):
+            ok = False   # a bundle item without a Sephora SKU can't be priced
         if not ok or r["verdict"] == "cant_tell":
             for_nick.append(r); done["for Nick"] += 1
             continue
@@ -92,6 +95,20 @@ def main():
                 x = next((s for s in (skus.get(new) or {}).get("skus", []) if s["sku_id"] == r.get("sku_id")), None)
                 if x:
                     mark({"asin": r["asin"], "product_id": new, "store_size": {"sku_id": x["sku_id"], "size": label(x), "price": x.get("price")}})
+                if bundle and not a.dry_run:
+                    # a set of Sephora items: priced as their list prices added up (common.pick_price reads extra.bundle_skus)
+                    items = []
+                    for b in bundle:
+                        sx = next((s for pid in {b.get("product_id") or new, new} for s in (skus.get(pid) or {}).get("skus", [])
+                                   if s["sku_id"] == b["sku_id"]), None)
+                        for _ in range(int(b.get("qty") or 1)):
+                            items.append({"sku_id": b["sku_id"], "label": label(sx) if sx else b["sku_id"], "price": (sx or {}).get("price")})
+                    cur = next((x for x in C.hub("GET", "/api/engine/sephora/catalog", params={"asin": r["asin"]})["rows"] if x["product_id"] == new), None)
+                    if cur and all(i["price"] for i in items):
+                        ex = {**(cur.get("extra") or {}), "bundle_skus": items, "pack_qty": 1,
+                              "shade_hint": {"bundle": [i["label"] for i in items], "checked": today}}
+                        C.hub_upsert_catalog([{"asin": r["asin"], "product_id": new, "active": cur["active"], "extra": ex}])
+                        print("  bundle", r["asin"], new, [i["label"] for i in items])
             done[r["verdict"]] += 1
     os.makedirs(C.DATA, exist_ok=True)
     if not a.dry_run:
@@ -99,7 +116,9 @@ def main():
         json.dump(old + undo, open(os.path.join(C.DATA, "verify_undo.json"), "w"), indent=0)
         prev = (C.state_get("verify_labels", {}) or {}).get("items", [])
         C.state_put("verify_labels", {"items": prev + labels})
-        C.state_put("verify_for_nick", {"built": today, "items": for_nick})
+        keep = [x for x in ((C.state_get("verify_for_nick", {}) or {}).get("items") or [])
+                if (x["asin"], x["product_id"]) not in {(y["asin"], y["product_id"]) for y in res}]
+        C.state_put("verify_for_nick", {"built": today, "items": keep + for_nick})
     print(f"applied: {done}")
 
 
