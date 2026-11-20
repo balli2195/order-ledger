@@ -88,7 +88,7 @@ Run it once a week (for example Sunday).
 **A wrong mark switches on the ASIN's fallback pairs (Nov 19, 2026).** When a pair is marked wrong and the ASIN has no other active, not-wrong pair, the Hub reactivates its inactive not-wrong pairs (`mark_catalog`, returned as `reactivated`). `seed_from_leads.py` keeps every lead pair active (it used to store extra lead pairs inactive). The one-time sweep on Nov 19 reactivated 23 such pairs (e.g. B0DZV1RBGX's glitter spray, hidden after its regular spray was marked wrong).
 
 **Pairs marked wrong are never updated (Nick, Nov 19, 2026).** Only matches and possible matches matter for leads; a
-wrong pair is kept as it was, for review on the Mismatches page. The daily job, the weekly listing refresh,
+wrong pair is kept as it was, for review in the Lead DB catalog (Match filter "Wrong match only"; the Mismatches page was retired Nov 20, 2026). The daily job, the weekly listing refresh,
 recompute_roi, the Keepa collector and the Sephora page reader all skip `match_ok = false`. Clearing the mark or
 marking it a match puts the pair back in every update.
 

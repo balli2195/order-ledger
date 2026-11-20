@@ -105,7 +105,6 @@
     <input id="q" type="search" placeholder="Search brand, product, shade or ASIN…" autocomplete="off"></div>
   <div class="toolbar">
     <div class="sl-seg" id="viewSeg"><button data-v="queue" class="on">To review</button><button data-v="decided">Decided</button><button data-v="catalog">Catalog</button></div>
-    <a class="btn small ghost" href="/lead-db/mismatches" title="Pairs marked wrong, held back by match rules, or rejected: check for false mismatches">Mismatches</a>
     <a class="btn small ghost" href="/lead-db/guide" title="How the Lead DB tables, jobs and model training work">How it works</a>
     <select id="qSale" title="Leads priced with a store sale, promo code or event discount"><option value="">On sale or not</option><option value="1">On sale only</option><option value="0">Not on sale</option></select>
     <span class="muted" id="count" style="font-size:13px"></span>
@@ -121,8 +120,8 @@
     <div class="toolbar sl-filters" style="margin-top:0">
       <select id="fStore" hidden><option value="">All stores</option></select>
       <select id="fSell" title="Listings you're restricted from selling are hidden unless you pick Restricted or Any"><option value="">Sellable (hides restricted)</option><option value="open">Open</option><option value="approval_required">Approval required</option><option value="restricted">Restricted</option><option value="any">Any, incl. restricted</option></select>
-      <select id="fMatch" title="Pairs marked wrong or held back by a match rule are on the Mismatches page"><option value="">Mismatches hidden</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match only</option><option value="held">Held back by rules only</option><option value="all">Everything, incl. mismatches</option></select>
-      <select id="fBy" title="Who last marked the pair OK, wrong or a size"><option value="">Checked by anyone or no one</option><option value="claude">Checked by Claude</option><option value="people">Checked by people</option><option value="any">Checked by anyone</option></select>
+      <select id="fMatch" title="Pairs marked wrong are hidden unless you pick Wrong match only or Everything. On a wrong row, OK makes it a match again; clicking Wrong again clears the mark."><option value="">Wrong matches hidden</option><option value="unchecked">Not checked</option><option value="ok">Match OK</option><option value="wrong">Wrong match only</option><option value="all">Everything, incl. wrong matches</option></select>
+      <select id="fBy" title="Who last marked the pair OK or wrong"><option value="">Checked by anyone or no one</option><option value="claude">Checked by Claude</option><option value="people">Checked by people</option><option value="any">Checked by anyone</option></select>
       <select id="fDays" title="When the pair was last marked"><option value="">Checked any time</option><option value="1">Checked in the last 24 hours</option><option value="7">Checked in the last 7 days</option><option value="30">Checked in the last 30 days</option></select>
       <span id="cSlot" style="margin-left:auto;display:flex;flex:0 1 380px;min-width:240px"></span>
     </div>

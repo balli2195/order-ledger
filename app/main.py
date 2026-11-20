@@ -226,8 +226,9 @@ async def lead_db_page(request: Request):
 
 @app.get("/lead-db/mismatches", include_in_schema=False)
 async def lead_db_mismatches_page(request: Request):
-    """Lead DB -> Mismatches: wrong-match pairs, pairs the match rules hold back, rejected candidates (Nick, Nov 17, 2026)."""
-    return await _page(request, "sephora_leads", "lead-db-mismatches.html")
+    """The Mismatches page was retired (Nick, Nov 20, 2026): wrong matches are in the Lead DB catalog (Match filter
+    "Wrong match only"), rejected leads under Decided. Old links go to the Lead DB."""
+    return RedirectResponse("/lead-db", status_code=302)
 
 
 @app.get("/api/sephora/mismatches")
