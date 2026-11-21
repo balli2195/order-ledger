@@ -81,3 +81,12 @@ Don't guess. Keep the pair with a note saying exactly what's unsure ("Shade not 
 - A change has to follow from a principle above and be tested before it's used: on Nick's leads, on every pair Nick marked OK or wrong, and on all the checker answers so far. It's only kept if none of those get worse.
 - A word list (penalty words, marketing words) is a stopgap. Where a brand's own catalog can show which words separate its sibling products, the catalog decides, not a hand list.
 - Nick's calls are recorded with the reason (decision log and RUNBOOK). Each one is turned into the principle behind it, not a one-listing rule.
+
+## Splitting a Sephora set into Amazon singles (Nick, Nov 20, 2026)
+
+Nick buys Sephora sets and sells the pieces as Amazon singles (Beneville set → BADgal Bang, Hoola Mini, Benetint; Oil Sucker duo → primer + spray; Crown Affair duo → shampoo + conditioner). A single Amazon listing paired with a Sephora set that contains exactly that item (same product, shade and size as the piece in the set) is a valid source: verdict `same`, with `split_of`:
+`{"set_sku_id", "set_label", "set_price", "piece_value", "total_value", "pieces": [{"label", "product_id", "sku_id", "price"}]}`.
+- The set's price is shared across its pieces by each piece's own Sephora price: cost = set_price × piece_value / total_value (a $40 set of a $30 and a $20 item → $24 and $16).
+- piece_value and total_value use each piece's own Sephora price (its single page, same size). If a piece isn't sold on its own at Sephora, use the brand's own price for that size and say so in `evidence` (medium).
+- The piece in the set must be the listing's exact item: a mini in the set does not fill a full-size listing, and a different shade doesn't count.
+- A set that Nick has bought for this ASIN (his leads' store link) is strong evidence the split works.

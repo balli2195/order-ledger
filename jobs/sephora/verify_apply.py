@@ -79,6 +79,14 @@ def main():
         note = f"Verified {today}: {r.get('evidence', '')} ({r.get('principle', '')}) Sources: " + " ".join(r["sources"][:3])
         if r["verdict"] == "same":
             ex = {**(pair.get("extra") or {}), "verified": {"date": today, "sources": r["sources"][:3], "evidence": r.get("evidence")}}
+            sp = r.get("split_of")
+            if sp:   # one piece of a Sephora set Nick splits (Nick, Nov 20, 2026): common.pick_price shares the set's price
+                v = {k: C.fnum(sp.get(k)) for k in ("set_price", "piece_value", "total_value")}
+                if all(v.values()) and v["piece_value"] <= v["total_value"]:
+                    ex["split_of"] = {"set_sku_id": sp.get("set_sku_id") or r.get("sku_id"), "set_label": sp.get("set_label"), **v,
+                                      "pieces": sp.get("pieces"), "checked": today}
+                else:
+                    print("  split without prices, not saved:", r["asin"], sp)
             if not a.dry_run:
                 C.hub_upsert_catalog([{"asin": r["asin"], "product_id": r["product_id"], "active": pair["active"], "extra": ex}])
             x = next((s for s in (skus.get(r["product_id"]) or {}).get("skus", []) if s["sku_id"] == r.get("sku_id")), None)

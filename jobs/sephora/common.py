@@ -243,6 +243,20 @@ def pick_price(row: dict, lo, hi, sale, mode: str, promo: tuple | None = None):
             price, promo_used = round(full * (1 - promo[0]), 2), True
             label = f"${price:.2f} = " + label + f" - {promo[0] * 100:.0f}% ({promo[1]})"
         return price, full, label, False, promo_used
+    split = (row.get("extra") or {}).get("split_of")
+    if split:
+        # one piece of a Sephora set that Nick buys and splits into Amazon singles (Nick, Nov 20, 2026): the set's price
+        # is shared across its pieces by each piece's own Sephora price (piece_value / total_value of all pieces)
+        sp, pv, tv = fnum(split.get("set_price")), fnum(split.get("piece_value")), fnum(split.get("total_value"))
+        if not (sp and pv and tv and 0 < pv <= tv):
+            return None
+        full = round(sp * pv / tv, 2)
+        price, label, promo_used = full, "share of set $%.2f (%s): $%.2f of $%.2f value" % (
+            sp, split.get("set_label") or split.get("set_sku_id"), pv, tv), False
+        if promo and promo[0]:
+            price, promo_used = round(full * (1 - promo[0]), 2), True
+            label = f"${price:.2f} = " + label + f" - {promo[0] * 100:.0f}% ({promo[1]})"
+        return price, full, label, False, promo_used
     needs = bool(row.get("needs_size")) and lo is not None and hi is not None and hi > lo
     if needs:
         conf = row.get("size_confirmed")
