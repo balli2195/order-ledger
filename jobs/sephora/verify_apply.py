@@ -87,6 +87,16 @@ def main():
                                       "pieces": sp.get("pieces"), "checked": today}
                 else:
                     print("  split without prices, not saved:", r["asin"], sp)
+            if bundle:   # the listing is several of this page's items (e.g. a 2-pack of singles): priced as their sum
+                items = []
+                for b in bundle:
+                    sx = next((s for pid in {b.get("product_id") or r["product_id"], r["product_id"]} for s in (skus.get(pid) or {}).get("skus", [])
+                               if s["sku_id"] == b["sku_id"]), None)
+                    for _ in range(int(b.get("qty") or 1)):
+                        items.append({"sku_id": b["sku_id"], "label": label(sx) if sx else b["sku_id"], "price": (sx or {}).get("price")})
+                if all(i["price"] for i in items):
+                    ex.update(bundle_skus=items, pack_qty=1, shade_hint={"bundle": [i["label"] for i in items], "checked": today})
+                    print("  bundle", r["asin"], r["product_id"], [i["label"] for i in items])
             if not a.dry_run:
                 C.hub_upsert_catalog([{"asin": r["asin"], "product_id": r["product_id"], "active": pair["active"], "extra": ex}])
             x = next((s for s in (skus.get(r["product_id"]) or {}).get("skus", []) if s["sku_id"] == r.get("sku_id")), None)
