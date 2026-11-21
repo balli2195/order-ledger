@@ -1,0 +1,24 @@
+You are checking Amazon ↔ Sephora matches in Nick's Lead DB that no one has researched yet. For each pair decide, with evidence, whether the saved Sephora product and saved item (shade/size) are right, without asking Nick.
+
+Read first and follow:
+- __PRINCIPLES__
+- __VERIFY_FORMAT__ (output format only; its step 1 about loading Amazon with curl does NOT apply: never fetch amazon.com pages, and never submit or get around Amazon's "continue shopping" check)
+
+Cases: __CASES__. Each case has:
+- `amazon_page_read_in_chrome_today`: the live Amazon page (title, selected variation, price, bullets, Product details table) read in Nick's Chrome today. Treat it as the live page. Do NOT fetch amazon.com pages yourself. If its title or details show a different ASIN or variation than the case, say so and don't rely on it.
+- `keepa`: model, part number, UPC/EAN, colour, size, parent ASIN and the variation family (sibling ASINs with their attributes).
+- `image_ids`: listing photos; download https://m.media-amazon.com/images/I/<id> with curl and look at them with Read.
+- `pairs_to_decide`: each current pair with its fresh Sephora SKU list (sizes, shade names, descriptions, prices, out of stock), the saved item (sku_id + label; null = none saved), and `quick_screen_note`: a fast first look that may be wrong. Treat it only as a pointer to what to check.
+- `nick_bought_from_sephora`: Sephora pages (and SKU) Nick actually bought this ASIN from, with dates and units. A page he bought from is a working source: work out how (the same item, or a set he splits into singles) before calling the pair wrong.
+- `brand_sephora_products`: the brand's Sephora products with fresh SKU lists.
+
+Methods, in this order, stopping when one settles it:
+1. Title, selected variation, Product details and photos against the Sephora product name and items. Check line, format (set vs single, rollerball vs spray, refill), concentration and size, then the shade.
+2. Barcode: the listing's UPC/EAN against the brand's own catalog. Many brand sites are Shopify: https://<brand-site>/products/<handle>.json or .js lists each variant's barcode, title (shade/size) and SKU; find the handle with WebSearch or the site's /search?q=. Chanel and Dior barcodes map to their product references on chanel.com / dior.com. A barcode match settles shade and size (high confidence).
+3. Amazon's selected variation on the page, and the variation family: if every sibling is clearly another shade or size, the one left is this listing's.
+4. Printed packaging in the photos.
+5. Brand and other retailer pages (Ulta, Kohl's, the brand site) via WebSearch / WebFetch.
+Never load any Sephora website (sephora.com or any other country's Sephora site). Never give a SKU that isn't in the case file. Apply the principles: two Sephora SKUs of the same size are interchangeable (give the cheaper one; that is not a reason to be unsure); one-size products with a different label size are the same item; an old Sephora item number missing from today's lists is discontinued; a past-year set with the same products, sizes and applicators is the same set even with a new name or box; a rollerball is not a spray; a different bottle size than every Sephora size is not_sold.
+
+For "same", sku_id is the right Sephora item even when it equals the saved one. When the pair's Sephora page is a set and the listing is one piece of it, follow the principles' "Splitting a Sephora set" section: verdict "same" with `split_of` (set price, the piece's own Sephora price, the total of all pieces' own prices). When a listing is the Sephora item plus a free extra from another brand (a sheet mask, acne patches), judge the Sephora item as usual and add "extra_item": "<what the extra is>" to the result; don't lower the confidence for it. When Nick bought that exact Sephora SKU for this ASIN (`nick_bought_from_sephora` shows the sku), that settles the item: high, with the purchase as the source. When the only evidence of the shade is Keepa's colour field (no title, photo, selector or barcode shows it), use medium and add "shade_from": "keepa_color". Output one result per pair in `pairs_to_decide`, in the verify_prompt.md format, as a JSON list in __OUT__ (add cases as you go). `sources` must list what you used (the Amazon URL counts when the live page or its photos decided it). Use high confidence when a source settles it; medium only when something specific is still open, and put that open question in `evidence` starting with "OPEN:" in one plain sentence Nick could answer.
+Don't use MCP or connector tools. Work in __WORK__. When done, reply with the verdict counts, how many are high, and the OPEN questions left.

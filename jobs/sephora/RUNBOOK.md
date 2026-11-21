@@ -232,3 +232,25 @@ Nick: "the once a month sephora run should update this data". `brand_restriction
 - `.data/brand_restrictions_summary.md` is the message: brand status changes, listings that opened up or became restricted.
 - Restricted listings are kept but not tracked (Nick, Nov 20, 2026): the Keepa collector skips ASINs whose every pair is restricted, the Lead DB catalog hides them unless "Restricted" or "Any" is picked (a search still finds them), and the daily run and verify step already skip them. This run is what brings an opened listing back.
 Run: `python3 -I brand_restrictions.py` (about 30 minutes for ~6,700 ASINs). It writes nothing if more than 20% of checks fail. Scheduled task: "Monthly Sephora restriction check", the 1st of each month.
+
+## 12. Weekly check of new pairs: `check_pairs/pairs.py` (Nick, Nov 20, 2026)
+Every Sunday after the weekly Sephora run, every new pair (active, sellable `open`, not decided by Nick, no `extra.verified`
+or `extra.screened`, not already on his To review list) gets the same check as the Nov 20 check-all run
+(claude/sephora-catalog/CHECK_ALL_2026-11-20.md). At most 300 pairs per run, best ROI first; the rest wait a week.
+1. `python3 -I check_pairs/pairs.py prep $W` picks the pairs, writes Sephora product lists from the Lead DB, Nick's Sephora
+   purchases, and puts the ASINs whose Amazon page is older than 7 days on Hub doc `reader/amazon_todo`.
+2. Amazon pages: Nick's OLD MacBook Chrome, signed-out "Lead search" profile (deviceId fe93b29a-4cf7-498f-ab74-23b11ad69fe4).
+   Get a token: `POST /api/engine/upload-token {"purpose":"amazon_pages","hours":12}`; open a new amazon.com tab of your own;
+   run `check_pairs/reader.js` with `__TOKEN__` replaced (javascript_tool), then poll `window.az`. Never click, sign in, or
+   get around a "continue shopping" / captcha page: the reader pauses itself and stops after 8 pauses. If that Chrome isn't
+   connected, skip the reader: the screen and research still run from Keepa data and photos.
+   `python3 -I check_pairs/pairs.py wait $W 240` waits for the pages.
+3. `pairs.py screen $W` → one Agent (model sonnet) per `screen/prompt_NNN.txt` ("Follow the instructions in <file> exactly"),
+   up to 5 at a time. Then `pairs.py collect $W` records the passes on the pairs (`extra.screened`).
+4. `pairs.py research $W` → one general-purpose Agent per `research/prompt_NNN.txt`, up to 5 at a time; as each finishes,
+   `pairs.py finish $W NNN` cross-checks it (SKUs and products must be in the case file; a pair Nick bought can't be marked
+   wrong automatically) and applies it with verify_apply.py: only high confidence with a source; the rest go to
+   `sephora_jobs/verify_for_nick`. Undo: Hub doc `sephora_jobs/check_pairs_undo/<date>_<NNN>` (every touched ASIN's pairs before).
+5. `pairs.py summary $W` → Nick's message.
+Writes: Lead DB pairs (catalog upsert / mark), Hub docs `reader/amazon_todo`, `sephora_jobs/verify_for_nick`,
+`sephora_jobs/verify_labels`, `sephora_jobs/check_pairs_undo/*`. Nothing else.
