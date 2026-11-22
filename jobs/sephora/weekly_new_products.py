@@ -12,10 +12,11 @@
  3. Nick's new Sephora leads (last 14 days) -> seed_from_leads.py (human-verified pairs; may add brands).
  4. Brands with no matcher rows in the Hub yet (added by hand, auto-added or lead-found): full catalog build (Keepa
     brand finder, catalog/match.py, sp_restrictions.py, sp_offers.py, build.py) sized to the remaining Keepa budget.
- 4b. New-brand screen (<= --screen-tokens Keepa tokens): unseen Sephora brands, feed brands first. (a) restricted in the monthly restriction check
-    -> screened out; (b) Keepa finder: any of the top 5 ASINs with >= 10 sold/mo or rank <= 150k; (c) SP-API listing
-    restrictions on those 5. Pass all -> auto-added (state 'brands_added', status 'auto-added <date>', built next run);
-    thin demand / approval required -> 'for Nick'; else 'screened out' with the reason. Re-screened after 90 days.
+ 4b. New-brand screen (<= --screen-tokens Keepa tokens): unseen Sephora brands, feed brands first. Nick's rule (Nov 22,
+    2026): only sellability decides. (a) restricted in the monthly restriction check -> screened out; (b) Keepa finder
+    under the brand's Amazon spellings (brand_variants), listings with a sales rank; (c) SP-API listing restrictions on
+    the top 5: mostly open -> auto-added (state 'brands_added', built next run); mostly restricted -> screened out;
+    approval required or no listings found -> 'for Nick'. Re-screened after 90 days.
  5. New products of known brands (Sephora New flag in listings, New arrivals, the daily job's Sale-page finds):
     Keepa finder on brand + name words (<= 10 ASINs each), the same match/build pipeline, new ASINs upserted.
     Keepa budget <= --max-tokens for the whole run; what doesn't fit waits a week.
@@ -94,39 +95,74 @@ def config_brand(name, cfg):
     return None
 
 
+SUFFIX_RE = re.compile(r"\s+(london|paris|new york|since \d{4}|beauty|cosmetics|skin ?care|hair ?care|fragrances?|parfums?|labs?|by .+)$", re.I)
+
+
+def brand_variants(name):
+    """Amazon spellings to try for a Sephora brand name: as is, title/upper case, and with Sephora's suffixes dropped
+    ("Kiehl's Since 1851" -> "Kiehl's", "Jo Malone London" -> "Jo Malone", "Fenty Beauty by Rihanna" -> "Fenty")."""
+    out, x = [name, name.title(), name.upper()], name
+    for _ in range(3):
+        y = SUFFIX_RE.sub("", x).strip()
+        if not y or y == x or len(y) < 3:
+            break
+        out += [y, y.title(), y.upper()]
+        x = y
+    out += [v.replace("'", "").replace("’", "") for v in list(out) if "'" in v or "’" in v]
+    return list(dict.fromkeys(v for v in out if v))
+
+
+def brand_entry(bn, why, det, day):
+    """A brands.json-style entry for a screened brand: learns Sephora's own brandName and checks its listing reads.
+    Returns (status, reason, entry or None)."""
+    names = collections.Counter(p_["brandName"] for p_ in M_search(bn).values() if p_.get("brandName"))
+    sn = [x for x, _ in names.most_common(3) if norm(x)[:5] == norm(bn)[:5]] or [bn]
+    entry = {"name": bn, "slug": re.sub(r"[^a-z0-9]+", "_", bn.lower()).strip("_"),
+             "sephora_brand_pages": [re.sub(r"[^a-z0-9]+", "-", bn.lower()).strip("-")], "sephora_queries": [bn.lower()],
+             "sephora_names": list(dict.fromkeys(sn + [bn])),
+             "keepa_brands": list(dict.fromkeys(brand_variants(bn) + det.get("amazon_brands", []))), "status": f"auto-added {day.isoformat()}",
+             "screen": why}
+    if not C.sephora_brand(entry)["ok"]:
+        return "for_nick", why + "; but its Sephora listing couldn't be read by name", None
+    return "auto_added", why, entry
+
+
 def screen_brand(name, excl, day):
-    """Cheap screen of a brand Sephora sells that brands.json doesn't have: can_source, Amazon demand (Keepa), restrictions.
+    """Screen of a brand Sephora sells that brands.json doesn't have. Nick's rule (Nov 22, 2026): only whether he can
+    sell it decides. Restricted -> out; open -> added and matched; approval required -> for Nick (one-click approval:
+    keep; manufacturer invoices or Transparency: skip). Demand and current seller counts don't decide anything here
+    (they're recorded for information); the daily run judges each pair's economics.
     Returns (status, reason, details); status auto_added | for_nick | screened_out."""
     import keepa_pull as kp
     import sp_restrictions as spr
     if norm(name) in excl:
         return "screened_out", "restricted on Amazon (monthly restriction check)", {}
-    variants = list(dict.fromkeys([name, re.split(r"\s+by\s+", name, flags=re.I)[0].strip(), name.title(), name.upper()]))
-    sel = {"brand": variants, "rootCategory": [3760911], "current_COUNT_NEW_gte": 1, "sort": [["current_SALES", "asc"]],
-           "perPage": 50, "page": 0}
-    d = kp.call("query", {"domain": 1, "selection": json.dumps(sel)}, need=15)
-    asins = d.get("asinList") or []
+    variants = brand_variants(name)
+    asins = []
+    for root in (True, False):
+        sel = {"brand": variants, "current_SALES_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 50, "page": 0}
+        if root:
+            sel["rootCategory"] = [3760911]
+        d = kp.call("query", {"domain": 1, "selection": json.dumps(sel)}, need=15)
+        asins = d.get("asinList") or []
+        if asins:
+            break
     if not asins:
-        return "screened_out", "no Amazon listings with new offers (Keepa)", {}
+        return "for_nick", "no Amazon listings found under " + ", ".join(variants[:4]) + " (check the Amazon brand spelling)", {}
     top = asins[:5]
     d2 = kp.call("product", {"domain": 1, "asin": ",".join(top), "stats": 90, "history": 0}, need=len(top) + 5)
     recs = [kp.compact(x) for x in d2.get("products") or []]
     ranks = [r["salesRank"] for r in recs if r.get("salesRank")]
-    demand = [r for r in recs if (r.get("monthlySold") or 0) >= 10 or (r.get("salesRank") and r["salesRank"] <= 150000)]
     st = collections.Counter(spr.check(a_)["status"] for a_ in top)
     det = {"amazon_asins": len(asins), "best_rank": min(ranks) if ranks else None,
            "monthly_sold_max": max([r.get("monthlySold") or 0 for r in recs], default=0), "restrictions_top5": dict(st),
            "amazon_brands": sorted({r.get("brand") for r in recs if r.get("brand")})}
     n = len(top)
-    if not demand:
-        if ranks and min(ranks) <= 500000:
-            return "for_nick", f"thin demand (best rank {min(ranks):,}, nothing >= 10 sold/mo)", det
-        return "screened_out", "no real Amazon demand (no rank <= 150k or >= 10 sold/mo in the top 5)", det
     if st["open"] >= max(1, round(n * 0.6)):
-        return "auto_added", f"demand ok (best rank {min(ranks) if ranks else '?'}), {st['open']}/{n} top ASINs open", det
+        return "auto_added", f"{st['open']}/{n} top ASINs open (best rank {min(ranks) if ranks else '?'})", det
     if st["restricted"] > n / 2:
         return "screened_out", f"restricted (not eligible) on {st['restricted']}/{n} top ASINs", det
-    return "for_nick", f"approval required on {st['approval_required']}/{n} top ASINs (open {st['open']})", det
+    return "for_nick", f"approval required on {st['approval_required']}/{n} top ASINs (open {st['open']}): one-click approval -> keep; invoices or Transparency -> skip", det
 
 
 def main():
@@ -312,17 +348,9 @@ def main():
             problems.append(f"screening {bn} failed: {e!r}"[:200])
             continue
         s_used += kp.state["used"] - used0
-        if stt == "auto_added":   # learn Sephora's own brandName and check the listing reads
-            names = collections.Counter(p_["brandName"] for p_ in M_search(bn).values() if p_.get("brandName"))
-            sn = [x for x, _ in names.most_common(3) if norm(x)[:5] == norm(bn)[:5]] or [bn]
-            entry = {"name": bn, "slug": re.sub(r"[^a-z0-9]+", "_", bn.lower()).strip("_"),
-                     "sephora_brand_pages": [re.sub(r"[^a-z0-9]+", "-", bn.lower()).strip("-")], "sephora_queries": [bn.lower()],
-                     "sephora_names": list(dict.fromkeys(sn + [bn])),
-                     "keepa_brands": list(dict.fromkeys([bn] + det.get("amazon_brands", []))), "status": f"auto-added {day.isoformat()}",
-                     "screen": why}
-            if not C.sephora_brand(entry)["ok"]:
-                stt, why = "for_nick", why + "; but its Sephora listing couldn't be read by name"
-            else:
+        if stt == "auto_added":
+            stt, why, entry = brand_entry(bn, why, det, day)
+            if entry:
                 added_state[bn] = entry
         screened[bn] = {"status": stt, "reason": why, "date": day.isoformat(), **det}
         this_screen[stt].append((bn, why, feed_brands.get(bn, 0)))
@@ -370,7 +398,7 @@ def main():
         words = [w for w in M.tokens(p.get("name") or "", drop) if w not in M.GENERIC][:3] or M.tokens(p.get("name") or "", drop)[:3]
         if not words:
             continue
-        sel = {"brand": b["keepa_brands"], "title": " ".join(words), "current_COUNT_NEW_gte": 1,
+        sel = {"brand": b["keepa_brands"], "title": " ".join(words), "current_SALES_gte": 1,
                "sort": [["current_SALES", "asc"]], "perPage": 50, "page": 0}
         used0 = kp.state["used"]
         try:

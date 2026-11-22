@@ -3,7 +3,7 @@
 
 Usage: KEEPA_KEY=... python3 -I keepa_pull.py [--max-asins N] [slug ...]
 1. /query (product finder): brand = keepa_brands variants, rootCategory 3760911 (Beauty & Personal Care),
-   at least one new offer, sorted by current sales rank. Falls back to no rootCategory when < 20 results.
+   with a sales rank (it has sold; listings with no seller right now are included: Nick, Nov 22 2026), sorted by sales rank. Falls back to no rootCategory when < 20 results.
 2. /product?stats=90&buybox=1&history=0 in batches of 100 for the top --max-asins (default 420) ASINs by rank
    (about 3 tokens per ASIN, so <= ~1,300 tokens per brand plus the finder).
 Waits for token refill instead of erroring. Writes raw/keepa/<slug>.json with a compact record per ASIN.
@@ -80,7 +80,7 @@ def call(path, params, need=0):
 
 
 def finder(brands, root=True, title=None):
-    sel = {"current_COUNT_NEW_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 2000, "page": 0}
+    sel = {"current_SALES_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 2000, "page": 0}
     if title:
         sel["title"] = title
     else:

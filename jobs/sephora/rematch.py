@@ -156,7 +156,7 @@ def brand_sweep(cfg: dict, hub_asins: set, budget: int, kp, build_brand, exclude
             continue
         prev = st.get(b["slug"]) or {}
         page = (prev.get("page", -1) + 1) % SWEEP_PAGES
-        sel = {"brand": b["keepa_brands"], "current_COUNT_NEW_gte": 1, "current_SALES_gte": 1,
+        sel = {"brand": b["keepa_brands"], "current_SALES_gte": 1,
                "sort": [["current_SALES", "asc"]], "perPage": 50, "page": page}
         used0 = kp.state["used"]
         try:
