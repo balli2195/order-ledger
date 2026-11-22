@@ -13,7 +13,8 @@ let v=(tr.querySelector('td:last-child, span:not(.a-text-bold)')?.textContent||'
 if(k&&v&&k.length<40&&!/Customer Reviews|Best Sellers Rank|UNSPSC/i.test(k))rows[k]=v.slice(0,150);});
 const sel=[...d.querySelectorAll('#twister .selection, [id^=inline-twister-expanded-dimension-text]')].map(e=>e.textContent.replace(/\s+/g,' ').trim()).filter(Boolean);
 return{title:t('#productTitle'),selected:[...new Set(sel)].slice(0,5),price:t('#corePrice_feature_div .a-offscreen')||t('.priceToPay .a-offscreen'),
-bullets:[...d.querySelectorAll('#feature-bullets li')].map(e=>e.textContent.replace(/\s+/g,' ').trim()).slice(0,8),details:rows};};
+bullets:[...d.querySelectorAll('#feature-bullets li')].map(e=>e.textContent.replace(/\s+/g,' ').trim()).slice(0,8),details:rows,
+image:((d.querySelector('#landingImage')?.getAttribute('data-old-hires')||d.querySelector('#landingImage')?.getAttribute('src')||'').split('/images/I/')[1]||null)};};
 (async()=>{let buf={},streak=0;
 const flush=async()=>{if(!Object.keys(buf).length)return;try{const r=await fetch('https://order-ledger-3mt6.onrender.com/api/amazon-pages/upload',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Token':'__TOKEN__'},body:JSON.stringify({pages:buf})});if(r.status===200){window.az.saved+=Object.keys(buf).length;buf={};}else window.az.errors.push('upload '+r.status);}catch(e){window.az.errors.push('upload '+String(e).slice(0,60));}};
 for(let i=0;i<L.length;i++){if(window.az.stop)break;const a=L[i];try{const x=await read(a);if(x.blocked){window.az.blocked++;streak++;}else{streak=0;buf[a]=x;}}catch(e){window.az.errors.push(a+': '+String(e).slice(0,60));}

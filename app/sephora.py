@@ -983,7 +983,7 @@ async def upload_store_pages(token: str | None, body: dict) -> dict:
 
 
 async def upload_amazon_pages(token: str | None, body: dict) -> dict:
-    """{pages: {ASIN: {title, selected, price, bullets, details}}} read from Amazon product pages in Nick's Chrome for the
+    """{pages: {ASIN: {title, selected, price, bullets, details, image}}} read from Amazon product pages in Nick's Chrome for the
     verify step (Nov 20, 2026: the cloud's Amazon fetches were mostly blocked). Token purpose 'amazon_pages'; only writes
     store_pages rows with store 'Amazon'."""
     pages = (body or {}).get("pages")
@@ -1004,6 +1004,9 @@ async def upload_amazon_pages(token: str | None, body: dict) -> dict:
                      "selected": [_txt(x, 120) for x in (v.get("selected") or [])[:6] if x],
                      "bullets": [_txt(x, 300) for x in (v.get("bullets") or [])[:8] if x],
                      "details": {_txt(k, 60): _txt(x, 200) for k, x in list(det.items())[:40] if k and x}}
+                img = str(v.get("image") or "")
+                if re.fullmatch(r"[A-Za-z0-9+%._-]{5,80}\.(jpg|jpeg|png|webp)", img):   # main photo file name on m.media-amazon.com/images/I/
+                    d["image"] = img
                 await conn.execute("INSERT INTO store_pages (store, product_id, data, read_at) VALUES ('Amazon', %s, %s, now()) "
                                    "ON CONFLICT (store, product_id) DO UPDATE SET data=EXCLUDED.data, read_at=now()", (a, json.dumps(d)))
                 n += 1
