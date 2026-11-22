@@ -112,7 +112,7 @@ def brand_variants(name):
     return list(dict.fromkeys(v for v in out if v))
 
 
-def brand_entry(bn, why, det, day):
+def brand_entry(bn, why, det, day, extra_names=None):
     """A brands.json-style entry for a screened brand: learns Sephora's own brandName and checks its listing reads.
     Returns (status, reason, entry or None)."""
     names = collections.Counter(p_["brandName"] for p_ in M_search(bn).values() if p_.get("brandName"))
@@ -120,14 +120,16 @@ def brand_entry(bn, why, det, day):
     entry = {"name": bn, "slug": re.sub(r"[^a-z0-9]+", "_", bn.lower()).strip("_"),
              "sephora_brand_pages": [re.sub(r"[^a-z0-9]+", "-", bn.lower()).strip("-")], "sephora_queries": [bn.lower()],
              "sephora_names": list(dict.fromkeys(sn + [bn])),
-             "keepa_brands": list(dict.fromkeys(brand_variants(bn) + det.get("amazon_brands", []))), "status": f"auto-added {day.isoformat()}",
+             "keepa_brands": list(dict.fromkeys(brand_variants(bn) + list(extra_names or []) + det.get("amazon_brands", []))), "status": f"auto-added {day.isoformat()}",
              "screen": why}
+    if det.get("keepa_title"):
+        entry["keepa_title"] = det["keepa_title"]
     if not C.sephora_brand(entry)["ok"]:
         return "for_nick", why + "; but its Sephora listing couldn't be read by name", None
     return "auto_added", why, entry
 
 
-def screen_brand(name, excl, day):
+def screen_brand(name, excl, day, extra_names=None):
     """Screen of a brand Sephora sells that brands.json doesn't have. Nick's rule (Nov 22, 2026): only whether he can
     sell it decides. Restricted -> out; open -> added and matched; approval required -> for Nick (one-click approval:
     keep; manufacturer invoices or Transparency: skip). Demand and current seller counts don't decide anything here
@@ -137,8 +139,8 @@ def screen_brand(name, excl, day):
     import sp_restrictions as spr
     if norm(name) in excl:
         return "screened_out", "restricted on Amazon (monthly restriction check)", {}
-    variants = brand_variants(name)
-    asins = []
+    variants = list(dict.fromkeys(brand_variants(name) + [v for x in (extra_names or []) for v in brand_variants(x)]))
+    asins, title_q = [], None
     for root in (True, False):
         sel = {"brand": variants, "current_SALES_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 50, "page": 0}
         if root:
@@ -147,16 +149,28 @@ def screen_brand(name, excl, day):
         asins = d.get("asinList") or []
         if asins:
             break
+    if not asins:   # resellers often list small brands as "Generic": find them by the brand name at the start of the title
+        title_q = re.sub(r"[.+]", " ", SUFFIX_RE.sub("", name) if len(SUFFIX_RE.sub("", name)) >= 4 else name).strip()
+        sel = {"title": title_q, "rootCategory": [3760911], "current_SALES_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 50, "page": 0}
+        d = kp.call("query", {"domain": 1, "selection": json.dumps(sel)}, need=15)
+        asins = d.get("asinList") or []
     if not asins:
-        return "for_nick", "no Amazon listings found under " + ", ".join(variants[:4]) + " (check the Amazon brand spelling)", {}
-    top = asins[:5]
+        return "for_nick", "no Amazon listings found under " + ", ".join(variants[:4]) + " or in titles (check the Amazon brand spelling)", {}
+    top = asins[:5 if not title_q else 20]
     d2 = kp.call("product", {"domain": 1, "asin": ",".join(top), "stats": 90, "history": 0}, need=len(top) + 5)
     recs = [kp.compact(x) for x in d2.get("products") or []]
+    if title_q:   # keep only listings whose title starts with the brand name
+        recs = [r for r in recs if norm(title_q) in norm((r.get("title") or "")[:len(title_q) + 25])][:5]
+        top = [r["asin"] for r in recs]
+        if not top:
+            return "for_nick", f"no Amazon listings found under {', '.join(variants[:4])}; title search for '{title_q}' found only other brands", {}
     ranks = [r["salesRank"] for r in recs if r.get("salesRank")]
     st = collections.Counter(spr.check(a_)["status"] for a_ in top)
     det = {"amazon_asins": len(asins), "best_rank": min(ranks) if ranks else None,
            "monthly_sold_max": max([r.get("monthlySold") or 0 for r in recs], default=0), "restrictions_top5": dict(st),
-           "amazon_brands": sorted({r.get("brand") for r in recs if r.get("brand")})}
+           "amazon_brands": sorted({r.get("brand") for r in recs if r.get("brand") and r.get("brand").lower() != "generic"})}
+    if title_q:
+        det["keepa_title"] = title_q
     n = len(top)
     if st["open"] >= max(1, round(n * 0.6)):
         return "auto_added", f"{st['open']}/{n} top ASINs open (best rank {min(ranks) if ranks else '?'})", det

@@ -28,6 +28,7 @@ def main():
     ap.add_argument("--eligible", action="store_true")
     ap.add_argument("--rescreen", action="store_true")
     ap.add_argument("--brands")
+    ap.add_argument("--aliases", help="JSON file {brand: [Amazon brand spellings]} to try as well")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     day = C.today()
@@ -47,15 +48,18 @@ def main():
                  and "approval required" not in str(v.get("reason"))]
     if a.brands:
         todo += [x.strip() for x in a.brands.split(",") if x.strip()]
+    import json
+    aliases = json.load(open(a.aliases)) if a.aliases else {}
     todo = [bn for bn in dict.fromkeys(todo) if bn not in added]
     print(len(todo), "brands to screen", flush=True)
     out = {"auto_added": [], "for_nick": [], "screened_out": []}
     for i, bn in enumerate(todo):
         try:
-            stt, why, det = W.screen_brand(bn, excl, day)
+            ex = aliases.get(bn) or []
+            stt, why, det = W.screen_brand(bn, excl, day, ex)
             entry = None
             if stt == "auto_added":
-                stt, why, entry = W.brand_entry(bn, why, det, day)
+                stt, why, entry = W.brand_entry(bn, why, det, day, ex)
         except Exception as e:  # noqa: BLE001
             print(f"  {bn}: failed {e!r}"[:200], flush=True)
             continue
