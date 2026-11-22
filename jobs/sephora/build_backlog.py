@@ -27,8 +27,9 @@ MIN_BRAND_TOKENS = 200   # don't start a brand with less than this left in the b
 def backlog(cfg, cat):
     built_state = C.state_get("brands_built", {}) or {}
     excluded = {b.lower() for b in cfg.get("exclude_brands", [])}
-    built = {x["brand"] for x in cat if (x.get("extra") or {}).get("source") != "nick_lead"}
-    todo = [b for b in cfg["brands"] if b["name"] not in built and b["name"] not in built_state and not b.get("catalog_built")
+    # Built = has a build record (job state 'brands_built'; the first-batch builds were recorded there as "legacy" on
+    # Nov 22, 2026). Having a few pairs is NOT built: pairs from Nick's leads or a rematch left NARS with 3 pairs.
+    todo = [b for b in cfg["brands"] if b["name"] not in built_state and not b.get("catalog_built")
             and b["name"].lower() not in excluded]
     spend = collections.Counter()
     for x in cat:
