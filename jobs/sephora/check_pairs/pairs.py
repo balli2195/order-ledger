@@ -147,13 +147,41 @@ def _fill(template, out, **kw):
     open(out, "w").write(s)
 
 
-def _amazon(asins):
-    meta, amz = {}, {}
+def _amazon(asins, work=None):
+    """Keepa collector data + the Chrome page per ASIN. <work>/keepa_extra.json (fill_keepa) covers ASINs the collector lacks."""
+    meta, amz = dict(jload(f"{work}/keepa_extra.json", {}) or {}) if work else {}, {}
     for i in range(0, len(asins), 50):
         meta.update(C.hub("GET", "/api/engine/keepa/meta", params={"asins": ",".join(asins[i:i + 50])})["products"])
         for r in C.hub("GET", "/api/engine/amazon-pages", params={"asins": ",".join(asins[i:i + 50])})["rows"]:
             amz[r["asin"]] = r["data"]
     return meta, amz
+
+
+def fill_keepa(work):
+    """Keepa product data (photos, color, size, model, barcodes) for this run's ASINs the collector doesn't have yet:
+    ~1 token per ASIN, saved to <work>/keepa_extra.json. Env KEEPA_KEY, KEEPA_RESERVE."""
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "catalog"))
+    import keepa_pull as kp
+    A = sorted({p.split("|")[0] for p in (jload(f"{work}/near_pairs.json") or []) + (jload(f"{work}/rest_pairs.json") or [])})
+    have = {}
+    for i in range(0, len(A), 50):
+        have.update(C.hub("GET", "/api/engine/keepa/meta", params={"asins": ",".join(A[i:i + 50])})["products"])
+    extra = jload(f"{work}/keepa_extra.json", {}) or {}
+    todo = [a for a in A if not (have.get(a) or {}).get("images") and a not in extra]
+    print(len(A), "ASINs;", len(todo), "need Keepa data", flush=True)
+    for i in range(0, len(todo), 100):
+        ch = todo[i:i + 100]
+        d = kp.call("product", {"domain": 1, "asin": ",".join(ch), "stats": 1, "history": 0}, need=len(ch) + 5)
+        for p in d.get("products") or []:
+            imgs = [{"l": x} for x in (p.get("imagesCSV") or "").split(",") if x]
+            if not imgs and p.get("images"):
+                imgs = [{"l": x.get("l")} for x in p["images"] if x.get("l")]
+            extra[p["asin"]] = {"title": p.get("title"), "brand": p.get("brand"), "color": p.get("color"), "size": p.get("size"),
+                                "scent": p.get("scent"), "style": p.get("style"), "model": p.get("model"), "partNumber": p.get("partNumber"),
+                                "upcList": p.get("upcList"), "eanList": p.get("eanList"), "parentAsin": p.get("parentAsin"),
+                                "features": p.get("features"), "images": imgs}
+        jsave(f"{work}/keepa_extra.json", extra)
+        print(f"  {min(i + 100, len(todo))}/{len(todo)}", flush=True)
 
 
 def _skus():
@@ -169,7 +197,7 @@ def screen(work):
         return
     skus = _skus()
     names = {p["productId"]: p for ps in jload(f"{work}/brands.json").values() for p in ps}
-    meta, amz = _amazon(sorted({a for a, _ in pairs}))
+    meta, amz = _amazon(sorted({a for a, _ in pairs}), work)
     cat = {}
     for a in sorted({a for a, _ in pairs}):
         for r in C.hub("GET", "/api/engine/sephora/catalog", params={"asin": a})["rows"]:
@@ -247,7 +275,7 @@ def research(work):
     for p in pairs:
         a, pid = p.split("|")
         by[a].append(pid)
-    meta, amz = _amazon(sorted(by))
+    meta, amz = _amazon(sorted(by), work)
     cases = []
     for a, pids in by.items():
         rows = C.hub("GET", "/api/engine/sephora/catalog", params={"asin": a})["rows"]
@@ -339,6 +367,8 @@ if __name__ == "__main__":
         research(work)
     elif cmd == "finish":
         finish(work, sys.argv[3])
+    elif cmd == "keepa":
+        fill_keepa(work)
     elif cmd == "summary":
         summary(work)
     else:
