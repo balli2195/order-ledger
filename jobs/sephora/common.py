@@ -60,6 +60,9 @@ def load_brands() -> dict:
     # hand-kept list (Nick, Nov 20 2026: the Hub's old brand "can source" switches conflicted with that check).
     br = (state_get("brand_restrictions", {}) or {}).get("brands", {})
     cfg["exclude_brands"] = sorted(b for b, x in br.items() if x.get("status") == "restricted")
+    # Plus brands Nick says he can't sell (job state 'brands_nick_cant_sell', {brand: {date, note}}): his call wins over
+    # any restriction check, e.g. Donna Karan, whose open Amazon listings are handbags while its fragrances are restricted.
+    cfg["exclude_brands"] = sorted(set(cfg["exclude_brands"]) | set(state_get("brands_nick_cant_sell", {}) or {}))
     have = {b["name"].lower() for b in cfg["brands"]}
     for b in (state_get("brands_added", {}) or {}).values():
         if b["name"].lower() not in have:

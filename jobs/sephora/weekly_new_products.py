@@ -140,15 +140,12 @@ def screen_brand(name, excl, day, extra_names=None):
     if norm(name) in excl:
         return "screened_out", "restricted on Amazon (monthly restriction check)", {}
     variants = list(dict.fromkeys(brand_variants(name) + [v for x in (extra_names or []) for v in brand_variants(x)]))
+    # Beauty & Personal Care listings only: other categories never decide (Nov 22, 2026: "Donna Karan" outside Beauty
+    # was open handbags while its fragrances, listed as "Donna Karan Cashmere Mist", are restricted).
     asins, title_q = [], None
-    for root in (True, False):
-        sel = {"brand": variants, "current_SALES_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 50, "page": 0}
-        if root:
-            sel["rootCategory"] = [3760911]
-        d = kp.call("query", {"domain": 1, "selection": json.dumps(sel)}, need=15)
-        asins = d.get("asinList") or []
-        if asins:
-            break
+    sel = {"brand": variants, "rootCategory": [3760911], "current_SALES_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 50, "page": 0}
+    d = kp.call("query", {"domain": 1, "selection": json.dumps(sel)}, need=15)
+    asins = d.get("asinList") or []
     if not asins:   # resellers often list small brands as "Generic": find them by the brand name at the start of the title
         title_q = re.sub(r"[.+]", " ", SUFFIX_RE.sub("", name) if len(SUFFIX_RE.sub("", name)) >= 4 else name).strip()
         sel = {"title": title_q, "rootCategory": [3760911], "current_SALES_gte": 1, "sort": [["current_SALES", "asc"]], "perPage": 50, "page": 0}
