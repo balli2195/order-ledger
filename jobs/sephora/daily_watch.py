@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 
 CONF_OK = ("high", "medium")
+OOS_DAYS = 10   # an item list older than this doesn't hold a pair back as out of stock
 CAND_MIN, PREFILTER = 0.10, 0.15   # posting floor: predicted ROI 10% (Nick, Nov 19, 2026; was 21%)
 DECIDED_DAYS = 21
 
@@ -81,10 +82,13 @@ def main():
         by_pid.setdefault(r["product_id"], []).append(r)
     known_pids = {r["product_id"] for r in cat}
     # Sephora item lists (store-skus, read in Nick's Chrome): {product_id: {sku_id: price}} for products sold in sizes
-    sizes = {}
+    sizes, stock = {}, {}   # stock: {product_id: (read date, {sku_id: out_of_stock})}
     try:
         for row in C.hub("GET", "/api/engine/store-skus", timeout=300)["rows"]:
-            if row.get("store") == "Sephora" and "size" in str(row.get("variation_type") or "").lower():
+            if row.get("store") != "Sephora":
+                continue
+            stock[row["product_id"]] = (str(row.get("read_at") or "")[:10], {str(x["sku_id"]): bool(x.get("oos")) for x in row.get("skus") or []})
+            if "size" in str(row.get("variation_type") or "").lower():
                 sizes[row["product_id"]] = {str(x["sku_id"]): C.fnum(x.get("price")) for x in row.get("skus") or []
                                             if C.fnum(x.get("price"))}
     except Exception as e:  # noqa: BLE001
@@ -198,6 +202,15 @@ def main():
                 return t["lo"], t["hi"], sale_for(t, t["hi"])
             return t["lo"], t["hi"], t["sale"]
         return C.fnum(r.get("price_lo")), C.fnum(r.get("price_hi")), (C.fnum(r.get("sale_price")) if r.get("on_sale") else None)
+
+    def out_of_stock(r):
+        """Read date when the pair's own Sephora item (its store size, else the product's only item) was out of stock on
+        an item list read in the last OOS_DAYS days, else None (in stock, unknown, or too old to trust)."""
+        rd, items = stock.get(r["product_id"]) or (None, {})
+        if not rd or not items or rd < (day - dt.timedelta(days=OOS_DAYS)).isoformat():
+            return None
+        sku = str(r.get("store_sku_id") or "") or (next(iter(items)) if len(items) == 1 else "")
+        return rd if sku and items.get(sku) is True else None
 
     # ---- 3. watch rows
     try:   # rules learned from Nick's wrong-match marks: a pair that breaks one isn't proposed until he marks it OK
@@ -386,13 +399,19 @@ def main():
                     decided.pop(w_["asin"], None)   # back in stock: may be proposed again
     except Exception as e:  # noqa: BLE001
         problems.append(f"stock watch read failed: {e!r}")
-    pool, skipped_decided, size_check = [], [], []
+    pool, skipped_decided, size_check, held_oos = [], [], [], []
     for roi_, r, e in passed:
         dd = decided.get(r["asin"])
         if dd and (dd[1] is None or e["entered"] >= dd[1] - 0.01):
             skipped_decided.append((r["asin"], dd[0]))
             continue
+        od = out_of_stock(r)
+        if od:   # Nick, Nov 23, 2026: out-of-stock items aren't posted; the Chrome stock check re-reads them daily
+            held_oos.append((roi_, r, od))
+            continue
         pool.append((roi_, r, e))
+    counts["held_out_of_stock"] = len(held_oos)
+    C.log(f"held back as out of stock at Sephora: {len(held_oos)}")
 
     # ---- 5. Lead Score
     # The daily scoring cap goes to listings with demand and a Buy Box first, then the "No competition / restock" ones
@@ -567,6 +586,13 @@ def main():
         r = by_key.get((oc["asin"], oc["product_id"]))
         if not r or oc["asin"] in posted_today or oc["asin"] not in amz:
             continue
+        od = out_of_stock(r)
+        if od:
+            why = f"Out of stock at Sephora (item list read {od}); comes back when the daily stock check finds it in stock"
+            recheck.append({"id": oc["id"], "expire": True, "why": why})
+            rechecked_expired.append((r, why))
+            held_oos.append((C.fnum(oc.get("roi_now")) or 0, r, od))
+            continue
         e, d, thin = evaluate(r)
         if not e or e["roi_now"] is None:
             continue
@@ -582,6 +608,24 @@ def main():
                             "roi_now": e["roi_now"]})
     counts["open_rechecked"], counts["open_expired"] = len(recheck), len(rechecked_expired)
     C.save_json(f"out/{day.isoformat()}/recheck.json", recheck)
+
+    # Products held back as out of stock go on the Sephora reader's to-do list (Hub doc reader/sephora_todo, served by
+    # /api/reader/todo?list=sephora): the daily Chrome stock check re-reads their item lists, most profitable first,
+    # <= 60 pages, so a restocked item is posted again by the next run (Nick, Nov 23, 2026).
+    oos_todo, seen_p = [], set()
+    for _, r, _ in sorted(held_oos, key=lambda x: -(x[0] or 0)):
+        url = str(r.get("sephora_url") or "").split("?")[0]
+        if r["product_id"] in seen_p or not url.startswith("https://www.sephora.com/product/"):
+            continue
+        seen_p.add(r["product_id"])
+        oos_todo.append(r["product_id"] + "|" + url.replace("https://www.sephora.com", ""))
+    oos_todo = oos_todo[:60]
+    C.save_json(f"out/{day.isoformat()}/oos_recheck_todo.json", oos_todo)
+    if not a.dry_run:
+        try:
+            C.hub("PUT", "/api/engine/docs/reader/sephora_todo", {"items": oos_todo, "why": "held out of stock", "at": day.isoformat()})
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"out-of-stock recheck list not saved: {e!r}")
 
     counts.update(brands=len(brands), products_checked=len(sp["products"]), sale_page_items=len(sp["products"]),
                   sale_page_in_catalog=len(seph_today) - len(sale_ended), sale_ended=len(sale_ended),
@@ -635,7 +679,7 @@ def main():
              f"catalog ({counts['new_products_in_config']} from configured brands) -> new_products.json",
              f"- Watched {len(watch)} ASINs; Keepa refreshed {len(refreshed)} today ({tokens} tokens this run; {kstop or 'all done'})",
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
-             f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}",
+             f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}",
              f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
              f"- Posted with a match warning from the learned rules (Nick's wrong-match marks): {len(rule_skipped)}",
              f"- Open leads on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]

@@ -41,6 +41,7 @@ What a run does:
    - a pair with a known store size gets the markdown only when its own item is the one on sale;
    - a pair with an unknown size is priced at the full size, and the markdown is used only if the item on sale is the full size.
    Before this, the Ultra Violette 50 mL and Kosas 100 mL listings were queued at the 20 mL and 30 mL prices.
+4a. Out of stock at Sephora (Nick, Nov 23, 2026): a pair whose own item (its store size, else the product's only item) is out of stock on its Sephora item list read in the last 10 days isn't posted, and an open suggestion in that state expires ("Out of stock at Sephora …"). Those products go in Hub doc `reader/sephora_todo` for the daily stock check (section 4c step 6) to re-read.
 4b. Multi-size rows without a known size are no longer held (Nick, Nov 19, 2026): they're priced at the size guess, or the full size when unknown, and posted with "Size not checked" at the front of the note.
 5. Posts as candidates the rows with predicted ROI ≥ 10% (Nick, Nov 19, 2026; was 21%). Every pair not marked wrong is watched: learned match rules, confidence and the Sephora-listing check no longer hold a pair back (Nick judges the match on To review).
    - A cost that comes from an event code rather than the item's own sale price gets the note prefix "Event code — confirm brand qualifies at checkout".
@@ -118,10 +119,10 @@ Nick (or his team) marks wrong Amazon ↔ Sephora matches on the Hub — the Sep
 - In the message to Nick, add one line: wrong-match marks this week, automatic checks now on, any manual rule you added (and why), pairs downgraded.
 
 ## 4c. Daily: Sephora stock check (Claude in Chrome on Nick's MacBook, before the daily run)
-When Nick rejects a lead as **Not in stock at Sephora**, the Hub starts a stock watch instead of the 21-day block (Nick, Nov 17, 2026:
+The daily run never posts an item that Sephora's item list shows out of stock (step 6 re-reads those daily). And when Nick rejects a lead as **Not in stock at Sephora**, the Hub starts a stock watch instead of the 21-day block (Nick, Nov 17, 2026:
 "I don't need it snoozed"). The daily watch holds that ASIN back, at any price and for any time, until a check finds it back in stock;
 then the next daily run may propose it again with fresh prices.
-1. `GET /api/engine/sephora/stock-watch` (X-Engine-Key). If `rows` is empty, stop: nothing to check, no message.
+1. `GET /api/engine/sephora/stock-watch` (X-Engine-Key). Also `GET /api/engine/docs/reader/sephora_todo`. If both are empty (no watch rows, no items), stop: nothing to check, no message. If only the watch is empty, skip steps 3–4.
 2. Load the Chrome tools in one ToolSearch, call tabs_context_mcp, open a new tab at https://www.sephora.com/ and wait for it to load.
    Read `jobs/sephora/stock_check.js` (project doc `claude/sephora-catalog/stock_check.js`) and run it with javascript_tool.
 3. For the watched rows, 3 at a time: `await sephStock([{id, url: sephora_url}, ...])`. Keep the 8-second gap; never more than
@@ -131,6 +132,13 @@ then the next daily run may propose it again with fresh prices.
    restocked when that SKU is in stock. Close your tab.
 5. Only message Nick when something came back in stock (name, Amazon ASIN link, Sephora link) or a step failed. Reads only: never
    add to bag, sign in, or change anything on Sephora.
+6. Out-of-stock re-read (Nick, Nov 23, 2026). The daily run holds back any pair whose own Sephora item was out of stock on its
+   item list (read in the last 10 days) and puts those products in Hub doc `reader/sephora_todo` (`GET /api/engine/docs/reader/sephora_todo`).
+   If it has items: `POST /api/engine/upload-token {"purpose":"store_skus","hours":3}` (engine key, in the session), then in the same
+   Sephora tab run `check_pairs/sephora_reader.js` (project doc `claude/sephora-catalog/sephora_reader.js`) with `__TOKEN__` = that
+   token, `__SOURCE__` = `recheck` and `__LIMIT__` = 60 minus the pages read in step 3. It reads one page every 7 s, uploads the fresh
+   item lists itself and sets `window.sk.finished`; poll `window.sk` every couple of minutes. A restocked item is posted again by
+   the 4:47 run. The 60-page daily cap covers steps 3 and 6 together.
 
 ## 5. Other scripts
 

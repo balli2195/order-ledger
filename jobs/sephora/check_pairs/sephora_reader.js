@@ -1,4 +1,4 @@
-// Sephora SKU-list reader for Nick's old MacBook Chrome (signed-out "Lead search" profile), run in a sephora.com tab with
+// Sephora SKU-list reader for Nick's old MacBook Chrome (placeholders __TOKEN__, __LIMIT__, __SOURCE__) (signed-out "Lead search" profile), run in a sephora.com tab with
 // javascript_tool. Reads the unread product pages from /api/store-skus/todo (closest to profitable first), one page every
 // 7 s, never two at once: #linkStore -> page.product.currentSku plus every *ChildSkus list (regularChildSkus AND
 // onSaleChildSkus). Each SKU's finish refinement (Matte, Satin...) is added to its description. Uploads to
@@ -6,7 +6,10 @@
 // 3 pages in a row without product data, stops after 8 pauses. Never clicks or submits anything. Progress in window.sk.
 window.sk={stop:false,done:0,saved:0,blocked:0,missing:0,pauses:0,errors:[],finished:false,startedAt:new Date().toISOString()};
 const H='https://order-ledger-3mt6.onrender.com',T='__TOKEN__';
-const todo=await fetch(H+'/api/store-skus/todo?limit=__LIMIT__',{headers:{'X-Upload-Token':T}}).then(r=>r.json());
+// __SOURCE__: 'unread' = products with no item list yet (/api/store-skus/todo); 'recheck' = the daily job's list of products
+// held back as out of stock (Hub doc reader/sephora_todo via /api/reader/todo?list=sephora), re-read so restocks are seen.
+const todo=('__SOURCE__'==='recheck')?await fetch(H+'/api/reader/todo?list=sephora',{headers:{'X-Upload-Token':T}}).then(r=>r.json()).then(d=>({items:(d.items||[]).slice(0,__LIMIT__),left:(d.items||[]).length}))
+ :await fetch(H+'/api/store-skus/todo?limit=__LIMIT__',{headers:{'X-Upload-Token':T}}).then(r=>r.json());
 const L=todo.items;window.sk.total=L.length;window.sk.left=todo.left;
 const row=s=>{const f=((s.skuRefinements||[]).find(x=>x&&x.key==='finish')||{values:[]}).values.join('/');const d=[s.variationDesc,f].filter(Boolean).join(' · ');
 return[String(s.skuId),s.size||'',s.variationValue||'',d,(s.salePrice||s.listPrice||'').toString(),!!s.isOutOfStock];};
