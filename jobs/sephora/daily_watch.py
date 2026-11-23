@@ -60,6 +60,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--max-tokens", type=int, default=2500)
+    ap.add_argument("--post-only", action="store_true", help="no new Lead Score calls: post the rows already scored today")
     ap.add_argument("--max-score", type=int, default=0)   # 0 = no cap (Nick, Nov 23, 2026)
     ap.add_argument("--score", action="store_true", help="call Lead Score even in --dry-run")
     ap.add_argument("--no-keepa", action="store_true")
@@ -459,6 +460,8 @@ def main():
     scored_today = sum(1 for v in scache.values() if v.get("from") != "hub")
     want = [(r, e) for _, r, e in top if f"{r['asin']}|{e['entered']:.2f}" not in scache]
     room = max(0, a.max_score - scored_today) if a.max_score else len(want)
+    if a.post_only:   # e.g. while another run is still scoring (never two scorers at once)
+        room = 0
     to_score = want[:room]
     failed_keys = set()
     if to_score and (not a.dry_run or a.score):
@@ -480,7 +483,7 @@ def main():
     elif to_score:
         C.log(f"dry run: Lead Score skipped for {len(to_score)} rows (use --score to call it)")
     if len(want) > room:
-        problems.append(f"Lead Score daily cap: {len(want) - room} rows not scored")
+        problems.append(f"Lead Score: {len(want) - room} rows not scored yet" + (" (--post-only)" if a.post_only else " (--max-score cap)"))
 
     cands, cand_view = [], []
     for roi_, r, e in top:
