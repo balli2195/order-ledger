@@ -143,3 +143,9 @@ Result: 9,607 of 9,653 cards dated; 46 cards (29 orders) are still blank, each k
 
 ### Lead DB guide (Nov 11, 2026)
 `/lead-db/guide` ("How it works" on the Lead DB page): the tables, jobs, wrong-match learning, the Lead Score training plan, sizing and upgrade triggers, and local/cloud training. Live counts come from `GET /api/lead-db/stats` (`app/training.py` `guide_stats`). Page: `static/lead-db-guide.html`; update its figures when the design changes.
+
+## PrepOS from chat (Nov 23, 2026)
+Connector tools so a Claude chat can fix items Network Prep reports as missing from PrepOS (skill `network-prep-issues`):
+- `prepos_preview(order_ids | order_refs)`: what the named orders would upload (one line per ASIN and pack size, with qty, weighted cost, Sell = Buy Box + 10%), lines held because the ASIN was already sent today, items without an ASIN, and every item's PrepOS state (`sent <day>`, `unsent`, or why not). Sends nothing. Needs the PrepOS tab.
+- `prepos_send(order_ids | order_refs, confirm)`: owner only; without `confirm=true` it returns the preview. Sends the named orders' unsent items now through `prepos.send(today, "order", user, ids, source="chat")`, the same path as the order's Send to PrepOS button, so the 2-day lag doesn't apply, sent items are never re-sent, canceled orders are left out, and the nightly run skips what was sent. Logged in the Activity log with source `chat`.
+- `app/prepos.py`: `order_status(ids)` (per-item PrepOS state) and `add_prices(lines)` (the Sell price step, shared with `send`).

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Annotated, Any, Literal
 
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from . import leads as L
 from . import orders as o
+from . import prepos as P
 from .auth import TABS, User, user_by_id
 from .oauth import LedgerOAuthProvider
 
@@ -43,7 +45,12 @@ the copy. After the owner's cutover ("home") the copy stops.
 
 Sephora leads tab: a daily job matches Amazon ASINs to Sephora products (sephora_catalog) and queues buy candidates
 (sephora_candidates: status new/approved/rejected/expired). Read them with list_sephora_candidates / search_sephora_catalog;
-Nick approves (which creates a lead), rejects or marks wrong matches on the Hub page."""
+Nick approves (which creates a lead), rejects or marks wrong matches on the Hub page.
+
+PrepOS (Network Prep's software): the Hub uploads order items there, one line per ASIN per day, nightly with a 2-day
+lag. prepos_preview shows what named orders would send and where each of their items stands; prepos_send (owner only)
+sends them now, skipping the lag. Items already sent are never sent again, and sent items are recorded so the nightly
+run skips them. Show the user the preview and get their OK before calling prepos_send with confirm=true."""
 
 mcp = FastMCP(
     "Myrddin Hub",
@@ -477,3 +484,81 @@ async def list_match_feedback(
     if brand:
         rows = [r for r in rows if (r.get("brand") or "").lower() == brand.lower()]
     return {"wrong_matches": rows[: max(1, min(limit, 1000))], "tags": list(sephora.WRONG_TAGS)}
+
+
+# ---------------------------------------------------------------- PrepOS (app/prepos.py; Nick, Nov 23 2026)
+
+async def _prepos_orders(order_ids: list[str] | None, order_refs: list[str] | None) -> list[str]:
+    """Internal order ids for the orders named by id or by the store's order number; every one must exist."""
+    ids: list[str] = []
+    for x in order_ids or []:
+        try:
+            ids.append(str(uuid.UUID(str(x).strip())))
+        except ValueError:
+            raise o.LedgerError(f"{x!r} isn't a valid internal order id (use order_refs for a store's order number)")
+    for ref in order_refs or []:
+        found = await o.get_order(None, str(ref))
+        if not found:
+            raise o.LedgerError(f"No order has order ID {ref!r}")
+        ids.append(str(found["id"]))
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        raise o.LedgerError("Give order_ids or order_refs")
+    if len(ids) > 50:
+        raise o.LedgerError("At most 50 orders per call")
+    return ids
+
+
+async def _prepos_preview(ids: list[str]) -> dict:
+    orders = await P.order_status(ids)
+    missing = [i for i in ids if i not in {x["order_id"] for x in orders}]
+    if missing:
+        raise o.LedgerError(f"No such order: {', '.join(missing)}")
+    p = await P.pending(P.today(), ids)
+    await P.add_prices(p["lines"])
+    for x in p["lines"] + p["held"]:
+        x.pop("item_ids", None)
+    return {"prepos_connected": bool(P.TOKEN), "would_send": p["lines"], "units": sum(x["qty"] for x in p["lines"]),
+            "held_asin_already_sent_today": p["held"], "no_asin": p["no_asin"], "orders": orders}
+
+
+@mcp.tool()
+async def prepos_preview(
+    order_ids: Annotated[list[str] | None, Field(description="Internal order ids from search_orders")] = None,
+    order_refs: Annotated[list[str] | None, Field(description="Or the stores' order numbers (exact)")] = None,
+) -> dict:
+    """What sending these orders to PrepOS (Network Prep) would upload, without sending anything.
+    would_send = one line per ASIN and pack size, combined across the orders: qty, unit_cost (weighted average), sell
+    (Buy Box + 10%), supplier, order_refs. held_asin_already_sent_today = lines that must wait for the next run because
+    PrepOS already got a line for that ASIN today. no_asin = items that can't be sent until they have an ASIN.
+    orders = every item of each order with its PrepOS state ("sent <day>", "unsent", or why it isn't sent), so you can
+    see what was already sent. Items already sent and canceled orders are never included in would_send."""
+    await _actor(tab="prepos")
+    return await _prepos_preview(await _prepos_orders(order_ids, order_refs))
+
+
+@mcp.tool()
+async def prepos_send(
+    order_ids: Annotated[list[str] | None, Field(description="Internal order ids from search_orders")] = None,
+    order_refs: Annotated[list[str] | None, Field(description="Or the stores' order numbers (exact)")] = None,
+    confirm: Annotated[bool, Field(description="Must be true to send; show the user the preview and get their OK first")] = False,
+) -> dict:
+    """Send these orders' unsent items to PrepOS now, in one upload (owner only). The 2-day lag of the nightly run
+    doesn't apply, so first make sure the order wasn't canceled. Same rules as the Hub's own send: one line per ASIN and
+    pack size, items already sent are skipped, an ASIN already sent today is held for the next run, items without an
+    ASIN aren't sent. What is sent is recorded, so the nightly run won't send it again. PrepOS lines can't be edited or
+    removed through the Hub afterwards. Without confirm=true this only returns the preview.
+    The result's orders list shows each item's PrepOS state after the send; check it before telling the user it worked."""
+    actor = await _actor("owner", tab="prepos")
+    ids = await _prepos_orders(order_ids, order_refs)
+    if not confirm:
+        prev = await _prepos_preview(ids)
+        prev["sent"] = 0
+        prev["note"] = "Nothing was sent: show this to the user, then call again with confirm=true"
+        return prev
+    try:
+        res = await P.send(P.today(), "order", actor.user_id, ids, source="chat")
+    except P.PreposError as e:
+        raise o.LedgerError(str(e))
+    res["orders"] = await P.order_status(ids)
+    return res

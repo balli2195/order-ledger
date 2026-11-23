@@ -14,6 +14,9 @@ Rules (Nick, Oct 29, 2026):
 - A "Send now" button sends early, through any date up to today.
 - A "Send to PrepOS" button on an order sends just that order's unsent items (Nick, Nov 10 2026); the nightly run
   skips them because they're recorded as sent.
+- Claude chats do the same through the connector tools prepos_preview / prepos_send (Nick, Nov 23 2026): named orders,
+  whatever their date (no 2-day lag), same one-line-per-ASIN-per-day and never-twice rules. Used to fix items Network
+  Prep reports as missing from PrepOS.
 
 PrepOS API: POST {PREPOS_URL}/items/import, multipart field `products` = the same CSV as the manual import.
 Env: PREPOS_TOKEN (Bearer), optional PREPOS_URL.
@@ -116,6 +119,56 @@ async def pending(through: date, order_id: str | None = None) -> dict:
     return {"through": through.isoformat(), "lines": lines, "held": held, "no_asin": no_asin}
 
 
+async def order_status(order_ids: list[str]) -> list[dict]:
+    """Per order, where each line item stands with PrepOS: sent (and on which day), unsent, or why it can't be sent
+    (no ASIN, zero quantity, order canceled). For the connector's prepos_preview / prepos_send."""
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT o.id AS order_id, o.order_date, o.store, o.order_ref,
+                      COALESCE(o.confirm_info ? 'canceled', false) AS canceled,
+                      i.id AS item_id, upper(trim(i.asin)) AS asin, i.product_title, i.qty_ordered, i.set_type,
+                      ps.send_day, ps.status AS send_status
+               FROM orders o LEFT JOIN order_items i ON i.order_id = o.id
+               LEFT JOIN prepos_sent_items s ON s.item_id = i.id
+               LEFT JOIN prepos_sends ps ON ps.id = s.send_id
+               WHERE o.id = ANY(%s::uuid[])
+               ORDER BY o.order_date, o.created_at, i.created_at""",
+            (list(order_ids),),
+        )
+        rows = await cur.fetchall()
+    out: dict[str, dict] = {}
+    for r in rows:
+        d = out.setdefault(str(r["order_id"]), {
+            "order_id": str(r["order_id"]), "order_ref": r["order_ref"], "store": r["store"],
+            "order_date": r["order_date"].isoformat(), "canceled": bool(r["canceled"]), "items": []})
+        if r["item_id"] is None:
+            continue
+        if r["send_day"] is not None:
+            state = f"sent {r['send_day'].isoformat()}"
+        elif r["canceled"]:
+            state = "not sent: order canceled"
+        elif not (r["asin"] and len(r["asin"]) == 10):
+            state = "not sent: no ASIN"
+        elif not (r["qty_ordered"] or 0) > 0:
+            state = "not sent: quantity 0"
+        else:
+            state = "unsent"
+        d["items"].append({"asin": r["asin"] or None, "title": r["product_title"], "qty": r["qty_ordered"],
+                           "set_type": r["set_type"], "prepos": state})
+    return list(out.values())
+
+
+async def add_prices(lines: list[dict]) -> None:
+    """Fill each line's sell price (Buy Box, or the last one Keepa saw, + 10%), bb, and a missing title."""
+    info = await keepa_prices([x["asin"] for x in lines])
+    for x in lines:
+        k = info.get(x["asin"]) or {}
+        x["sell"] = round(k["bb"] * 1.10, 2) if k.get("bb") else None
+        x["bb"] = k.get("bb")
+        if not x["title"]:
+            x["title"] = k.get("title")
+
+
 async def keepa_prices(asins: list[str]) -> dict[str, dict]:
     """ASIN -> {bb: Buy Box now or last seen (dollars), title}. One Keepa call per 100 ASINs."""
     out: dict[str, dict] = {}
@@ -178,7 +231,8 @@ async def upload(data: bytes) -> tuple[int, object]:
     return r.status_code, body
 
 
-async def send(through: date, kind: str, user_id: int | None = None, order_id: str | None = None) -> dict:
+async def send(through: date, kind: str, user_id: int | None = None, order_id: str | list | None = None,
+               source: str | None = None) -> dict:
     """Combine and upload everything pending through `through` (or only one order's unsent items, kind "order").
     Sent items are recorded in prepos_sent_items, so the nightly run skips them. Returns what was sent."""
     if not TOKEN:
@@ -195,13 +249,7 @@ async def send(through: date, kind: str, user_id: int | None = None, order_id: s
                 lines = p["lines"]
                 if not lines:
                     return {"sent": 0, "units": 0, "lines": [], "held": p["held"], "no_asin": p["no_asin"]}
-                info = await keepa_prices([x["asin"] for x in lines])
-                for x in lines:
-                    k = info.get(x["asin"]) or {}
-                    x["sell"] = round(k["bb"] * 1.10, 2) if k.get("bb") else None
-                    x["bb"] = k.get("bb")
-                    if not x["title"]:
-                        x["title"] = k.get("title")
+                await add_prices(lines)
                 try:
                     code, body = await upload(to_csv(lines))
                 except httpx.HTTPError as e:   # nothing reached PrepOS; the items stay pending
@@ -225,7 +273,7 @@ async def send(through: date, kind: str, user_id: int | None = None, order_id: s
                                 await conn.execute("INSERT INTO prepos_sent_items (item_id, send_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (iid, sid))
                     await conn.execute(
                         "INSERT INTO audit_log (user_id, source, action, entity, after) VALUES (%s,%s,'create','prepos',%s)",
-                        (user_id, "web" if kind == "button" else "system",
+                        (user_id, source or ("web" if kind == "button" else "system"),
                          json.dumps({"lines": len(lines), "units": sum(x["qty"] for x in lines), "through": through.isoformat(),
                                      "kind": kind, "ok": ok, "code": code, "order_id": order_id})),
                     )
