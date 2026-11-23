@@ -1268,7 +1268,9 @@ async def score_rows(rows: list) -> dict:
                 if not ASIN_RE.match(asin) or not r.get("cost") or not r.get("url"):
                     out.append({"asin": asin, "ok": False, "why": "needs asin, cost and url"})
                     continue
-                params = {"asin": asin, "cost": str(r["cost"]), "url": str(r["url"]),
+                # store_cost=0: the daily job's cost is Sephora's own price, so Lead Score adds no store uplift (that 5% only
+                # corrects VA-entered costs that net out Nick's outside cash back; Nick, Nov 23, 2026)
+                params = {"asin": asin, "cost": str(r["cost"]), "url": str(r["url"]), "store_cost": "0",
                           "date": str(r.get("date") or datetime.now(CENTRAL).date().isoformat())}
                 try:
                     resp = await c.get(f"{L.LEAD_SCORE_URL}/preview", params=params, headers={"X-Key": L.LEAD_SCORE_KEY})

@@ -15,7 +15,7 @@ Steps
     "No competition / restock" note; with no offer at all the 90-day average Buy Box prices them. Amazon prices (Buy Box, 90-day avg)
     come from the Keepa collector's latest pull (<= 36 h old; no tokens); only ASINs it hasn't pulled get a Keepa
     refresh, in priority order (price drops / promo rows first, then ROI closest to or above 15%) within --max-tokens.
- 4. ROI prefilter >= 15%: cost = Sephora price x 1.05 x pack (markdown only for the size it belongs to; a broad promo
+ 4. ROI prefilter >= 15%: cost = Sephora price x pack (no store uplift, Nick Nov 23 2026) (markdown only for the size it belongs to; a broad promo
     takes list x (1 - discount) when lower; Nick's size_confirmed wins; needs_size rows only at size_guess=hi unless
     confirmed); revenue = Buy Box else lowest FBA; minus referral, FBA fee, $1 prep. SP-API getItemOffersBatch re-checks
     the Buy Box / FBA low of the rows that pass.
@@ -61,6 +61,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--max-tokens", type=int, default=2500)
     ap.add_argument("--post-only", action="store_true", help="no new Lead Score calls: post the rows already scored today")
+    ap.add_argument("--rescore", action="store_true", help="ignore today's Lead Scores and score again (after a scoring change)")
     ap.add_argument("--max-score", type=int, default=0)   # 0 = no cap (Nick, Nov 23, 2026)
     ap.add_argument("--score", action="store_true", help="call Lead Score even in --dry-run")
     ap.add_argument("--no-keepa", action="store_true")
@@ -447,9 +448,9 @@ def main():
         return bool(thin_ or not d_ or not amz[r["asin"]].get("buybox"))
     pool.sort(key=lambda x: (_restock(x[1]), -x[0]))
     top = pool[:a.max_score] if a.max_score else pool
-    scache = C.load_json(f"state/scores_{day.isoformat()}.json", {}) or {}
+    scache = {} if a.rescore else (C.load_json(f"state/scores_{day.isoformat()}.json", {}) or {})
     try:   # scores already on today's candidates (e.g. an earlier run in another session)
-        ex = C.hub("GET", "/api/engine/sephora/candidates", params={"since": day.isoformat(), "status": "all"})
+        ex = {} if a.rescore else C.hub("GET", "/api/engine/sephora/candidates", params={"since": day.isoformat(), "status": "all"})
         for c_ in ex.get("candidates") or []:
             if c_.get("found_on") == day.isoformat() and c_.get("lead_score_band") is not None:
                 key = f"{c_['asin']}|{C.fnum(c_.get('cost')):.2f}"

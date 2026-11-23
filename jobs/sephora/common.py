@@ -34,7 +34,8 @@ os.environ["KEEPA_RESERVE"] = str(KEEPA_RESERVE)       # catalog/keepa_pull.py w
 
 HUB = (os.environ.get("HUB_URL") or "https://order-ledger-3mt6.onrender.com").rstrip("/")
 CENTRAL = ZoneInfo("America/Chicago")
-UPLIFT, PREP, TARGET, FLOOR = 1.05, 1.40, 0.21, 0.15   # $1.40 prep per unit (Nick's Seller Snap figure)
+UPLIFT, PREP, TARGET, FLOOR = 1.0, 1.40, 0.21, 0.15   # no store uplift: costs are Sephora's own prices (the 5% only corrected VA costs net of
+# Nick's outside cash back; Nick, Nov 23, 2026). $1.40 prep per unit (Nick's Seller Snap figure)
 BRANDS_JSON = os.path.join(HERE, "brands.json")
 
 

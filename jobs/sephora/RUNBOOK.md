@@ -188,7 +188,7 @@ After the weekly run, add: new products matched (flag ROI ≥ 21%), brands auto-
   - `size_confirmed` decides which Sephora price is used.
 - ASINs Nick approved or rejected in the last 21 days are not proposed again unless the cost is now lower.
 - Costs:
-  - `cost` = entered Sephora price × pack quantity, before the ×1.05 store uplift (Lead Score and the ROI maths add the 5%).
+  - `cost` = Sephora's own price × pack quantity, with no store uplift (Nick, Nov 23, 2026). The 5% Sephora uplift on Lead Score exists only to correct costs a VA entered net of Nick's outside cash back; the job reads Sephora's real price, so it sends `store_cost=0` to Lead Score (also for leads made from approved suggestions, `sourced_by = Claude`).
   - Prep is $1.40 per unit everywhere (Nick's Seller Snap figure).
   - The Hub stores ROI and `referral_pct` as fractions.
 - When updating existing catalog pairs, always send their current `active`: the Hub re-activates any pair sent without it.

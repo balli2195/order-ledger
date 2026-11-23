@@ -21,7 +21,8 @@ CAT = os.environ.get("SEPH_DATA") or os.path.join(os.path.dirname(HERE), ".data"
 sys.path.insert(0, HERE)
 from match import size_ml, flags, base_text  # noqa: E402
 
-UPLIFT, PREP, TARGET = 1.05, 1.40, 0.21   # $1.40 prep (Nick, Nov 2026)
+UPLIFT, PREP, TARGET = 1.0, 1.40, 0.21   # no store uplift: costs are Sephora's own prices (the 5% only corrected VA costs net of
+# Nick's outside cash back; Nick, Nov 23, 2026). $1.40 prep (Nick, Nov 2026)
 SAMPLE_RE = re.compile(r"\b(vial|sample|tester|decant|carded)\b")
 
 

@@ -580,7 +580,7 @@ async def score_lead(lead_id: str) -> dict:
     if not LEAD_SCORE_URL or not LEAD_SCORE_KEY:
         raise LedgerError("Lead Score server isn't configured")
     async with db.pool.connection() as conn:
-        cur = await conn.execute("SELECT asin, cost, store_link, lead_date FROM leads WHERE id=%s", (lead_id,))
+        cur = await conn.execute("SELECT asin, cost, store_link, lead_date, sourced_by FROM leads WHERE id=%s", (lead_id,))
         r = await cur.fetchone()
     if not r:
         raise LedgerError("Lead not found")
@@ -588,6 +588,8 @@ async def score_lead(lead_id: str) -> dict:
         raise LedgerError("Scoring needs an ASIN, a cost and a store link")
     params = {"asin": r["asin"], "cost": str(r["cost"]), "url": r["store_link"],
               "date": (r["lead_date"] or date.today()).isoformat(), "lead_id": str(lead_id)}
+    if (r["sourced_by"] or "") == "Claude":   # an approved Sephora suggestion: the cost is the store's own price, no store uplift
+        params["store_cost"] = "0"           # (the uplift corrects VA costs that net out Nick's outside cash back; Nick, Nov 23, 2026)
     try:
         async with httpx.AsyncClient(timeout=180) as c:
             resp = await c.get(f"{LEAD_SCORE_URL}/preview", params=params, headers={"X-Key": LEAD_SCORE_KEY})
