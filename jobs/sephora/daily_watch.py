@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily Sephora -> Amazon lead job. One command; safe to re-run the same day (candidates are keyed (asin, found_on)).
 
-  python3 -I daily_watch.py [--dry-run] [--max-tokens 2500] [--max-score 60] [--score] [--no-keepa]
+  python3 -I daily_watch.py [--dry-run] [--max-tokens 2500] [--max-score N] [--score] [--no-keepa]
 
 Steps
  1. Read the catalog from the Hub (all pairs; active ones are watched).
@@ -12,14 +12,15 @@ Steps
     go to new_products.json for the weekly matcher. Full brand listings are refreshed weekly, not here.
  3. Watch rows: active, sellable=open, match_ok not false (any confidence; learned rules only flag, Nick Nov 19 2026),
     and priceable by the buying rule. No demand or thin-price gate (Nick, Nov 23, 2026): those rows are posted with a
-    "No competition / restock" note; with no offer at all the 90-day average Buy Box prices them. Keepa refresh (Buy Box, 90-day avg) in
-    priority order (price drops / promo rows first, then ROI closest to or above 15%) within --max-tokens.
+    "No competition / restock" note; with no offer at all the 90-day average Buy Box prices them. Amazon prices (Buy Box, 90-day avg)
+    come from the Keepa collector's latest pull (<= 36 h old; no tokens); only ASINs it hasn't pulled get a Keepa
+    refresh, in priority order (price drops / promo rows first, then ROI closest to or above 15%) within --max-tokens.
  4. ROI prefilter >= 15%: cost = Sephora price x 1.05 x pack (markdown only for the size it belongs to; a broad promo
     takes list x (1 - discount) when lower; Nick's size_confirmed wins; needs_size rows only at size_guess=hi unless
     confirmed); revenue = Buy Box else lowest FBA; minus referral, FBA fee, $1 prep. SP-API getItemOffersBatch re-checks
     the Buy Box / FBA low of the rows that pass.
- 5. Lead Score (Hub proxy, <= 25 per call, sequential, <= --max-score rows a day incl. earlier runs today) on the top
-    rows by ROI; candidates = pred ROI >= 10% (or ROI >= 10% marked 'not scored' when scoring fails).
+ 5. Lead Score (Hub proxy, <= 25 per call, sequential) on every row that passed the prefilter; no daily cap (Nick,
+    Nov 23, 2026; --max-score N sets one for a test run); candidates = pred ROI >= 10% (or ROI >= 10% marked 'not scored' when scoring fails).
  6. Upsert refreshed catalog fields, the candidates and the run record; write daily_summary.md.
 --dry-run: no Hub writes (payloads are saved under $SEPH_DATA/out/<date>/); Lead Score is skipped unless --score.
 """
@@ -38,6 +39,7 @@ import common as C  # noqa: E402
 
 CONF_OK = ("high", "medium")
 OOS_DAYS = 10   # an item list older than this doesn't hold a pair back as out of stock
+COLLECTOR_HOURS = 36   # a Keepa collector pull younger than this prices the row (Nick, Nov 23, 2026)
 CAND_MIN, PREFILTER = 0.10, 0.15   # posting floor: predicted ROI 10% (Nick, Nov 19, 2026; was 21%)
 DECIDED_DAYS = 21
 
@@ -58,7 +60,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--max-tokens", type=int, default=2500)
-    ap.add_argument("--max-score", type=int, default=60)
+    ap.add_argument("--max-score", type=int, default=0)   # 0 = no cap (Nick, Nov 23, 2026)
     ap.add_argument("--score", action="store_true", help="call Lead Score even in --dry-run")
     ap.add_argument("--no-keepa", action="store_true")
     ap.add_argument("--keepa-wait", type=int, default=1800, help="max seconds to wait for Keepa token refill")
@@ -279,9 +281,29 @@ def main():
     counts["watch_priceable"] = len(pri)
     C.log(f"watch rows: {counts['watch_rows']} ASINs, {len(watch)} pairs ({len(pri)} priceable by the buying rule)")
 
-    # Keepa refresh (cache: today's refreshes are reused by a re-run)
+    # Keepa (cache: today's refreshes are reused by a re-run). The Keepa collector pulls every watched ASIN within ~24 h,
+    # so its latest pull (<= COLLECTOR_HOURS old) prices the row; the job's own tokens only go to ASINs the collector
+    # hasn't pulled recently (Nick, Nov 23, 2026).
     kcache = C.load_json(f"state/keepa_{day.isoformat()}.json", {}) or {}
     order = list(dict.fromkeys(r["asin"] for _, _, r in pri))   # Keepa is per ASIN: each once, in priority order
+    from_collector = 0
+    need = [x for x in order if x not in kcache]
+    try:
+        import keepa_pull as kp
+        for i in range(0, len(need), 300):
+            got_ = C.hub("POST", "/api/engine/keepa/latest", {"asins": need[i:i + 300], "max_age_hours": COLLECTOR_HOURS},
+                         timeout=300).get("products") or {}
+            for k, p_ in got_.items():
+                try:
+                    ts_ = dt.datetime.fromisoformat(p_["pulled_at"]).timestamp()
+                except Exception:  # noqa: BLE001
+                    ts_ = time.time()
+                kcache[k] = {**kp.compact(p_), "_ts": ts_, "_src": "collector"}
+                from_collector += 1
+        C.save_json(f"state/keepa_{day.isoformat()}.json", kcache)
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"Keepa collector read failed (own Keepa pulls only): {e!r}"[:300])
+    C.log(f"Keepa collector: {from_collector} of {len(need)} ASINs pulled in the last {COLLECTOR_HOURS} h")
     todo = [x for x in order if x not in kcache]
     tokens, kstop = 0, None
     if a.no_keepa:
@@ -299,7 +321,9 @@ def main():
     if kstop and not a.no_keepa and "budget" not in kstop:
         problems.append(kstop)
     refreshed = [x for x in order if x in kcache]
-    C.log(f"Keepa: {tokens} tokens used, {len(refreshed)} of {len(order)} watch ASINs fresh today ({kstop or 'all done'})")
+    from_collector = sum(1 for x in refreshed if kcache[x].get("_src") == "collector")
+    C.log(f"Keepa: {len(refreshed)} of {len(order)} watch ASINs fresh ({from_collector} from the collector, "
+          f"{len(refreshed) - from_collector} pulled by this job: {tokens} tokens; {kstop or 'all done'})")
 
     amz, meta = {}, {}
     for _, _, r in pri:
@@ -414,14 +438,14 @@ def main():
     C.log(f"held back as out of stock at Sephora: {len(held_oos)}")
 
     # ---- 5. Lead Score
-    # The daily scoring cap goes to listings with demand and a Buy Box first, then the "No competition / restock" ones
-    # (their ROI is often inflated by a lone seller's price; Nick, Nov 23, 2026)
+    # Listings with demand and a Buy Box are scored first, then the "No competition / restock" ones (their ROI is often
+    # inflated by a lone seller's price). No daily cap (Nick, Nov 23, 2026); --max-score N only for test runs.
     def _restock(r):
         m_ = meta[r["asin"]]
         d_, thin_ = flags_of(amz[r["asin"]], m_.get("monthly_sold"), m_.get("sales_rank"), m_.get("offers_fba"))
         return bool(thin_ or not d_ or not amz[r["asin"]].get("buybox"))
     pool.sort(key=lambda x: (_restock(x[1]), -x[0]))
-    top = pool[:a.max_score]
+    top = pool[:a.max_score] if a.max_score else pool
     scache = C.load_json(f"state/scores_{day.isoformat()}.json", {}) or {}
     try:   # scores already on today's candidates (e.g. an earlier run in another session)
         ex = C.hub("GET", "/api/engine/sephora/candidates", params={"since": day.isoformat(), "status": "all"})
@@ -434,7 +458,7 @@ def main():
         problems.append(f"couldn't read today's candidates: {e!r}")
     scored_today = sum(1 for v in scache.values() if v.get("from") != "hub")
     want = [(r, e) for _, r, e in top if f"{r['asin']}|{e['entered']:.2f}" not in scache]
-    room = max(0, a.max_score - scored_today)
+    room = max(0, a.max_score - scored_today) if a.max_score else len(want)
     to_score = want[:room]
     failed_keys = set()
     if to_score and (not a.dry_run or a.score):
@@ -631,7 +655,7 @@ def main():
                   sale_page_in_catalog=len(seph_today) - len(sale_ended), sale_ended=len(sale_ended),
                   price_drops=price_drops, new_products=len(new_products),
                   new_products_in_config=sum(1 for x in new_products if x["brand_in_config"] and not x["excluded_brand"]),
-                  promo_brands=sorted(disc), keepa_tokens=tokens, watched=len(refreshed), prefilter_15=len(passed),
+                  promo_brands=sorted(disc), keepa_tokens=tokens, watched=len(refreshed), keepa_from_collector=from_collector, prefilter_15=len(passed),
                   skipped_recent_decision=len(skipped_decided), scored=len(to_score) if (not a.dry_run or a.score) else 0,
                   posted=len(cands), needs_size_check=len(size_check), catalog_rows_updated=len(cat_rows),
                   minutes=round((time.time() - t0) / 60, 1))
@@ -677,7 +701,8 @@ def main():
              f"- Sephora Sale page: {len(sp['products'])} items; {counts['sale_page_in_catalog']} in the catalog "
              f"({price_drops} newly on sale / cheaper), {len(sale_ended)} catalog sales ended, {len(new_products)} not in the "
              f"catalog ({counts['new_products_in_config']} from configured brands) -> new_products.json",
-             f"- Watched {len(watch)} ASINs; Keepa refreshed {len(refreshed)} today ({tokens} tokens this run; {kstop or 'all done'})",
+             f"- Watched {len(watch)} ASINs; Amazon prices fresh for {len(refreshed)} ({from_collector} from the Keepa collector's pulls, "
+             f"{len(refreshed) - from_collector} pulled by this job with {tokens} tokens; {kstop or 'all done'})",
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
              f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}",
              f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",

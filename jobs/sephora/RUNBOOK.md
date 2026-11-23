@@ -31,11 +31,11 @@ What a run does:
 1. Reads the Sephora Sale page (search "sale", about 2 requests) and the promo pages (Savings Event / Beauty Offers) for site-wide or brand-wide codes.
    - The sale is recorded as `{text, code, ends}`.
    - The discount comes from `brands.json` → `promo`: `savings_event_pct` (Nick: 25%), or a higher brand banner such as "30% off Sephora Collection".
-2. Refreshes watched ASINs with Keepa (Buy Box, 90-day average): sale and promo rows first, then the best ROI.
+2. Prices watched ASINs from the Keepa collector's latest pull (`POST /api/engine/keepa/latest`, ≤36 h old, no tokens; Nick, Nov 23, 2026). The collector pulls all ~5,300 watched ASINs within 24 h. Only ASINs it hasn't pulled get a Keepa refresh (Buy Box, 90-day average): sale and promo rows first, then the best ROI.
    - Every watchable pair is priced, not one per ASIN (Nov 19, 2026). An ASIN with several pairs (Nick's lead and the matcher's pick, a mini and a full size) is posted once, from: the pair of its open candidate, else the most trusted profitable pair (marked OK → Nick's lead → confidence → match score), else the best ROI. Keepa and SP-API are still called once per ASIN.
 3. Applies the ROI ≥ 15% prefilter, then an SP-API live offers check.
    - No demand or thin-price gate (Nick, Nov 23, 2026). Low-demand listings and listings with no Buy Box or one FBA seller are posted too, with the note prefix "No competition / restock: …" (no Buy Box can mean no competition, and sales can come back when restocked). With no offer at all, the 90-day average Buy Box prices the pair.
-4. Scores the top ≤60 with Lead Score (through the Hub, ≤25 per call, one call at a time).
+4. Scores every row that passed with Lead Score (through the Hub, ≤25 per call, one call at a time). No daily cap (Nick, Nov 23, 2026).
 1b. Sale-page prices belong to one item (Nov 23, 2026). The Sale page lists each product once, with the item that's on sale (its skuId) and that item's price. For a product sold in several sizes (from the Sephora item lists, `/api/engine/store-skus`):
    - the product's price range comes from the item list, not the Sale page;
    - a pair with a known store size gets the markdown only when its own item is the one on sale;
@@ -49,9 +49,9 @@ What a run does:
 
 Details:
 
-- **Budget and runtime:** ≤2,500 Keepa tokens (`--max-tokens`), about 3 tokens per ASIN; about 670 watch ASINs ≈ 2,000 tokens. Runtime is 4–6 minutes, longer if Keepa has to refill.
+- **Budget and runtime:** ≤2,500 Keepa tokens (`--max-tokens`) for ASINs the collector hasn't pulled in 36 h, about 3 tokens per ASIN; usually few or none. Lead Score takes about 2 s per row with no daily cap, so a run with ~500 rows to score takes about 20 minutes.
 - **Re-running the same day is safe.** Candidates are keyed on (asin, found_on). Today's Keepa pulls and Lead Scores are cached and reused.
-- **Flags:** `--dry-run` writes nothing to the Hub and skips Lead Score unless you add `--score`. `--no-keepa` skips the Keepa refresh.
+- **Flags:** `--dry-run` writes nothing to the Hub and skips Lead Score unless you add `--score`. `--no-keepa` skips the job's own Keepa pulls (the collector's pulls are still used).
 - **Output:** `.data/daily_summary.md`, always written. Sale-page items that aren't in the catalog go to state `new_products`.
 - **Exit codes:** `0` ran (problems listed in the summary); `1` crashed, missing env or Hub unreadable; `2` ran but couldn't post the candidates.
 
@@ -167,7 +167,7 @@ Every stage logs into the summary's **Problems** list and the run carries on.
 - **Lead Score:**
   - If a batch fails, rows with ROI ≥ 10% are posted with "not scored" in the note.
   - The Hub proxy takes about 2 s per row.
-  - Never send more than 60 rows a day or run batches in parallel; Nick doesn't want his Lead Score server loaded.
+  - No daily row cap (Nick, Nov 23, 2026), but never run batches in parallel: one call of ≤25 rows at a time.
 - **SP-API:** if the offers check fails, Keepa prices are used. If the restrictions check fails, the row stays `sellable=null` and is not watched.
 
 ## 7. What to send Nick after the daily run

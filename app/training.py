@@ -112,6 +112,34 @@ async def keepa_meta(asins: list) -> dict:
     return {"products": out, "missing": [a for a in asins if a not in out]}
 
 
+SLIM_KEYS = ("asin", "title", "brand", "parentAsin", "parentTitle", "color", "size", "style", "variations", "itemWeight",
+             "packageQuantity", "numberOfItems", "unitCount", "itemForm", "productType", "monthlySold", "stats",
+             "availabilityAmazon", "referralFeePercentage", "referralFeePercent", "fbaFees", "eanList", "upcList", "listedSince")
+
+
+async def keepa_slim(asins: list, max_age_hours: float = 36) -> dict:
+    """The collector's latest Keepa /product per ASIN (stats=90, Buy Box), without price history or offers, for up to
+    300 ASINs pulled within max_age_hours. The daily Sephora job prices from these instead of spending its own tokens
+    (Nick, Nov 23, 2026)."""
+    asins = list(dict.fromkeys(a.strip().upper() for a in asins if a and a.strip()))[:300]
+    if not asins:
+        raise LedgerError("asins is required")
+    out = {}
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT asin, pulled_at, raw_gz FROM keepa_raw WHERE asin = ANY(%s) AND bytes > 0 "
+                                 "AND pulled_at >= now() - make_interval(secs => %s)", (asins, float(max_age_hours) * 3600))
+        for r in await cur.fetchall():
+            try:
+                p = json.loads(gzip.decompress(bytes(r["raw_gz"])))
+            except Exception:  # noqa: BLE001
+                continue
+            p = p.get("products", [p])[0] if isinstance(p, dict) and "products" in p else p
+            d = {k: p.get(k) for k in SLIM_KEYS if k in p}
+            d["pulled_at"] = r["pulled_at"].isoformat()
+            out[r["asin"]] = d
+    return {"products": out, "missing": [a for a in asins if a not in out]}
+
+
 async def summary() -> dict:
     """Counts and sizes, for the export script and the System map."""
     async with db.pool.connection() as conn:

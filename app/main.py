@@ -1564,6 +1564,15 @@ async def engine_keepa_meta(request: Request, asins: str = ""):
     return await training.keepa_meta(asins.split(","))
 
 
+@app.post("/api/engine/keepa/latest")
+async def engine_keepa_latest(request: Request, body: dict = Body(...)):
+    """{asins: [...] (<= 300), max_age_hours?: 36} -> the Keepa collector's latest pull per ASIN (stats + Buy Box, no
+    history): no tokens. Used by the daily Sephora job (Nick, Nov 23, 2026)."""
+    auth.require_engine_key(request)
+    from . import training
+    return await training.keepa_slim(body.get("asins") or [], body.get("max_age_hours") or 36)
+
+
 @app.get("/api/engine/training/summary")
 async def engine_training_summary(request: Request):
     """Keepa store + Lead DB sizes and the Keepa collector's heartbeat."""
