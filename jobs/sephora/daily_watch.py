@@ -79,6 +79,15 @@ def main():
     for r in active:
         by_pid.setdefault(r["product_id"], []).append(r)
     known_pids = {r["product_id"] for r in cat}
+    # Sephora item lists (store-skus, read in Nick's Chrome): {product_id: {sku_id: price}} for products sold in sizes
+    sizes = {}
+    try:
+        for row in C.hub("GET", "/api/engine/store-skus", timeout=300)["rows"]:
+            if row.get("store") == "Sephora" and "size" in str(row.get("variation_type") or "").lower():
+                sizes[row["product_id"]] = {str(x["sku_id"]): C.fnum(x.get("price")) for x in row.get("skus") or []
+                                            if C.fnum(x.get("price"))}
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"store item lists unavailable (multi-size sale prices not checked): {e!r}")
     brands = sorted({r["brand"] for r in active if r.get("brand")})
     C.log(f"catalog: {len(cat)} pairs, {len(active)} active, {len(brands)} brands, {len(by_pid)} products")
 
@@ -123,7 +132,13 @@ def main():
             if lo and old_lo and lo < old_lo - 0.009:
                 why.append(f"list ${old_lo:.2f} -> ${lo:.2f}")
             seph_today[pid] = {"lo": lo, "hi": hi, "sale": sale_p, "on_sale": bool(sale_p), "dropped": bool(why),
-                               "why": ", ".join(why), "old_eff": old_sale or old_hi}
+                               "why": ", ".join(why), "old_eff": old_sale or old_hi, "sku": str(p.get("skuId") or "") or None}
+            sz = sizes.get(pid)
+            if sz and len(sz) > 1:
+                # The Sale page shows ONE item per product (the one on sale, with its skuId). For a product sold in several
+                # sizes its list/sale price is that item's, not the product's range (Nov 23, 2026: a 20 mL mini's $10.20
+                # was priced against the 50 mL Ultra Violette listing). Keep the range from the item list.
+                seph_today[pid]["lo"], seph_today[pid]["hi"] = min(sz.values()), max(sz.values())
         elif pid not in known_pids:
             br = (p.get("brandName") or "")
             new_products.append({"productId": pid, "brand": br, "name": p.get("name"), "url": p.get("url"),
@@ -150,11 +165,18 @@ def main():
           f"{len(sale_ended)} sales ended, {len(new_products)} sale items not in the catalog")
 
     def seph(r):
+        t = seph_today.get(r["product_id"])
         sp = C.fnum(r.get("store_size_price"))
         if sp:   # the store size this ASIN matches was read from the product page (Nick, Nov 17, 2026): price that size only
+            if t and t.get("sale") and t.get("sku") and t["sku"] == str(r.get("store_sku_id") or ""):
+                return sp, sp, t["sale"]   # that very item is on the Sale page today
             return sp, sp, None
-        t = seph_today.get(r["product_id"])
         if t:
+            sz = sizes.get(r["product_id"])
+            if t.get("sale") and sz and len(sz) > 1:
+                # several sizes, the pair's size not known: the markdown belongs to one item (t["sku"]) that may be a
+                # mini, so it isn't used; the pair is priced at the full size (the buying rule for unknown sizes)
+                return t["lo"], t["hi"], (t["sale"] if t.get("sku") in sz and sz[t["sku"]] >= max(sz.values()) else None)
             return t["lo"], t["hi"], t["sale"]
         return C.fnum(r.get("price_lo")), C.fnum(r.get("price_hi")), (C.fnum(r.get("sale_price")) if r.get("on_sale") else None)
 

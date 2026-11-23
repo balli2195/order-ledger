@@ -226,6 +226,26 @@ def screen(work):
     print(len(cases), "cases;", sum(1 for c in cases if amz.get(c["asin"])), "with a Chrome page")
 
 
+def screen_item_sku(it, skus):
+    """The one Sephora item a screen label names ('Candy · sheer pink · natural · 0.33 oz / 9.5 g $38.0', '1.7 oz / 50 ml'):
+    shade name = the item's value and size = its size. Items with the same value and size are interchangeable (the
+    cheaper is taken). Returns {sku_id, size, price} or None."""
+    norm = lambda x: re.sub(r"[^a-z0-9.]+", "", str(x or "").lower())
+    seg = [q.strip() for q in re.sub(r"\s*\$[\d.,]+\s*$", "", it).split("·") if q.strip()] or [it]
+    first, last, hits = norm(seg[0]), norm(seg[-1]), []
+    for x in skus:
+        v, sz, v0 = norm(x.get("value")), norm(x.get("size")), norm(str(x.get("value") or "").split(" - ")[0])
+        if (first in (v, v0) or (len(seg) == 1 and first == sz)) and (len(seg) == 1 or not sz or last in (sz, v)):
+            hits.append(x)
+    if len({(norm(h.get("value")), norm(h.get("size"))) for h in hits}) != 1:
+        return None
+    x = min(hits, key=lambda h: C.fnum(h.get("price")) or 9e9)
+    if not (str(x["sku_id"]).isdigit() and C.fnum(x.get("price"))):
+        return None
+    lab = " · ".join(v for v in [x.get("value") if x.get("value") != x.get("size") else None, x.get("size")] if v) or it
+    return {"sku_id": str(x["sku_id"]), "size": lab[:60], "price": C.fnum(x["price"])}
+
+
 def collect(work):
     d = f"{work}/screen"
     want = jload(f"{work}/rest_pairs.json") or []
@@ -252,8 +272,18 @@ def collect(work):
                                                                    **({"item": got[p]["item"]} if got[p].get("item") else {})}}})
     if up:
         C.hub_upsert_catalog(up)
+    # The screen's item becomes the pair's store size when it names exactly one Sephora item (Nov 23, 2026): kept only as
+    # a note, the daily job didn't know the size and priced a 50 mL pair at the Sale page's 20 mL mini price.
+    sized = 0
+    lists = {r["product_id"]: r["skus"] for r in C.hub("GET", "/api/engine/store-skus", timeout=300)["rows"] if r.get("store") == "Sephora"}
+    for u in up:
+        it, L = u["extra"]["screened"].get("item"), lists.get(u["product_id"])
+        x = screen_item_sku(it, L) if it and L else None
+        if x:
+            C.hub("POST", "/api/engine/sephora/catalog/mark", {"asin": u["asin"], "product_id": u["product_id"], "store_size": x})
+            sized += 1
     print(len(want), "screened:", dict(collections.Counter(r["call"] for r in got.values())), "| no answer", sum(1 for p in want if p not in got),
-          "| passed (recorded)", len(up), "| to research", len(flagged))
+          "| passed (recorded)", len(up), "| sized", sized, "| to research", len(flagged))
 
 
 def research(work):

@@ -35,6 +35,11 @@ What a run does:
    - Every watchable pair is priced, not one per ASIN (Nov 19, 2026). An ASIN with several pairs (Nick's lead and the matcher's pick, a mini and a full size) is posted once, from: the pair of its open candidate, else the most trusted profitable pair (marked OK → Nick's lead → confidence → match score), else the best ROI. Keepa and SP-API are still called once per ASIN.
 3. Applies the ROI ≥ 15% prefilter, then an SP-API live offers check.
 4. Scores the top ≤60 with Lead Score (through the Hub, ≤25 per call, one call at a time).
+1b. Sale-page prices belong to one item (Nov 23, 2026). The Sale page lists each product once, with the item that's on sale (its skuId) and that item's price. For a product sold in several sizes (from the Sephora item lists, `/api/engine/store-skus`):
+   - the product's price range comes from the item list, not the Sale page;
+   - a pair with a known store size gets the markdown only when its own item is the one on sale;
+   - a pair with an unknown size is priced at the full size, and the markdown is used only if the item on sale is the full size.
+   Before this, the Ultra Violette 50 mL and Kosas 100 mL listings were queued at the 20 mL and 30 mL prices.
 4b. Multi-size rows without a known size are no longer held (Nick, Nov 19, 2026): they're priced at the size guess, or the full size when unknown, and posted with "Size not checked" at the front of the note.
 5. Posts as candidates the rows with predicted ROI ≥ 10% (Nick, Nov 19, 2026; was 21%). Every pair not marked wrong is watched: learned match rules, confidence and the Sephora-listing check no longer hold a pair back (Nick judges the match on To review).
    - A cost that comes from an event code rather than the item's own sale price gets the note prefix "Event code — confirm brand qualifies at checkout".
@@ -234,6 +239,8 @@ Nick: "the once a month sephora run should update this data". `brand_restriction
 Run: `python3 -I brand_restrictions.py` (about 30 minutes for ~6,700 ASINs). It writes nothing if more than 20% of checks fail. Scheduled task: "Monthly Sephora restriction check", the 1st of each month.
 
 ## 12. Weekly check of new pairs: `check_pairs/pairs.py` (Nick, Nov 20, 2026)
+
+The screen's item is saved as the pair's store size (`collect`, Nov 23, 2026) when its label names exactly one Sephora item (shade name = the item's value, size = its size); otherwise it stays a note. 915 earlier screened pairs were backfilled the same way (undo: Hub doc `sephora_jobs/check_pairs_undo/2026-11-23_screen_items`).
 Every Sunday after the weekly Sephora run, every new pair (active, sellable `open`, not decided by Nick, no `extra.verified`
 or `extra.screened`, not already on his To review list) gets the same check as the Nov 20 check-all run
 (claude/sephora-catalog/CHECK_ALL_2026-11-20.md). At most 300 pairs per run, best ROI first; the rest wait a week.
