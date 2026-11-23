@@ -67,6 +67,7 @@ def record(p, now):
         "price_lo": min(lp) if lp else None,
         "price_hi": max(lp) if lp else None,
         "sale_price": min(sp) if sp else None,
+        "sale_hi": max(sp) if sp else None,   # salePrice can be a range across sizes ("$24.75 - $72.00"); hi = the full size
         "on_sale": bool(sp) or (p.get("onSaleData") not in (None, "NONE")),
         "on_sale_data": p.get("onSaleData"),
         "value_price": max(vp) if vp else None,

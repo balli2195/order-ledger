@@ -34,6 +34,7 @@ What a run does:
 2. Refreshes watched ASINs with Keepa (Buy Box, 90-day average): sale and promo rows first, then the best ROI.
    - Every watchable pair is priced, not one per ASIN (Nov 19, 2026). An ASIN with several pairs (Nick's lead and the matcher's pick, a mini and a full size) is posted once, from: the pair of its open candidate, else the most trusted profitable pair (marked OK → Nick's lead → confidence → match score), else the best ROI. Keepa and SP-API are still called once per ASIN.
 3. Applies the ROI ≥ 15% prefilter, then an SP-API live offers check.
+   - No demand or thin-price gate (Nick, Nov 23, 2026). Low-demand listings and listings with no Buy Box or one FBA seller are posted too, with the note prefix "No competition / restock: …" (no Buy Box can mean no competition, and sales can come back when restocked). With no offer at all, the 90-day average Buy Box prices the pair.
 4. Scores the top ≤60 with Lead Score (through the Hub, ≤25 per call, one call at a time).
 1b. Sale-page prices belong to one item (Nov 23, 2026). The Sale page lists each product once, with the item that's on sale (its skuId) and that item's price. For a product sold in several sizes (from the Sephora item lists, `/api/engine/store-skus`):
    - the product's price range comes from the item list, not the Sale page;

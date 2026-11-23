@@ -11,7 +11,8 @@ Steps
     catalog products that were on sale but are off the Sale page now get on_sale=false. Sale items not in the catalog
     go to new_products.json for the weekly matcher. Full brand listings are refreshed weekly, not here.
  3. Watch rows: active, sellable=open, match_ok not false (any confidence; learned rules only flag, Nick Nov 19 2026),
-    extra.demand_ok, not extra.thin_price, and priceable by the buying rule. Keepa refresh (Buy Box, 90-day avg) in
+    and priceable by the buying rule. No demand or thin-price gate (Nick, Nov 23, 2026): those rows are posted with a
+    "No competition / restock" note; with no offer at all the 90-day average Buy Box prices them. Keepa refresh (Buy Box, 90-day avg) in
     priority order (price drops / promo rows first, then ROI closest to or above 15%) within --max-tokens.
  4. ROI prefilter >= 15%: cost = Sephora price x 1.05 x pack (markdown only for the size it belongs to; a broad promo
     takes list x (1 - discount) when lower; Nick's size_confirmed wins; needs_size rows only at size_guess=hi unless
@@ -132,7 +133,11 @@ def main():
             if lo and old_lo and lo < old_lo - 0.009:
                 why.append(f"list ${old_lo:.2f} -> ${lo:.2f}")
             seph_today[pid] = {"lo": lo, "hi": hi, "sale": sale_p, "on_sale": bool(sale_p), "dropped": bool(why),
-                               "why": ", ".join(why), "old_eff": old_sale or old_hi, "sku": str(p.get("skuId") or "") or None}
+                               "why": ", ".join(why), "old_eff": old_sale or old_hi,
+                               # the Sale page's own list and sale prices: one price, or a range across the product's
+                               # sizes ("$33.00 - $96.00" on sale "$24.75 - $72.00")
+                               "plo": p.get("price_lo"), "phi": p.get("price_hi"), "slo": sale_p,
+                               "shi": p.get("sale_hi") or sale_p}
             sz = sizes.get(pid)
             if sz and len(sz) > 1:
                 # The Sale page shows ONE item per product (the one on sale, with its skuId). For a product sold in several
@@ -164,19 +169,33 @@ def main():
     C.log(f"sale page: {len(seph_today) - len(sale_ended)} catalog products on sale ({price_drops} new/lower), "
           f"{len(sale_ended)} sales ended, {len(new_products)} sale items not in the catalog")
 
+    def sale_for(t, price):
+        """The Sale page's sale price for the item whose list price is `price`, or None. The page gives one list price or
+        a range across sizes, and the sale price the same way: the low end belongs to the cheapest size and the high end
+        to the dearest. An item that isn't one of those ends gets no markdown (Nov 23, 2026: the 10 mL's $24.75 was
+        applied to the $96 50 mL)."""
+        if not (t and t.get("slo") and price):
+            return None
+        near = lambda a, b: a is not None and b is not None and abs(a - b) < 0.015
+        if near(price, t.get("phi")):
+            sale = t.get("shi")
+        elif near(price, t.get("plo")):
+            sale = t.get("slo")
+        else:
+            return None
+        return sale if sale and sale < price - 0.009 else None
+
     def seph(r):
         t = seph_today.get(r["product_id"])
         sp = C.fnum(r.get("store_size_price"))
         if sp:   # the store size this ASIN matches was read from the product page (Nick, Nov 17, 2026): price that size only
-            if t and t.get("sale") and t.get("sku") and t["sku"] == str(r.get("store_sku_id") or ""):
-                return sp, sp, t["sale"]   # that very item is on the Sale page today
-            return sp, sp, None
+            return sp, sp, sale_for(t, sp)
         if t:
             sz = sizes.get(r["product_id"])
             if t.get("sale") and sz and len(sz) > 1:
-                # several sizes, the pair's size not known: the markdown belongs to one item (t["sku"]) that may be a
-                # mini, so it isn't used; the pair is priced at the full size (the buying rule for unknown sizes)
-                return t["lo"], t["hi"], (t["sale"] if t.get("sku") in sz and sz[t["sku"]] >= max(sz.values()) else None)
+                # several sizes, the pair's size not known: priced at the full size (the buying rule for unknown sizes),
+                # with the full size's own markdown only
+                return t["lo"], t["hi"], sale_for(t, t["hi"])
             return t["lo"], t["hi"], t["sale"]
         return C.fnum(r.get("price_lo")), C.fnum(r.get("price_hi")), (C.fnum(r.get("sale_price")) if r.get("on_sale") else None)
 
@@ -200,7 +219,10 @@ def main():
             return False   # resolve_skus.py: the Amazon shade isn't on Sephora's shade list (Nov 19, 2026)
         if (ex.get("shade_hint") or {}).get("bundle") and not ex.get("bundle_skus") and int(C.fnum(ex.get("pack_qty")) or 1) < 2:
             return False   # a set of Sephora singles priced as one single: the cost would be wrong (checker round 3)
-        return ex.get("demand_ok") is True and ex.get("thin_price") is not True
+        # Demand and thin-price gates removed (Nick, Nov 23, 2026, "option 2"): low-demand and no-Buy-Box / one-seller
+        # listings are posted too, flagged "No competition / restock" (no Buy Box can mean no competition, and sales
+        # can come back when restocked). Lead Score and Nick judge them on To review.
+        return True
 
     # Every watchable pair is priced, not only one per ASIN (Nov 19, 2026): an ASIN with two Sephora pairs (Nick's lead and
     # the matcher's pick, a mini and a full size, ...) is posted from the most trusted pair that is profitable. Before,
@@ -220,7 +242,10 @@ def main():
             continue
         top = max([x for x in (e["roi_now"], e["roi_avg90"]) if x is not None], default=None)
         hot = bool((seph_today.get(r["product_id"]) or {}).get("dropped")) or e["sale_applied"] or e["promo_applied"]
-        pri.append((0 if hot else 1, -(top if top is not None else -9), r))
+        ex_ = r.get("extra") or {}
+        restock = not (ex_.get("demand_ok") is True and ex_.get("thin_price") is not True)
+        # Keepa budget: sale/promo rows, then listings with demand and a real price, then the restock / low-demand ones
+        pri.append((0 if hot else 1, (1 if restock else 0, -(top if top is not None else -9)), r))
     # open candidates on To review are re-priced every day (Nick, Nov 17, 2026): their pairs go first in the Keepa queue,
     # even when they aren't watchable today (rule-held, thin price...), so a lead whose sale ended or whose Buy Box fell expires
     try:
@@ -233,7 +258,7 @@ def main():
     for oc in open_cands:
         k_ = (oc["asin"], oc["product_id"])
         if k_ in by_key and k_ not in in_pri:
-            pri.append((-1, 0, by_key[k_])); in_pri.add(k_)
+            pri.append((-1, (0, 0), by_key[k_])); in_pri.add(k_)
     pri = [(-1 if (r["asin"], r["product_id"]) in {(o["asin"], o["product_id"]) for o in open_cands} else t, v, r) for t, v, r in pri]
     pri.sort(key=lambda x: (x[0], x[1]))
     counts["watch_rows"] = len({r["asin"] for r in watch})
@@ -289,10 +314,18 @@ def main():
         d, thin = flags_of(amz[r["asin"]], m["monthly_sold"], m["sales_rank"], m["offers_fba"])
         return e, d, thin
 
+    def qual_roi(e):
+        """ROI that qualifies a pair: today's (Buy Box, else lowest FBA offer); with no offer at all (out of stock on
+        Amazon, the restock case) the 90-day average Buy Box. None = not priceable."""
+        if not e:
+            return None
+        return e["roi_now"] if e["roi_now"] is not None else e["roi_avg90"]
+
     pre = []
     for _, _, r in pri:
         e, d, thin = evaluate(r)
-        if e and e["roi_now"] is not None and e["roi_now"] >= PREFILTER and d and not thin:
+        q = qual_roi(e)
+        if q is not None and q >= PREFILTER:
             pre.append(r)
     C.log(f"prefilter ROI >= 15%: {len(pre)} rows; SP-API offers check")
     sp_live = {}
@@ -318,8 +351,9 @@ def main():
             meta[r["asin"]]["amazon_on"] = bool(meta[r["asin"]]["amazon_on"] or lv.get("amazon_offer"))
             meta[r["asin"]]["sp"] = True
         e, d, thin = evaluate(r)
-        if e and e["roi_now"] is not None and e["roi_now"] >= PREFILTER and d and not thin:
-            passed.append((e["roi_now"], r, e))
+        q = qual_roi(e)
+        if q is not None and q >= PREFILTER:
+            passed.append((q, r, e))
     # one pair per ASIN from here on (no duplicate candidates): an open candidate's pair first (so To review keeps one row),
     # then the most trusted pair (marked OK, Nick's lead, confidence, match score), then the best ROI
     open_keys = {(o["asin"], o["product_id"]) for o in open_cands}
@@ -361,6 +395,13 @@ def main():
         pool.append((roi_, r, e))
 
     # ---- 5. Lead Score
+    # The daily scoring cap goes to listings with demand and a Buy Box first, then the "No competition / restock" ones
+    # (their ROI is often inflated by a lone seller's price; Nick, Nov 23, 2026)
+    def _restock(r):
+        m_ = meta[r["asin"]]
+        d_, thin_ = flags_of(amz[r["asin"]], m_.get("monthly_sold"), m_.get("sales_rank"), m_.get("offers_fba"))
+        return bool(thin_ or not d_ or not amz[r["asin"]].get("buybox"))
+    pool.sort(key=lambda x: (_restock(x[1]), -x[0]))
     top = pool[:a.max_score]
     scache = C.load_json(f"state/scores_{day.isoformat()}.json", {}) or {}
     try:   # scores already on today's candidates (e.g. an earlier run in another session)
@@ -418,8 +459,21 @@ def main():
         was = st.get("old_eff")
         price_txt = f"Sephora ${e['entered']:.2f}" + (f" (was ${was * (C.fnum((r.get('extra') or {}).get('pack_qty')) or 1):.2f})"
                                                        if was and st.get("dropped") else "")
-        bits = [price_txt, f"Buy Box ${(amz[r['asin']]['buybox'] or amz[r['asin']]['fba_low'] or 0):.2f}",
-                f"ROI {C.pct(roi_)}", f"90d avg ROI {C.pct(e['roi_avg90'])}"]
+        A_ = amz[r["asin"]]
+        rev_txt = (f"Buy Box ${A_['buybox']:.2f}" if A_.get("buybox") else
+                   f"no Buy Box, lowest FBA ${A_['fba_low']:.2f}" if A_.get("fba_low") else
+                   f"no offers now, 90d avg Buy Box ${(C.fnum(A_.get('bb_avg90')) or 0):.2f}")
+        bits = [price_txt, rev_txt, f"ROI {C.pct(roi_)}", f"90d avg ROI {C.pct(e['roi_avg90'])}"]
+        d_, thin_ = flags_of(A_, m.get("monthly_sold"), m.get("sales_rank"), m.get("offers_fba"))
+        if thin_ or not A_.get("buybox") or not d_:
+            why_ = []
+            if not A_.get("buybox"):
+                why_.append("no Buy Box now")
+            if (m.get("offers_fba") or 0) <= 1:
+                why_.append(f"{m.get('offers_fba') or 0} FBA seller" + ("" if (m.get("offers_fba") or 0) == 1 else "s"))
+            if not d_:
+                why_.append(f"low demand ({m.get('monthly_sold') or 0} sold/mo, rank {m.get('sales_rank') or '-'})")
+            bits.insert(0, "No competition / restock: " + ", ".join(why_) + " — check sales history and the price others sell at")
         if m.get("monthly_sold"):
             bits.append(f"~{m['monthly_sold']} sold/mo")
         if st.get("why"):
