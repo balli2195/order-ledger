@@ -1187,7 +1187,7 @@ async def match_decisions(scope: str = "profitable", offset: int = 0, limit: int
     async with db.pool.connection() as conn:
         cur = await conn.execute(
             """SELECT c.asin, c.product_id, c.brand, c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.price_lo, c.price_hi,
-                      c.sale_price, c.roi_now, c.roi_avg90, c.buybox, c.store_sku_id, c.store_size, c.store_size_price, c.match_ok,
+                      c.sale_price, c.roi_now, c.roi_avg90, c.buybox, c.sku_id, c.store_sku_id, c.store_size, c.store_size_price, c.match_ok,
                       c.sellable, c.active, c.match_reason,
                       s.id AS cand_id, s.status AS cand_status, s.cost AS cand_cost, s.roi_now AS cand_roi, s.lead_score_pred_roi,
                       s.expired_reason
@@ -1210,7 +1210,7 @@ async def match_decisions(scope: str = "profitable", offset: int = 0, limit: int
         rows.append({"research": {kk: x.get(kk) for kk in ("verdict", "confidence", "evidence", "lesson", "principle", "sources",
                                                             "sku_id", "correct_product_id", "bundle")},
                      **{kk: c[kk] for kk in ("asin", "product_id", "brand", "sephora_name", "sephora_url", "shade", "amazon_title",
-                                             "price_lo", "price_hi", "sale_price", "buybox", "store_sku_id", "store_size",
+                                             "price_lo", "price_hi", "sale_price", "buybox", "sku_id", "store_sku_id", "store_size",
                                              "store_size_price", "sellable", "match_reason", "cand_status", "cand_cost",
                                              "lead_score_pred_roi")},
                      "roi": roi if roi > -9 else None, "profitable": profitable})

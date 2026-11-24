@@ -128,13 +128,16 @@
   const imgTag = (cls, urls) => `<img class="${cls}" loading="lazy" alt="" src="${urls[0]}" data-alt="${esc(urls.slice(1).join('|'))}" onerror="const a=(this.dataset.alt||'').split('|').filter(Boolean);if(a.length){this.src=a.shift();this.dataset.alt=a.join('|')}else{this.remove()}">`;
   const sw = (x, big) => x.sku_id ? imgTag('sw' + (big ? ' big' : ''), [...chain(x.sku_id, 'sw'), ...chain(x.sku_id, 'main')]) : '';
 
-  function sephImg(r) { return r.store_sku_id || r.research.sku_id || null; }
+  // The photo must be of this card's Sephora page: the saved item, else the research's item only when it is on this page
+  // (a research verdict of "another product" names an item of the OTHER page: B0DK4P4JMY showed the Duo next to the 4-piece set link)
+  function onPage(r, sku) { return !!sku && ((r.sephora_items || []).some((x) => String(x.sku_id) === String(sku)) || (!(r.sephora_items || []).length && (!r.research.correct_product_id || r.research.correct_product_id === r.product_id))); }
+  function sephImg(r) { return r.store_sku_id || (onPage(r, r.research.sku_id) ? r.research.sku_id : null) || r.sku_id || null; }
 
   function card(r, i) {
     const a = r.amazon || {};
     const pics = (a.images || []).map((id) => `<img loading="lazy" src="https://m.media-amazon.com/images/I/${esc(id)}" alt="Amazon photo">`).join('');
     const si = sephImg(r);
-    const saved = String(r.store_sku_id || r.research.sku_id || '');
+    const saved = String(r.store_sku_id || (onPage(r, r.research.sku_id) ? r.research.sku_id : '') || '');
     const items = (r.sephora_items || []).map((x) => `<li class="${String(x.sku_id) === saved ? 'saved' : ''}"><span>${sw(x)}${esc(x.value || x.size || x.sku_id)}${x.desc ? ' · ' + esc(x.desc) : ''}${x.oos ? ' <span class="oos">(out of stock)</span>' : ''}</span><span>${money(x.price)}</span></li>`).join('');
     const tags = guessTags(r);
     return `<article class="card" data-i="${i}">
@@ -151,6 +154,7 @@
         <div class="side"><h4>Sephora · ${esc(r.brand)} · <a href="${esc(r.sephora_url)}" target="_blank" rel="noopener">${esc(r.product_id)}</a></h4>
           <p class="t">${esc(r.sephora_name)}${r.shade ? ' — ' + esc(r.shade) : ''}</p>
           ${r.store_size ? `<p class="sub">Saved item: ${esc(r.store_size)} at ${money(r.store_size_price)}</p>` : ''}
+          ${r.research.correct_product_id && r.research.correct_product_id !== r.product_id ? `<p class="sub">The research says the right Sephora page is ${esc(r.research.correct_product_id)}, not this one</p>` : ''}
           <div class="pics">${si ? imgTag('', chain(si, 'main')) : ''}</div>
           ${items ? `<ul class="items">${items}</ul>` : ''}
         </div>
