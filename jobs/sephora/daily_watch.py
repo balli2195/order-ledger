@@ -39,7 +39,10 @@ import common as C  # noqa: E402
 
 CONF_OK = ("high", "medium")
 OOS_DAYS = 10   # an item list older than this doesn't hold a pair back as out of stock
-COLLECTOR_HOURS = 36   # a Keepa collector pull younger than this prices the row (Nick, Nov 23, 2026)
+COLLECTOR_HOURS = 36
+# To review filter (Nick, Nov 24, 2026): a listing under RANK_RULE_ROI needs a 30-day average sales rank under RANK30_MAX
+# (no rank at all fails); RANK_RULE_ROI and up passes on ROI alone
+RANK_RULE_ROI, RANK30_MAX = 0.50, 300_000   # a Keepa collector pull younger than this prices the row (Nick, Nov 23, 2026)
 CAND_MIN, PREFILTER = 0.10, 0.15   # posting floor: predicted ROI 10% (Nick, Nov 19, 2026; was 21%)
 DECIDED_DAYS = 21
 
@@ -369,7 +372,8 @@ def main():
                 base["fba_fee"] = k["fba_fee"]
             ms, rk, of, aon = k.get("monthlySold"), k.get("salesRank"), k.get("offers_fba"), k.get("amazon_on")
         amz[r["asin"]] = base
-        meta[r["asin"]] = {"monthly_sold": ms, "sales_rank": rk, "offers_fba": of, "amazon_on": aon, "keepa": bool(k)}
+        meta[r["asin"]] = {"monthly_sold": ms, "sales_rank": rk, "offers_fba": of, "amazon_on": aon, "keepa": bool(k),
+                           "rank_avg30": (k or {}).get("rank_avg30") if k else (r.get("extra") or {}).get("rank_avg30")}
 
     # ---- 4. prefilter + SP-API
     def evaluate(r):
@@ -451,7 +455,18 @@ def main():
                     decided.pop(w_["asin"], None)   # back in stock: may be proposed again
     except Exception as e:  # noqa: BLE001
         problems.append(f"stock watch read failed: {e!r}")
-    pool, skipped_decided, size_check, held_oos = [], [], [], []
+    pool, skipped_decided, size_check, held_oos, held_rank = [], [], [], [], []
+
+    def rank_fails(roi, asin):
+        """Nick's rule (Nov 24, 2026): under 50% ROI needs a 30-day average rank under 300k. Returns the reason, or None."""
+        if roi is not None and roi >= RANK_RULE_ROI:
+            return None
+        rk30 = (meta.get(asin) or {}).get("rank_avg30")
+        if rk30 is None:
+            return "no sales rank in the last 30 days"
+        if rk30 >= RANK30_MAX:
+            return f"30-day average rank {rk30:,} (needs under {RANK30_MAX:,} below {RANK_RULE_ROI * 100:.0f}% ROI)"
+        return None
     for roi_, r, e in passed:
         dd = decided.get(r["asin"])
         if dd and (dd[1] is None or e["entered"] >= dd[1] - 0.01):
@@ -461,8 +476,14 @@ def main():
         if od:   # Nick, Nov 23, 2026: out-of-stock items aren't posted; the Chrome stock check re-reads them daily
             held_oos.append((roi_, r, od))
             continue
+        rf = rank_fails(roi_, r["asin"])
+        if rf:
+            held_rank.append((roi_, r, rf))
+            continue
         pool.append((roi_, r, e))
     counts["held_out_of_stock"] = len(held_oos)
+    counts["held_rank"] = len(held_rank)
+    C.log(f"held back by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI, 30-day avg rank {RANK30_MAX:,}+ or none): {len(held_rank)}")
     C.log(f"held back as out of stock at Sephora: {len(held_oos)}")
 
     # ---- 5. Lead Score
@@ -651,6 +672,12 @@ def main():
         if not e or e["roi_now"] is None:
             continue
         bb = amz[r["asin"]]["buybox"] or amz[r["asin"]]["fba_low"]
+        rf = rank_fails(e["roi_now"], r["asin"])
+        if rf and e["roi_now"] >= PREFILTER:
+            why = f"Rank rule on {day:%b %-d}: ROI {e['roi_now'] * 100:.0f}% with {rf}"
+            recheck.append({"id": oc["id"], "expire": True, "why": why})
+            rechecked_expired.append((r, why))
+            continue
         if e["roi_now"] < PREFILTER:
             why = (f"No longer profitable on {day:%b %-d}: cost ${e['entered']:.2f} ({e['label']}), Buy Box ${bb or 0:.2f}, "
                    f"ROI {e['roi_now'] * 100:.0f}% (was {C.fnum(oc.get('roi_now')) * 100 if C.fnum(oc.get('roi_now')) is not None else 0:.0f}% "
@@ -774,7 +801,7 @@ def main():
              f"- Watched {len(watch)} ASINs; Amazon prices fresh for {len(refreshed)} ({from_collector} from the Keepa collector's pulls, "
              f"{len(refreshed) - from_collector} pulled by this job with {tokens} tokens; {kstop or 'all done'})",
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
-             f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}",
+             f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}; held by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI needs 30-day avg rank under {RANK30_MAX:,}): {len(held_rank)}",
              f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
              f"- Posted with a match warning from the learned rules (Nick's wrong-match marks): {len(rule_skipped)}",
              f"- Open leads on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]

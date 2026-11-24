@@ -41,6 +41,7 @@ What a run does:
    - **Claude review (daily task):** read `promo_banners.md` and report any deal the summary doesn't account for (a code, gift with purchase, multi-buy, app-only or checkout-only discount, a brand deal with no markdowns), with what it would change.
 3. Applies the ROI ≥ 15% prefilter, then an SP-API live offers check.
    - No demand or thin-price gate (Nick, Nov 23, 2026). Low-demand listings and listings with no Buy Box or one FBA seller are posted too, with the note prefix "No competition / restock: …" (no Buy Box can mean no competition, and sales can come back when restocked). With no offer at all, the 90-day average Buy Box prices the pair.
+3b. Rank rule (Nick, Nov 24, 2026): a listing under 50% ROI needs a 30-day average sales rank under 300,000 (Keepa `stats.avg30`, rank index 3; no rank in 30 days fails). At 50% ROI and up, ROI alone decides. Applied before Lead Score, so held rows aren't scored, and to open suggestions every day (they expire with "Rank rule on <date>: …"). Settings: `RANK_RULE_ROI`, `RANK30_MAX` in `daily_watch.py`.
 4. Scores every row that passed with Lead Score (through the Hub, ≤25 per call, one call at a time). No daily cap (Nick, Nov 23, 2026).
 1b. Sale-page prices belong to one item (Nov 23, 2026). The Sale page lists each product once, with the item that's on sale (its skuId) and that item's price. For a product sold in several sizes (from the Sephora item lists, `/api/engine/store-skus`):
    - the product's price range comes from the item list, not the Sale page;

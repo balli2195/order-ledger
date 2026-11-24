@@ -99,6 +99,7 @@ def compact(p):
     s = p.get("stats") or {}
     cur = s.get("current") or []
     avg90 = s.get("avg90") or []
+    avg30 = s.get("avg30") or []
     g = lambda a, i: a[i] if len(a) > i else -1
     bb = s.get("buyBoxPrice")
     bb = cents(bb) if isinstance(bb, int) and bb > 0 else cents(g(cur, 18))
@@ -126,6 +127,7 @@ def compact(p):
         "itemForm": p.get("itemForm"),
         "productType": p.get("productType"),
         "salesRank": g(cur, 3) if g(cur, 3) > 0 else None,
+        "rank_avg30": g(avg30, 3) if g(avg30, 3) > 0 else None,   # 30-day average sales rank
         "monthlySold": p.get("monthlySold") if (p.get("monthlySold") or 0) > 0 else None,
         "buybox": bb,
         "buybox_is_fba": s.get("buyBoxIsFBA"),
