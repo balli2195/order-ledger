@@ -1111,6 +1111,62 @@ async def store_skus(product_ids: list[str] | None) -> dict:
     return {"rows": rows}
 
 
+async def match_decisions(scope: str = "profitable", offset: int = 0, limit: int = 40) -> dict:
+    """The match check's undecided cases for Nick (Hub doc sephora_jobs/verify_for_nick), with what he needs to decide
+    each: the research verdict and evidence, the Amazon photos and title (Keepa collector), the Sephora product, its
+    item list and a photo of the saved item, and the lead's numbers (Nick, Nov 24, 2026: "Match decisions" page).
+    scope: profitable (an open suggestion, or ROI now / 90-day 15%+) | all. Decided pairs (match_ok set) drop out."""
+    from . import docs as hubdocs, training
+    doc = await hubdocs.get("sephora_jobs/verify_for_nick") or {}
+    data = doc.get("data") or {}
+    items = (data.get("items") if isinstance(data, dict) else data) or []
+    keys = [(str(x.get("asin") or ""), str(x.get("product_id") or "")) for x in items]
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT c.asin, c.product_id, c.brand, c.sephora_name, c.sephora_url, c.shade, c.amazon_title, c.price_lo, c.price_hi,
+                      c.sale_price, c.roi_now, c.roi_avg90, c.buybox, c.store_sku_id, c.store_size, c.store_size_price, c.match_ok,
+                      c.sellable, c.active, c.match_reason,
+                      s.id AS cand_id, s.status AS cand_status, s.cost AS cand_cost, s.roi_now AS cand_roi, s.lead_score_pred_roi,
+                      s.expired_reason
+                 FROM sephora_catalog c
+                 JOIN unnest(%s::text[], %s::text[]) k(asin, pid) ON c.asin = k.asin AND c.product_id = k.pid
+                 LEFT JOIN LATERAL (SELECT * FROM sephora_candidates x WHERE x.asin = c.asin AND x.product_id = c.product_id
+                                    ORDER BY x.found_on DESC LIMIT 1) s ON true""",
+            ([k[0] for k in keys], [k[1] for k in keys]))
+        cat = {(r["asin"], r["product_id"]): dict(r) for r in await cur.fetchall()}
+    rows = []
+    for x, k in zip(items, keys):
+        c = cat.get(k)
+        if not c or c["match_ok"] is not None or not c["active"]:
+            continue
+        roi = max([v for v in (c["roi_now"], c["roi_avg90"], c["cand_roi"]) if v is not None] or [-9])
+        held = c["cand_status"] == "new" or (c["cand_status"] == "expired" and str(c["expired_reason"] or "").startswith("Match check"))
+        profitable = c["sellable"] == "open" and (held or roi >= 0.15)
+        if scope != "all" and not profitable:
+            continue
+        rows.append({"research": {kk: x.get(kk) for kk in ("verdict", "confidence", "evidence", "lesson", "principle", "sources",
+                                                            "sku_id", "correct_product_id", "bundle")},
+                     **{kk: c[kk] for kk in ("asin", "product_id", "brand", "sephora_name", "sephora_url", "shade", "amazon_title",
+                                             "price_lo", "price_hi", "sale_price", "buybox", "store_sku_id", "store_size",
+                                             "store_size_price", "sellable", "match_reason", "cand_status", "cand_cost",
+                                             "lead_score_pred_roi")},
+                     "roi": roi if roi > -9 else None, "profitable": profitable})
+    order = {"other": 0, "not_sold": 1, "cant_tell": 2, "same": 3}
+    rows.sort(key=lambda r: (not r["profitable"], order.get(r["research"]["verdict"], 4), -(r["roi"] or -9)))
+    total = len(rows)
+    page = rows[offset:offset + max(1, min(limit, 60))]
+    asins = list(dict.fromkeys(r["asin"] for r in page))
+    meta = (await training.keepa_meta(asins))["products"] if asins else {}
+    skus = {r["product_id"]: r for r in (await store_skus(list({r["product_id"] for r in page})))["rows"]} if page else {}
+    for r in page:
+        m = meta.get(r["asin"]) or {}
+        r["amazon"] = {"title": m.get("title") or r["amazon_title"], "brand": m.get("brand"), "size": m.get("size"),
+                       "color": m.get("color"),
+                       "images": [i.get("l") or i.get("m") for i in (m.get("images") or []) if isinstance(i, dict) and (i.get("l") or i.get("m"))][:4]}
+        r["sephora_items"] = (skus.get(r["product_id"]) or {}).get("skus") or []
+    return {"total": total, "offset": offset, "rows": jsonable(page)}
+
+
 OOS_RE = re.compile(r"\b(not in stock|out of stock|sold out|oos)\b", re.I)
 
 

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Match decisions · Myrddin Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b4441c'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fff8f2' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .md { max-width: 1180px; }
+  .md-back { margin: 22px 0 4px; font-size: 13px; }
+  .md h2 { margin: 6px 0 2px; font-size: 22px; font-weight: 600; }
+  .md .lede { margin: 6px 0 0; color: var(--muted); font-size: 14px; max-width: 80ch; line-height: 1.5; }
+  .md-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 10px; }
+  .md-bar .count { font-size: 13px; color: var(--muted); margin-left: auto; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
+  .seg button { border: 0; background: var(--panel); padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin: 0 0 14px; transition: opacity .3s; }
+  .card.done { opacity: .35; pointer-events: none; }
+  .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 10px; }
+  .verdict { font-size: 12px; font-weight: 600; border-radius: 99px; padding: 2px 10px; white-space: nowrap; }
+  .v-other, .v-not_sold { background: color-mix(in srgb, var(--danger, #b4441c) 14%, transparent); color: var(--danger, #b4441c); }
+  .v-same { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .v-cant_tell { background: var(--line-2); color: var(--muted); }
+  .nums { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .nums b { color: var(--ink); font-weight: 600; }
+  .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 820px) { .sides { grid-template-columns: 1fr; } }
+  .side { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .side h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .side .t { font-size: 14px; font-weight: 600; line-height: 1.35; margin: 0 0 4px; }
+  .side .sub { font-size: 12.5px; color: var(--muted); margin: 2px 0; }
+  .pics { display: flex; gap: 6px; margin: 8px 0 4px; overflow-x: auto; }
+  .pics img { height: 150px; width: auto; max-width: 180px; object-fit: contain; background: #fff; border: 1px solid var(--line-2); border-radius: 8px; cursor: zoom-in; }
+  .items { font-size: 12.5px; margin: 6px 0 0; padding: 0; list-style: none; }
+  .items li { padding: 2px 0; border-bottom: 1px dashed var(--line-2); display: flex; justify-content: space-between; gap: 8px; }
+  .items li.saved { font-weight: 600; }
+  .items li .oos { color: var(--muted); font-weight: 400; }
+  .ev { font-size: 13px; line-height: 1.5; margin: 10px 0 0; background: var(--panel-2); border-radius: 8px; padding: 8px 11px; }
+  .ev .lab { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  .wrongbox { display: none; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; width: 100%; }
+  .wrongbox.open { display: flex; }
+  .wrongbox .tag { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; }
+  .wrongbox .tag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .wrongbox input { flex: 1 1 260px; min-width: 200px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13px; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  #zoom { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: center; justify-content: center; z-index: 50; cursor: zoom-out; }
+  #zoom img { max-width: 92vw; max-height: 92vh; background: #fff; border-radius: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div id="toasts" class="toasts"></div>
+  <header class="top">
+    <div><h1 class="brand">Myrddin Hub</h1></div>
+    <div class="who">
+      <span id="whoami" class="muted"></span>
+      <button id="menuBtn" class="btn ghost">Menu ▾</button>
+      <div id="menu" class="menu hidden">
+        <button data-go="/#activity">Activity log</button>
+        <button data-go="/#connect">Connect Claude</button>
+        <button data-go="/#users" class="owner-only hidden">Users &amp; logins</button>
+        <hr>
+        <button data-act="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs"><a href="/tasks" data-tab="tasks">Inbox</a><a href="/leads" data-tab="leads">Leads</a><a href="/" data-tab="orders">Orders</a><a href="/lead-db" data-tab="sephora_leads" class="on">Lead DB</a><a href="/repricer" data-tab="repricer">Repricer</a><a href="/inventory-health" data-tab="inventory_health">Inventory health</a><a href="/timeclock" data-tab="timeclock">Time clock</a><a href="/reimbursements" data-tab="reimbursements">Reimbursements</a><a href="/profit" data-tab="profit">Profit</a><a href="/commissions" data-tab="commissions">Commissions</a></nav>
+<main class="md">
+  <p class="md-back"><a href="/lead-db">← Lead DB</a></p>
+  <h2>Match decisions</h2>
+  <p class="lede">Pairs the match check researched but couldn't settle with high confidence. Compare the Amazon listing with the Sephora item and decide. <b>Same product</b> marks the pair OK, so it can reach To review. <b>Wrong match</b> marks it wrong (its suggestion is removed) and teaches the matcher. Pairs the research calls another product or not sold are held from To review until you decide.</p>
+  <div class="md-bar">
+    <div class="seg" id="scope"><button data-s="profitable" class="on">Profitable</button><button data-s="all">All undecided</button></div>
+    <span class="count" id="count">Loading…</span>
+  </div>
+  <div id="list"></div>
+  <div class="md-bar"><button class="btn small" id="more" hidden>Load more</button></div>
+</main>
+</div>
+<div id="zoom"><img alt=""></div>
+<script src="/static/viewas.js"></script>
+<script src="/static/clock.js"></script>
+<script src="/static/bonus.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(async () => {
+  try { await LG.header(); } catch (e) { /* header is optional */ }
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = (v) => v == null ? '—' : '$' + Number(v).toFixed(2);
+  const pct = (v) => v == null ? '—' : Math.round(v * 100) + '%';
+  const TAGS = [['size', 'Size'], ['shade', 'Shade'], ['concentration', 'Scent / type'], ['set', 'Set vs single'], ['multipack', 'Pack count'], ['version', 'Old version'], ['product', 'Different product'], ['other', 'Other']];
+  const VERDICT = { other: 'Research: probably another product', not_sold: 'Research: probably not sold at Sephora', same: 'Research: probably the same', cant_tell: "Research: can't tell" };
+  const S = { scope: 'profitable', offset: 0, total: 0, done: 0 };
+
+  function guessTags(r) {   // pre-pick the wrong-match reasons the research points to
+    const t = ((r.research.principle || '') + ' ' + (r.research.lesson || '') + ' ' + (r.research.evidence || '')).toLowerCase();
+    const out = [];
+    if (/\b(size|oz|ml|mini|travel|full[- ]size|bottle)\b/.test(t)) out.push('size');
+    if (/\b(shade|colou?r)\b/.test(t)) out.push('shade');
+    if (/\b(scent|edt|edp|eau de|concentration|formula)\b/.test(t)) out.push('concentration');
+    if (/\b(set|trio|duo|kit|bundle)\b/.test(t)) out.push('set');
+    if (/\b(refill|different product|another product|not the same product)\b/.test(t)) out.push('product');
+    return out.length ? out.slice(0, 2) : ['other'];
+  }
+
+  function sephImg(r) {
+    const sku = r.store_sku_id || r.research.sku_id;
+    return sku ? `https://www.sephora.com/productimages/sku/s${encodeURIComponent(sku)}-main-zoom.jpg` : null;
+  }
+
+  function card(r, i) {
+    const a = r.amazon || {};
+    const pics = (a.images || []).map((id) => `<img loading="lazy" src="https://m.media-amazon.com/images/I/${esc(id)}" alt="Amazon photo">`).join('');
+    const si = sephImg(r);
+    const saved = String(r.store_sku_id || r.research.sku_id || '');
+    const items = (r.sephora_items || []).map((x) => `<li class="${String(x.sku_id) === saved ? 'saved' : ''}"><span>${esc(x.value || x.size || x.sku_id)}${x.desc ? ' · ' + esc(x.desc) : ''}${x.oos ? ' <span class="oos">(out of stock)</span>' : ''}</span><span>${money(x.price)}</span></li>`).join('');
+    const tags = guessTags(r);
+    return `<article class="card" data-i="${i}">
+      <div class="head">
+        <span class="verdict v-${esc(r.research.verdict)}">${esc(VERDICT[r.research.verdict] || r.research.verdict)} (${esc(r.research.confidence || '?')} confidence)</span>
+        <span class="nums">ROI <b>${pct(r.roi)}</b> · Lead Score <b>${pct(r.lead_score_pred_roi)}</b> · cost <b>${money(r.cand_cost ?? r.store_size_price ?? r.price_lo)}</b> → Buy Box <b>${money(r.buybox)}</b>${r.cand_status === 'new' ? ' · on To review' : ''}${String(r.match_reason || '').startsWith('Nick lead') ? ' · from your leads' : ''}</span>
+      </div>
+      <div class="sides">
+        <div class="side"><h4>Amazon · <a href="https://www.amazon.com/dp/${esc(r.asin)}" target="_blank" rel="noopener">${esc(r.asin)}</a></h4>
+          <p class="t">${esc(a.title || r.amazon_title)}</p>
+          ${a.size || a.color ? `<p class="sub">${a.size ? 'Size: ' + esc(a.size) : ''}${a.size && a.color ? ' · ' : ''}${a.color ? 'Color: ' + esc(a.color) : ''}</p>` : ''}
+          <div class="pics">${pics || '<span class="sub">No photos stored</span>'}</div>
+        </div>
+        <div class="side"><h4>Sephora · ${esc(r.brand)} · <a href="${esc(r.sephora_url)}" target="_blank" rel="noopener">${esc(r.product_id)}</a></h4>
+          <p class="t">${esc(r.sephora_name)}${r.shade ? ' — ' + esc(r.shade) : ''}</p>
+          ${r.store_size ? `<p class="sub">Saved item: ${esc(r.store_size)} at ${money(r.store_size_price)}</p>` : ''}
+          <div class="pics">${si ? `<img loading="lazy" src="${si}" alt="Sephora item photo" onerror="this.remove()">` : ''}</div>
+          ${items ? `<ul class="items">${items}</ul>` : ''}
+        </div>
+      </div>
+      <div class="ev"><span class="lab">What the research found</span><br>${esc(r.research.evidence)}${r.research.lesson ? `<br><span class="lab">Why</span><br>${esc(r.research.lesson)}` : ''}</div>
+      <div class="acts">
+        <button class="btn primary small" data-act="same">Same product ✓</button>
+        <button class="btn small danger" data-act="wrong">Wrong match</button>
+        <button class="btn small ghost" data-act="skip">Skip</button>
+        <div class="wrongbox">${TAGS.map(([k, l]) => `<button type="button" class="tag ${tags.includes(k) ? 'on' : ''}" data-tag="${k}">${l}</button>`).join('')}
+          <input placeholder="Note (optional)" maxlength="300" value="${esc(String(r.research.lesson || '').slice(0, 300))}">
+          <button class="btn small danger" data-act="wrong-go">Mark wrong</button></div>
+      </div>
+    </article>`;
+  }
+
+  let rows = [];
+  async function load(reset) {
+    if (reset) { S.offset = 0; rows = []; S.done = 0; document.getElementById('list').innerHTML = ''; }
+    try {
+      const d = await LG.api('GET', `/api/sephora/match-decisions?scope=${S.scope}&offset=${S.offset}&limit=25`);
+      S.total = d.total;
+      const start = rows.length; rows = rows.concat(d.rows); S.offset += d.rows.length;
+      const html = d.rows.map((r, j) => card(r, start + j)).join('');
+      const list = document.getElementById('list');
+      if (!rows.length) list.innerHTML = '<div class="empty">Nothing to decide here. 🎉</div>';
+      else list.insertAdjacentHTML('beforeend', html);
+      document.getElementById('more').hidden = S.offset >= S.total;
+      count();
+    } catch (e) { LG.toast(e.message || String(e), true); }
+  }
+  function count() { document.getElementById('count').textContent = `${S.done} decided · ${Math.max(0, S.total - S.done)} left`; }
+
+  async function mark(el, r, body, msg) {
+    el.classList.add('done');
+    try {
+      await LG.api('POST', '/api/sephora/catalog/mark', { asin: r.asin, product_id: r.product_id, ...body });
+      S.done++; count(); LG.toast(msg);
+    } catch (e) { el.classList.remove('done'); LG.toast(e.message || String(e), true); }
+  }
+
+  document.getElementById('list').addEventListener('click', (e) => {
+    const img = e.target.closest('.pics img');
+    if (img) { const z = document.getElementById('zoom'); z.querySelector('img').src = img.src; z.style.display = 'flex'; return; }
+    const b = e.target.closest('button'); if (!b) return;
+    const el = b.closest('.card'); const r = rows[+el.dataset.i];
+    if (b.dataset.tag) { b.classList.toggle('on'); return; }
+    const act = b.dataset.act;
+    if (act === 'same') mark(el, r, { match_ok: true }, `${r.asin} marked the same product`);
+    else if (act === 'wrong') el.querySelector('.wrongbox').classList.toggle('open');
+    else if (act === 'wrong-go') {
+      const tags = [...el.querySelectorAll('.tag.on')].map((t) => t.dataset.tag);
+      mark(el, r, { match_ok: false, tags: tags.length ? tags : ['other'], note: el.querySelector('.wrongbox input').value.trim() }, `${r.asin} marked a wrong match`);
+    } else if (act === 'skip') { el.remove(); }
+  });
+  document.getElementById('zoom').addEventListener('click', (e) => { e.currentTarget.style.display = 'none'; });
+  document.getElementById('more').addEventListener('click', () => load(false));
+  document.getElementById('scope').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#scope button').forEach((x) => x.classList.toggle('on', x === b));
+    S.scope = b.dataset.s; load(true);
+  });
+  load(true);
+})();
+</script>
+</body>
+</html>

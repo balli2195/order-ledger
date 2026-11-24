@@ -1547,6 +1547,18 @@ async def api_sephora_reject(cid: str, request: Request, body: dict = Body(defau
                                 {k: body.get(k) for k in ("tags", "note", "correct_asin")})
 
 
+@app.get("/lead-db/decisions", include_in_schema=False)
+async def lead_db_decisions_page(request: Request):
+    return await _page(request, "sephora_leads", "match-decisions.html")
+
+
+@app.get("/api/sephora/match-decisions")
+async def api_sephora_match_decisions(request: Request, scope: str = "profitable", offset: int = 0, limit: int = 40):
+    """The match check's undecided cases with photos and evidence (Match decisions page; Nick, Nov 24, 2026)."""
+    await auth.require(request, "editor", tab="sephora_leads")
+    return await sephora.match_decisions(scope, offset, limit)
+
+
 @app.post("/api/sephora/catalog/mark")
 async def api_sephora_mark(request: Request, body: dict = Body(...)):
     """{asin, product_id, match_ok?: true|false|null, size_confirmed?: 'lo'|'hi'|null, tags?, note?, correct_asin?}
