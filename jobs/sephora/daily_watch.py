@@ -40,8 +40,8 @@ import common as C  # noqa: E402
 CONF_OK = ("high", "medium")
 OOS_DAYS = 10   # an item list older than this doesn't hold a pair back as out of stock
 COLLECTOR_HOURS = 36
-# To review filter (Nick, Nov 24, 2026): a listing under RANK_RULE_ROI needs a 30-day average sales rank under RANK30_MAX
-# (no rank at all fails); RANK_RULE_ROI and up passes on ROI alone
+# To review filter (Nick, Nov 24, 2026): a listing under RANK_RULE_ROI needs a 30-day average sales rank under RANK30_MAX;
+# no rank in 30 days fails only when Keepa has no monthly sales estimate either. RANK_RULE_ROI and up passes on ROI alone
 RANK_RULE_ROI, RANK30_MAX = 0.50, 300_000   # a Keepa collector pull younger than this prices the row (Nick, Nov 23, 2026)
 CAND_MIN, PREFILTER = 0.10, 0.15   # posting floor: predicted ROI 10% (Nick, Nov 19, 2026; was 21%)
 DECIDED_DAYS = 21
@@ -463,7 +463,10 @@ def main():
             return None
         rk30 = (meta.get(asin) or {}).get("rank_avg30")
         if rk30 is None:
-            return "no sales rank in the last 30 days"
+            # no rank fails only without a sales estimate too (Nick, Nov 24, 2026)
+            if ((meta.get(asin) or {}).get("monthly_sold") or 0) > 0:
+                return None
+            return "no sales rank in the last 30 days and no monthly sales estimate"
         if rk30 >= RANK30_MAX:
             return f"30-day average rank {rk30:,} (needs under {RANK30_MAX:,} below {RANK_RULE_ROI * 100:.0f}% ROI)"
         return None

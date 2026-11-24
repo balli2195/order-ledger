@@ -359,12 +359,18 @@ async def recheck_candidates(rows: list) -> dict:
     expire -> status expired with expired_reason; else today's cost / Buy Box / ROI replace the old ones. Only 'new' rows change."""
     if not isinstance(rows, list) or len(rows) > 2000:
         raise LedgerError("rows must be a list (max 2000)")
-    out = {"expired": 0, "refreshed": 0}
+    out = {"expired": 0, "refreshed": 0, "reopened": 0}
     async with db.pool.connection() as conn:
         async with conn.transaction():
             for r in rows:
                 cid = str((r or {}).get("id") or "")
                 if not re.fullmatch(r"[0-9a-f-]{36}", cid):
+                    continue
+                if r.get("reopen"):   # undo an automatic expiry after a rule change (Nov 24, 2026); never a decided row
+                    cur = await conn.execute(
+                        "UPDATE sephora_candidates SET status='new', expired_reason=NULL, rechecked_at=now(), updated_at=now() "
+                        "WHERE id=%s::uuid AND status='expired' AND decided_by IS NULL RETURNING id", (cid,))
+                    out["reopened"] += len(await cur.fetchall())
                     continue
                 if r.get("expire"):
                     cur = await conn.execute(
