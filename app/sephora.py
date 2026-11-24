@@ -191,6 +191,15 @@ async def upsert_catalog(rows: list) -> dict:
     for c in clean:   # the same pair twice in one call: the later row wins
         seen[(c["asin"], c["product_id"])] = {**seen.get((c["asin"], c["product_id"]), {}), **c}
     clean = list(seen.values())
+    blocked: list = []
+    async with db.pool.connection() as conn:   # ASINs Nick never wants in the Lead DB (Nov 24, 2026)
+        cur = await conn.execute("SELECT asin FROM sephora_blocked_asins WHERE asin = ANY(%s)", (list({c["asin"] for c in clean}),))
+        bset = {r["asin"] for r in await cur.fetchall()}
+    if bset:
+        blocked = sorted(bset)
+        clean = [c for c in clean if c["asin"] not in bset]
+        if not clean:
+            return {"upserted": 0, "inserted": 0, "updated": 0, "blocked": blocked}
     groups: dict[tuple, list] = {}
     for c in clean:
         groups.setdefault(tuple(sorted(c)), []).append(c)
@@ -215,7 +224,36 @@ async def upsert_catalog(rows: list) -> dict:
             await _audit(conn, ENGINE, "upsert", "sephora", None, None, None,
                          {"catalog_rows": len(clean), "inserted": len(clean) - existing})
             await _notify(conn)
-    return {"upserted": len(clean), "inserted": len(clean) - existing, "updated": existing}
+    return {"upserted": len(clean), "inserted": len(clean) - existing, "updated": existing, "blocked": blocked}
+
+
+async def delete_asins(asins: list, reason: str, by: str = "engine") -> dict:
+    """Remove ASINs from the Lead DB for good (Nick, Nov 24, 2026: generic-brand listings he can't sell): their catalog
+    pairs, open suggestions (expired with the reason), the collector's stored Keepa data, and adds them to
+    sephora_blocked_asins so no job adds them back. Returns the deleted pairs so the caller can keep a backup.
+    Approved / rejected suggestions and wrong-match feedback stay as history."""
+    asins = sorted({str(a).strip().upper() for a in (asins or []) if str(a).strip()})
+    reason = _txt(reason, 300)
+    if not asins or not reason:
+        raise LedgerError("asins and reason are required")
+    if len(asins) > 2000:
+        raise LedgerError("At most 2000 ASINs per call")
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute("SELECT * FROM sephora_catalog WHERE asin = ANY(%s)", (asins,))
+            pairs = [jsonable(dict(r)) for r in await cur.fetchall()]
+            await conn.execute("DELETE FROM sephora_catalog WHERE asin = ANY(%s)", (asins,))
+            cur = await conn.execute("UPDATE sephora_candidates SET status='expired', expired_reason=%s, updated_at=now() "
+                                     "WHERE asin = ANY(%s) AND status='new'", (f"Removed from the Lead DB: {reason}", asins))
+            expired = cur.rowcount
+            await conn.execute("DELETE FROM keepa_raw WHERE asin = ANY(%s)", (asins,))
+            await conn.execute("DELETE FROM keepa_snapshots WHERE asin = ANY(%s)", (asins,))
+            await conn.execute("INSERT INTO sephora_blocked_asins (asin, reason, added_by) SELECT unnest(%s::text[]), %s, %s "
+                               "ON CONFLICT (asin) DO NOTHING", (asins, reason, by))
+            await _audit(conn, ENGINE, "delete_asins", "sephora", None, None, None,
+                         {"asins": len(asins), "pairs": len(pairs), "expired": expired, "reason": reason})
+            await _notify(conn)
+    return {"ok": True, "asins": len(asins), "pairs_deleted": len(pairs), "suggestions_expired": expired, "pairs": pairs}
 
 
 async def deactivate_catalog(keys: list) -> dict:

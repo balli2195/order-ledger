@@ -84,6 +84,8 @@ def build(slug, cfg_b, restr, excluded, live):
         k = m["keepa"]
         if (k.get("brand") or "").strip().lower() in excluded:
             continue
+        if (k.get("brand") or "").strip().lower() == "generic":   # Nick can't sell generic-brand listings (Nov 24, 2026)
+            continue
         p = prods[m["productId"]]
         lo, hi = p.get("price_lo"), p.get("price_hi")
         needs_size = bool(lo and hi and hi > lo)

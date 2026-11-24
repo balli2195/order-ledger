@@ -1702,6 +1702,22 @@ async def engine_sephora_mark(request: Request, body: dict = Body(...)):
                                       {k: body[k] for k in ("match_ok", "size_confirmed", "tags", "note", "correct_asin", "store_size") if k in body})
 
 
+@app.post("/api/engine/sephora/catalog/delete-asins")
+async def engine_sephora_delete_asins(request: Request, body: dict = Body(...)):
+    """{asins: [...], reason} -> deletes their Lead DB pairs, expires open suggestions, drops the collector's Keepa
+    data and blocks the ASINs from being added again (Nick, Nov 24, 2026). Returns the deleted pairs (keep a backup)."""
+    auth.require_engine_key(request)
+    return await sephora.delete_asins(body.get("asins"), body.get("reason"))
+
+
+@app.get("/api/engine/sephora/blocked-asins")
+async def engine_sephora_blocked(request: Request):
+    auth.require_engine_key(request)
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT asin, reason, added_by, added_at FROM sephora_blocked_asins ORDER BY added_at, asin")
+        return {"rows": [sephora.jsonable(dict(r)) for r in await cur.fetchall()]}
+
+
 @app.post("/api/engine/sephora/catalog/deactivate")
 async def engine_sephora_deactivate(request: Request, body: dict = Body(...)):
     """{keys: [{asin, product_id}]} -> active=false (their open candidates expire)."""

@@ -1097,6 +1097,16 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE brands DROP COLUMN IF EXISTS can_source;
     """,
+    # 70 (Nick, Nov 24 2026): ASINs that never belong in the Lead DB (e.g. Amazon brand "Generic": he can't sell them).
+    # Pairs for these ASINs are refused by the catalog upsert, so no job can add them back.
+    """
+    CREATE TABLE IF NOT EXISTS sephora_blocked_asins (
+      asin      text PRIMARY KEY,
+      reason    text NOT NULL,
+      added_by  text,
+      added_at  timestamptz NOT NULL DEFAULT now()
+    );
+    """,
 ]
 
 
