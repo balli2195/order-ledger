@@ -12,6 +12,7 @@
   .md h2 { margin: 6px 0 2px; font-size: 22px; font-weight: 600; }
   .md .lede { margin: 6px 0 0; color: var(--muted); font-size: 14px; max-width: 80ch; line-height: 1.5; }
   .md-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 10px; }
+  .samebox .row { justify-content: flex-start; }
   .md-bar .count { font-size: 13px; color: var(--muted); margin-left: auto; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
   .seg button { border: 0; background: var(--panel); padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--ink); }
@@ -43,9 +44,11 @@
   .samebox { display: none; flex-direction: column; gap: 4px; margin-top: 10px; width: 100%; font-size: 13px; }
   .samebox.open { display: flex; }
   .samebox .q { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-  .samebox label { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 8px; cursor: pointer; }
+  .samebox label { display: flex; flex-direction: row; justify-content: flex-start; gap: 10px; align-items: center; padding: 6px 10px; border: 1px solid var(--line-2); border-radius: 8px; cursor: pointer; text-align: left; font-weight: 400; margin: 0; }
+  .samebox label input { width: auto; flex: none; margin: 0; }
+  .samebox label > span:not(.pr) { flex: 1; text-align: left; }
   .samebox label:has(input:checked) { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, transparent); }
-  .samebox label .pr { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .samebox label .pr { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
   .samebox .row { display: flex; gap: 8px; margin-top: 4px; }
   .wrongbox { display: none; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; width: 100%; }
   .wrongbox.open { display: flex; }
@@ -171,7 +174,7 @@
       const list = document.getElementById('list');
       if (!rows.length) list.innerHTML = '<div class="empty">Nothing to decide here. 🎉</div>';
       else list.insertAdjacentHTML('beforeend', html);
-      document.getElementById('more').hidden = S.offset >= S.total;
+      document.getElementById('more').style.display = S.offset >= S.total ? 'none' : '';
       count();
     } catch (e) { LG.toast(e.message || String(e), true); }
   }
