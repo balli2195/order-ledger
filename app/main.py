@@ -80,7 +80,7 @@ app = FastAPI(title="Myrddin Hub", lifespan=lifespan, docs_url=None, redoc_url=N
 # The daily InventoryLab cost run posts costs straight from the InventoryLab page in Nick's Chrome (Nov 8 2026).
 # Only that endpoint answers cross-origin, only to InventoryLab's own sites, and it still needs the engine key.
 _IL_ORIGINS = {"https://inventorylab.threecolts.com", "https://inventory-inventorylab.threecolts.com", "https://app.inventorylab.com"}
-_CORS_PATHS = ("/api/reader/todo", "/api/amazon-pages/upload", "/api/store-skus/upload", "/api/store-skus/todo", "/api/store-pages/upload", "/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
+_CORS_PATHS = ("/api/reader/todo", "/api/amazon-pages/upload", "/api/store-skus/upload", "/api/store-skus/images", "/api/store-skus/todo", "/api/store-pages/upload", "/api/engine/profit/costs", "/api/engine/giftcards", "/api/engine/giftcards/uses",
                "/api/engine/giftcards/to-check", "/api/engine/giftcards/check-results", "/api/engine/giftcards/order-dates")
 # The gift card load posts straight from Nick's signed-in Arbitrage Card tab (Nov 10 2026), so card numbers never pass through chat.
 _GC_ORIGINS = {"https://arbitragecard.com", "https://www.arbitragecard.com"}
@@ -93,7 +93,7 @@ _STORE_ORIGINS = {"https://www.macys.com", "https://macys.com"}
 @app.middleware("http")
 async def il_cors(request: Request, call_next):
     origin = request.headers.get("origin", "")
-    allowed = {"/api/reader/todo": {"https://www.amazon.com", "https://www.sephora.com"}, "/api/amazon-pages/upload": {"https://www.amazon.com"}, "/api/store-skus/upload": {"https://www.sephora.com"}, "/api/store-skus/todo": {"https://www.sephora.com"}, "/api/store-pages/upload": {"https://www.sephora.com"}, "/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
+    allowed = {"/api/reader/todo": {"https://www.amazon.com", "https://www.sephora.com"}, "/api/amazon-pages/upload": {"https://www.amazon.com"}, "/api/store-skus/upload": {"https://www.sephora.com"}, "/api/store-skus/images": {"https://www.sephora.com"}, "/api/store-skus/todo": {"https://www.sephora.com"}, "/api/store-pages/upload": {"https://www.sephora.com"}, "/api/engine/giftcards": _GC_ORIGINS, "/api/engine/giftcards/uses": _MAIL_ORIGINS, "/api/engine/giftcards/order-dates": _MAIL_ORIGINS,
                "/api/engine/giftcards/to-check": _STORE_ORIGINS, "/api/engine/giftcards/check-results": _STORE_ORIGINS}.get(request.url.path, _IL_ORIGINS)
     if request.url.path in _CORS_PATHS and origin in allowed:
         h = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -1644,8 +1644,8 @@ async def reader_todo(request: Request, list: str = "amazon"):
     """The work list for a page reader running in Nick's Chrome (Nov 20, 2026): ASINs (list=amazon) or Sephora product
     paths (list=sephora) that a Claude session put in Hub doc reader/<list>_todo. Upload-token gated (the matching
     purpose), CORS amazon.com / sephora.com, so no engine key goes into a store's page."""
-    if list not in ("amazon", "sephora"):
-        raise HTTPException(400, "list must be amazon or sephora")
+    if list not in ("amazon", "sephora", "sephora_images"):   # sephora_images: products to re-read with item images (Nov 24, 2026)
+        raise HTTPException(400, "list must be amazon, sephora or sephora_images")
     tok = request.headers.get("x-upload-token") or ""
     purpose = "amazon_pages" if list == "amazon" else "store_skus"
     async with db.pool.connection() as conn:
@@ -1672,6 +1672,37 @@ async def engine_store_pages(request: Request, product_ids: str | None = None):
 async def store_skus_upload(request: Request, body: dict = Body(...)):
     """SKU lists read from Sephora product pages in Nick's Chrome (Nov 17, 2026). X-Upload-Token header; CORS: sephora.com only."""
     return await sephora.upload_store_skus(request.headers.get("x-upload-token"), body)
+
+
+@app.post("/api/store-skus/images")
+async def store_skus_images(request: Request, body: dict = Body(...)):
+    """Sephora item swatches / product shots read in Nick's Chrome (Nov 24, 2026). X-Upload-Token; CORS: sephora.com only."""
+    return await sephora.upload_sku_images(request.headers.get("x-upload-token"), body)
+
+
+@app.get("/api/sephora/sku-image/{sku_id}/{kind}")
+async def api_sephora_sku_image(request: Request, sku_id: str, kind: str):
+    await auth.require(request, "viewer", tab="sephora_leads")
+    got = await sephora.sku_image(sku_id, kind)
+    if not got:
+        raise HTTPException(404, "no image")
+    return Response(content=got[0], media_type=got[1], headers={"Cache-Control": "private, max-age=86400"})
+
+
+@app.get("/api/engine/sku-image/{sku_id}/{kind}")
+async def engine_sku_image(request: Request, sku_id: str, kind: str):
+    auth.require_engine_key(request)
+    got = await sephora.sku_image(sku_id, kind)
+    if not got:
+        raise HTTPException(404, "no image")
+    return Response(content=got[0], media_type=got[1])
+
+
+@app.get("/api/engine/sku-images")
+async def engine_sku_images(request: Request, skus: str = ""):
+    """Which Sephora items have a stored swatch / product shot: {sku_id: [kinds]}."""
+    auth.require_engine_key(request)
+    return await sephora.sku_images_have([s for s in skus.split(",") if s][:500])
 
 
 @app.get("/api/store-skus/todo")

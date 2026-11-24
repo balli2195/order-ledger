@@ -997,14 +997,77 @@ async def upload_store_skus(token: str | None, body: dict) -> dict:
                         price = round(float(str(x[4]).replace("$", "").replace(",", "")), 2) if x[4] not in (None, "") else None
                     except ValueError:
                         pass
-                    skus.append({"sku_id": str(x[0]), "size": _txt(x[1], 80), "value": _txt(x[2], 120), "desc": _txt(x[3], 160),
-                                 "price": price, "oos": bool(x[5])})
+                    ex = x[6] if len(x) > 6 and isinstance(x[6], dict) else {}
+                    value = _txt(x[2], 120)
+                    if not value:   # shade name from Sephora's other name fields or the image alt text (Nick, Nov 24, 2026)
+                        for cand in list(ex.get("names") or []) + [ex.get("alt")]:
+                            cand = _txt(cand, 120)
+                            if cand:
+                                value = cand
+                                break
+                    sku = {"sku_id": str(x[0]), "size": _txt(x[1], 80), "value": value, "desc": _txt(x[3], 160),
+                           "price": price, "oos": bool(x[5])}
+                    for k in ("sw", "img"):
+                        u = _txt(ex.get(k), 400)
+                        if u and u.startswith("/productimages/"):
+                            sku[k] = u
+                    skus.append(sku)
                 await conn.execute(
                     "INSERT INTO store_skus (store, product_id, variation_type, skus, read_at) VALUES ('Sephora', %s, %s, %s, now()) "
                     "ON CONFLICT (store, product_id) DO UPDATE SET variation_type=EXCLUDED.variation_type, skus=EXCLUDED.skus, read_at=now()",
                     (pid, _txt(v.get("vt"), 40), json.dumps(skus)))
                 n += 1
     return {"saved": n}
+
+
+async def upload_sku_images(token: str | None, body: dict) -> dict:
+    """{images: [{sku_id, kind: 'sw'|'main', ct: 'image/jpeg', b64}]} from Sephora pages in Nick's Chrome (Nov 24, 2026).
+    Needs a live store_skus upload token. Only writes store_sku_images."""
+    import base64
+    if not token:
+        raise LedgerError("Missing upload token")
+    imgs = (body or {}).get("images")
+    if not isinstance(imgs, list) or not imgs or len(imgs) > 80:
+        raise LedgerError("images must be a list of up to 80")
+    n = 0
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT 1 FROM upload_tokens WHERE token=%s AND purpose='store_skus' AND expires_at > now()", (token,))
+        if not await cur.fetchone():
+            raise LedgerError("Upload token is invalid or expired")
+        async with conn.transaction():
+            for x in imgs:
+                if not isinstance(x, dict) or not str(x.get("sku_id") or "").isdigit() or x.get("kind") not in ("sw", "main"):
+                    continue
+                ct = str(x.get("ct") or "image/jpeg")
+                if not ct.startswith("image/"):
+                    continue
+                try:
+                    b = base64.b64decode(str(x.get("b64") or ""), validate=True)
+                except Exception:  # noqa: BLE001
+                    continue
+                if not b or len(b) > 400_000:
+                    continue
+                await conn.execute(
+                    "INSERT INTO store_sku_images (store, sku_id, kind, content_type, bytes, read_at) VALUES ('Sephora', %s, %s, %s, %s, now()) "
+                    "ON CONFLICT (store, sku_id, kind) DO UPDATE SET content_type=EXCLUDED.content_type, bytes=EXCLUDED.bytes, read_at=now()",
+                    (str(x["sku_id"]), x["kind"], ct[:40], b))
+                n += 1
+    return {"saved": n}
+
+
+async def sku_image(sku_id: str, kind: str) -> tuple[bytes, str] | None:
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT content_type, bytes FROM store_sku_images WHERE store='Sephora' AND sku_id=%s AND kind=%s",
+                                 (str(sku_id), kind))
+        r = await cur.fetchone()
+    return (bytes(r["bytes"]), r["content_type"]) if r else None
+
+
+async def sku_images_have(sku_ids: list[str]) -> dict:
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT sku_id, array_agg(kind) kinds FROM store_sku_images WHERE store='Sephora' AND sku_id = ANY(%s) "
+                                 "GROUP BY sku_id", ([str(s) for s in sku_ids],))
+        return {r["sku_id"]: r["kinds"] for r in await cur.fetchall()}
 
 
 async def upload_store_pages(token: str | None, body: dict) -> dict:

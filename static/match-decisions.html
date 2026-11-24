@@ -122,12 +122,13 @@
   const item = (x) => ({ sku_id: String(x.sku_id), size: [x.value, x.size && x.size !== x.value ? x.size : ''].filter(Boolean).join(' ').trim(), price: x.price });
 
   // Sephora's swatch for an item (falls back to its product photo): unnamed shades can be picked by colour (Nov 24 2026)
-  const sw = (x, big) => x.sku_id ? `<img class="sw${big ? ' big' : ''}" loading="lazy" alt="" src="https://www.sephora.com/productimages/sku/s${encodeURIComponent(x.sku_id)}+sw.jpg" onerror="if(!this.dataset.f){this.dataset.f=1;this.src='https://www.sephora.com/productimages/sku/s${encodeURIComponent(x.sku_id)}-main-zoom.jpg'}else{this.remove()}">` : '';
+  // Hub copy first (read in the old MacBook's Chrome), then Sephora's own site, then nothing
+  const chain = (sku, kind) => [`/api/sephora/sku-image/${encodeURIComponent(sku)}/${kind}`,
+    `https://www.sephora.com/productimages/sku/s${encodeURIComponent(sku)}${kind === 'sw' ? '+sw' : '-main-zoom'}.jpg`];
+  const imgTag = (cls, urls) => `<img class="${cls}" loading="lazy" alt="" src="${urls[0]}" data-alt="${esc(urls.slice(1).join('|'))}" onerror="const a=(this.dataset.alt||'').split('|').filter(Boolean);if(a.length){this.src=a.shift();this.dataset.alt=a.join('|')}else{this.remove()}">`;
+  const sw = (x, big) => x.sku_id ? imgTag('sw' + (big ? ' big' : ''), [...chain(x.sku_id, 'sw'), ...chain(x.sku_id, 'main')]) : '';
 
-  function sephImg(r) {
-    const sku = r.store_sku_id || r.research.sku_id;
-    return sku ? `https://www.sephora.com/productimages/sku/s${encodeURIComponent(sku)}-main-zoom.jpg` : null;
-  }
+  function sephImg(r) { return r.store_sku_id || r.research.sku_id || null; }
 
   function card(r, i) {
     const a = r.amazon || {};
@@ -150,7 +151,7 @@
         <div class="side"><h4>Sephora · ${esc(r.brand)} · <a href="${esc(r.sephora_url)}" target="_blank" rel="noopener">${esc(r.product_id)}</a></h4>
           <p class="t">${esc(r.sephora_name)}${r.shade ? ' — ' + esc(r.shade) : ''}</p>
           ${r.store_size ? `<p class="sub">Saved item: ${esc(r.store_size)} at ${money(r.store_size_price)}</p>` : ''}
-          <div class="pics">${si ? `<img loading="lazy" src="${si}" alt="Sephora item photo" onerror="this.remove()">` : ''}</div>
+          <div class="pics">${si ? imgTag('', chain(si, 'main')) : ''}</div>
           ${items ? `<ul class="items">${items}</ul>` : ''}
         </div>
       </div>

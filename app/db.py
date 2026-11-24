@@ -1107,6 +1107,19 @@ MIGRATIONS: list[str] = [
       added_at  timestamptz NOT NULL DEFAULT now()
     );
     """,
+    # 71 (Nick, Nov 24 2026): Sephora item images (swatch + product shot) read in Nick's old-MacBook Chrome, so the match
+    # check and the Match decisions page can compare shades without loading sephora.com from the cloud.
+    """
+    CREATE TABLE IF NOT EXISTS store_sku_images (
+      store         text NOT NULL DEFAULT 'Sephora',
+      sku_id        text NOT NULL,
+      kind          text NOT NULL,              -- sw (swatch) | main (product shot)
+      content_type  text NOT NULL,
+      bytes         bytea NOT NULL,
+      read_at       timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (store, sku_id, kind)
+    );
+    """,
 ]
 
 
