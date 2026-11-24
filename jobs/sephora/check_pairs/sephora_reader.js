@@ -18,8 +18,9 @@ const todo=(SRC==='recheck'||SRC==='images')?await fetch(H+'/api/reader/todo?lis
 const L=todo.items;window.sk.total=L.length;window.sk.left=todo.left;
 const urls=(o,out=[],dep=0)=>{if(!o||dep>3)return out;if(typeof o==='string'){if(o.includes('/productimages/')&&out.length<12)out.push(o.replace(/^https?:\/\/www\.sephora\.com/,''));return out;}
 if(typeof o==='object')for(const v of Object.values(o))urls(v,out,dep+1);return out;};
-const extra=s=>{const u=urls([s.smallImage,s.skuImages,s.swatchImage,s.image,s.images]);const alt=[s.imageAltText,(s.skuImages||{}).imageAltText,s.smallImageAltText,s.swatchAltText].find(x=>typeof x==='string'&&x.trim())||'';
-return{names:[s.variationValue,s.variationName,s.displayName,s.skuName,s.colorName,s.shadeName].filter(x=>typeof x==='string'&&x.trim()),alt,
+// checked on a live page Nov 24, 2026: displayName is the item number, skuImages.altText is "product name + size" (no shade)
+const extra=s=>{const u=urls([s.smallImage,s.skuImages,s.swatchImage,s.image,s.images]);const alt=[(s.skuImages||{}).altText,s.imageAltText].find(x=>typeof x==='string'&&x.trim())||'';
+return{names:[s.variationValue,s.variationName,s.skuName,s.colorName,s.shadeName].filter(x=>typeof x==='string'&&x.trim()&&!/^\d+$/.test(x.trim())&&x.trim()!==String(s.skuId)),alt:alt.slice(0,200),
 sw:u.find(x=>/\+sw|swatch/i.test(x))||'',img:u.find(x=>/main|zoom|hero/i.test(x))||u.find(x=>!/\+sw|swatch/i.test(x))||''};};
 const row=s=>{const f=((s.skuRefinements||[]).find(x=>x&&x.key==='finish')||{values:[]}).values.join('/');const d=[s.variationDesc,f].filter(Boolean).join(' · ');
 return[String(s.skuId),s.size||'',s.variationValue||'',d,(s.salePrice||s.listPrice||'').toString(),!!s.isOutOfStock,extra(s)];};

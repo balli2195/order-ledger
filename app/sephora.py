@@ -1000,9 +1000,9 @@ async def upload_store_skus(token: str | None, body: dict) -> dict:
                     ex = x[6] if len(x) > 6 and isinstance(x[6], dict) else {}
                     value = _txt(x[2], 120)
                     if not value:   # shade name from Sephora's other name fields or the image alt text (Nick, Nov 24, 2026)
-                        for cand in list(ex.get("names") or []) + [ex.get("alt")]:
+                        for cand in list(ex.get("names") or []):   # not the alt text: it's "product name + size"
                             cand = _txt(cand, 120)
-                            if cand:
+                            if cand and not cand.isdigit() and cand != str(x[0]):
                                 value = cand
                                 break
                     sku = {"sku_id": str(x[0]), "size": _txt(x[1], 80), "value": value, "desc": _txt(x[3], 160),
