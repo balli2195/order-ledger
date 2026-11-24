@@ -1120,6 +1120,20 @@ MIGRATIONS: list[str] = [
       PRIMARY KEY (store, sku_id, kind)
     );
     """,
+    # 72 (Nick, Nov 24 2026): "if i can't sell them they shouldn't be added to the db". Pairs whose Amazon listing is
+    # restricted for Nick leave sephora_catalog and are parked here whole (Nick's marks included), so the monthly
+    # restriction check can still test them and put a pair back when the listing opens up.
+    """
+    CREATE TABLE IF NOT EXISTS sephora_parked_pairs (
+      asin        text NOT NULL,
+      product_id  text NOT NULL,
+      pair        jsonb NOT NULL,
+      reason      text NOT NULL,
+      parked_at   timestamptz NOT NULL DEFAULT now(),
+      checked_at  timestamptz,
+      PRIMARY KEY (asin, product_id)
+    );
+    """,
 ]
 
 

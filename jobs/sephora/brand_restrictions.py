@@ -55,10 +55,17 @@ def main():
     C.DRY_RUN = a.dry_run
     rows = C.hub_catalog(active="true")
     rows = [r for r in rows if r.get("active")]
-    asins = list(dict.fromkeys(r["asin"] for r in rows))
+    # Parked pairs (restricted listings kept out of the Lead DB, Nick Nov 24 2026) are checked too: one that opened up goes back
+    parked = []
+    while True:
+        pg = C.hub("GET", "/api/engine/sephora/parked", params={"offset": len(parked), "limit": 2000})
+        parked += pg["rows"]
+        if not pg["rows"] or len(parked) >= pg["total"]:
+            break
+    asins = list(dict.fromkeys([r["asin"] for r in rows] + [p["asin"] for p in parked]))
     if a.limit:
         asins = asins[:a.limit]
-    C.log(f"{len(rows)} active pairs, {len(asins)} ASINs to check")
+    C.log(f"{len(rows)} active pairs + {len(parked)} parked, {len(asins)} ASINs to check")
     res = {}
     for i, asin in enumerate(asins):
         res[asin] = spr.check(asin)
@@ -78,8 +85,19 @@ def main():
         upd.append({"asin": r["asin"], "product_id": r["product_id"], "sellable": v["status"], "active": r.get("active")})
         item = (r.get("brand"), r["asin"], (r.get("amazon_title") or r.get("sephora_name") or "")[:70], r.get("sellable"), v["status"])
         (opened if v["status"] == "open" else closed if v["status"] == "restricted" else []).append(item)
-    if upd and not a.dry_run:
+    if upd and not a.dry_run:   # a pair that turned restricted is parked by the Hub (it leaves the Lead DB)
         C.log("catalog update:", C.hub_upsert_catalog(upd))
+    back = {}
+    for p in parked:
+        v = res.get(p["asin"])
+        if v and v["status"] in ("open", "approval_required"):
+            back[p["asin"]] = v["status"]
+            opened.append((p.get("brand"), p["asin"], "(parked pair)", "restricted", v["status"]))
+    if parked and not a.dry_run:
+        items = [{"asin": x, "sellable": back[x]} if x in back else {"asin": x, "checked": True}
+                 for x in dict.fromkeys(p["asin"] for p in parked) if res.get(x) and res[x]["status"] != "error"]
+        for i in range(0, len(items), 5000):
+            C.log("parked pairs:", C.hub("POST", "/api/engine/sephora/unpark", {"items": items[i:i + 5000]}))
 
     # 3. per-brand summary (one count per ASIN and brand)
     seen, cnt = set(), collections.defaultdict(lambda: collections.Counter())
@@ -90,6 +108,12 @@ def main():
             continue
         seen.add((b, r["asin"]))
         cnt[b][v["status"]] += 1
+    for p in parked:
+        v = res.get(p["asin"])
+        b = (p.get("brand") or "").strip()
+        if v and b and (b, p["asin"]) not in seen:
+            seen.add((b, p["asin"]))
+            cnt[b][v["status"]] += 1
     brands = {}
     for b, c in sorted(cnt.items()):
         c = {k: c.get(k, 0) for k in ("open", "approval_required", "restricted", "error")}

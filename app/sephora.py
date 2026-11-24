@@ -200,6 +200,27 @@ async def upsert_catalog(rows: list) -> dict:
         clean = [c for c in clean if c["asin"] not in bset]
         if not clean:
             return {"upserted": 0, "inserted": 0, "updated": 0, "blocked": blocked}
+    # Restricted listings stay out of the Lead DB (Nick, Nov 24, 2026): parked pairs are skipped (the monthly restriction
+    # check restores them when they open up), a new pair whose listing is restricted is not added, and an existing pair
+    # that turns restricted is parked after the update.
+    async with db.pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT p.asin, p.product_id FROM sephora_parked_pairs p JOIN unnest(%s::text[], %s::text[]) k(asin, pid) "
+            "ON p.asin = k.asin AND p.product_id = k.pid", ([c["asin"] for c in clean], [c["product_id"] for c in clean]))
+        parked = {(r["asin"], r["product_id"]) for r in await cur.fetchall()}
+        cur = await conn.execute(
+            "SELECT c.asin, c.product_id FROM sephora_catalog c JOIN unnest(%s::text[], %s::text[]) k(asin, pid) "
+            "ON c.asin = k.asin AND c.product_id = k.pid", ([c["asin"] for c in clean], [c["product_id"] for c in clean]))
+        have = {(r["asin"], r["product_id"]) for r in await cur.fetchall()}
+    skipped_restricted = [c for c in clean if (c["asin"], c["product_id"]) in parked
+                          or (c.get("sellable") == "restricted" and (c["asin"], c["product_id"]) not in have)]
+    to_park = [{"asin": c["asin"], "product_id": c["product_id"]} for c in clean
+               if c.get("sellable") == "restricted" and (c["asin"], c["product_id"]) in have]
+    if skipped_restricted:
+        sk = {(c["asin"], c["product_id"]) for c in skipped_restricted}
+        clean = [c for c in clean if (c["asin"], c["product_id"]) not in sk]
+        if not clean:
+            return {"upserted": 0, "inserted": 0, "updated": 0, "blocked": blocked, "restricted_skipped": len(sk)}
     groups: dict[tuple, list] = {}
     for c in clean:
         groups.setdefault(tuple(sorted(c)), []).append(c)
@@ -224,7 +245,88 @@ async def upsert_catalog(rows: list) -> dict:
             await _audit(conn, ENGINE, "upsert", "sephora", None, None, None,
                          {"catalog_rows": len(clean), "inserted": len(clean) - existing})
             await _notify(conn)
-    return {"upserted": len(clean), "inserted": len(clean) - existing, "updated": existing, "blocked": blocked}
+    out = {"upserted": len(clean), "inserted": len(clean) - existing, "updated": existing, "blocked": blocked,
+           "restricted_skipped": len(skipped_restricted)}
+    if to_park:
+        out["parked"] = (await park_pairs(to_park, "Amazon listing restricted for Nick"))["parked"]
+    return out
+
+
+async def park_pairs(keys: list | None, reason: str, by: str = "engine") -> dict:
+    """Move catalog pairs out of the Lead DB into sephora_parked_pairs (whole row, Nick's marks included) (Nick, Nov 24,
+    2026: listings he can't sell don't belong in the Lead DB). keys = [{asin, product_id}], or None = every pair whose
+    listing is restricted. Their open suggestions expire with the reason. Returns the parked rows (keep a backup)."""
+    reason = _txt(reason, 300)
+    if not reason:
+        raise LedgerError("reason is required")
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            if keys is None:
+                cur = await conn.execute("SELECT * FROM sephora_catalog WHERE sellable = 'restricted'")
+            else:
+                if not isinstance(keys, list) or len(keys) > 5000:
+                    raise LedgerError("keys must be a list of at most 5000 {asin, product_id}")
+                cur = await conn.execute(
+                    "SELECT c.* FROM sephora_catalog c JOIN unnest(%s::text[], %s::text[]) k(asin, pid) "
+                    "ON c.asin = k.asin AND c.product_id = k.pid",
+                    ([_asin(k.get("asin")) for k in keys], [_pid(k.get("product_id")) for k in keys]))
+            rows = [jsonable(dict(r)) for r in await cur.fetchall()]
+            if not rows:
+                return {"ok": True, "parked": 0, "suggestions_expired": 0, "pairs": []}
+            A, P = [r["asin"] for r in rows], [r["product_id"] for r in rows]
+            await conn.execute(
+                "INSERT INTO sephora_parked_pairs (asin, product_id, pair, reason) "
+                "SELECT k.asin, k.pid, k.pair::jsonb, %s FROM unnest(%s::text[], %s::text[], %s::text[]) k(asin, pid, pair) "
+                "ON CONFLICT (asin, product_id) DO UPDATE SET pair = EXCLUDED.pair, reason = EXCLUDED.reason, parked_at = now()",
+                (reason, A, P, [json.dumps(r) for r in rows]))
+            cur = await conn.execute(
+                "UPDATE sephora_candidates s SET status='expired', expired_reason=%s, updated_at=now() "
+                "FROM unnest(%s::text[], %s::text[]) k(asin, pid) WHERE s.asin = k.asin AND s.product_id = k.pid AND s.status='new'",
+                (f"Removed from the Lead DB: {reason}", A, P))
+            expired = cur.rowcount
+            await conn.execute(
+                "DELETE FROM sephora_catalog c USING unnest(%s::text[], %s::text[]) k(asin, pid) "
+                "WHERE c.asin = k.asin AND c.product_id = k.pid", (A, P))
+            await _audit(conn, ENGINE, "park_pairs", "sephora", None, None, None,
+                         {"pairs": len(rows), "expired": expired, "reason": reason, "by": by})
+            await _notify(conn)
+    return {"ok": True, "parked": len(rows), "suggestions_expired": expired, "pairs": rows}
+
+
+async def parked_pairs(offset: int = 0, limit: int = 2000) -> dict:
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT count(*) n FROM sephora_parked_pairs")
+        n = (await cur.fetchone())["n"]
+        cur = await conn.execute("SELECT asin, product_id, reason, parked_at, checked_at, pair->>'brand' AS brand, "
+                                 "pair->>'sellable' AS sellable FROM sephora_parked_pairs ORDER BY asin, product_id "
+                                 "OFFSET %s LIMIT %s", (max(0, int(offset)), max(1, min(int(limit), 5000))))
+        return {"total": n, "rows": [jsonable(dict(r)) for r in await cur.fetchall()]}
+
+
+async def unpark_pairs(items: list) -> dict:
+    """The monthly restriction check found these parked listings open (or needing one-click approval):
+    items = [{asin, sellable}] -> each ASIN's parked pairs go back into the Lead DB as they were, with the new sellable.
+    items = [{asin, checked: true}] (still restricted) only stamps checked_at."""
+    if not isinstance(items, list) or len(items) > 5000:
+        raise LedgerError("items must be a list of at most 5000 {asin, sellable}")
+    back = {_asin(i.get("asin")): i.get("sellable") for i in items if i.get("sellable") in ("open", "approval_required")}
+    seen = [_asin(i.get("asin")) for i in items]
+    async with db.pool.connection() as conn:
+        async with conn.transaction():
+            await conn.execute("UPDATE sephora_parked_pairs SET checked_at = now() WHERE asin = ANY(%s)", (seen,))
+            if not back:
+                return {"ok": True, "restored": 0, "checked": len(seen)}
+            # the stored row goes back as it was (jsonb_populate_record maps it onto today's columns), with the new sellable
+            cur = await conn.execute(
+                "INSERT INTO sephora_catalog SELECT (jsonb_populate_record(NULL::sephora_catalog, "
+                "p.pair || jsonb_build_object('sellable', k.sellable, 'updated_at', now()))).* "
+                "FROM sephora_parked_pairs p JOIN unnest(%s::text[], %s::text[]) k(asin, sellable) ON p.asin = k.asin "
+                "ON CONFLICT (asin, product_id) DO NOTHING", (list(back), list(back.values())))
+            pairs = cur.rowcount
+            await conn.execute("DELETE FROM sephora_parked_pairs WHERE asin = ANY(%s)", (list(back),))
+            await _audit(conn, ENGINE, "unpark_pairs", "sephora", None, None, None, {"asins": len(back), "pairs": pairs})
+            await _notify(conn)
+    return {"ok": True, "restored": pairs, "checked": len(seen)}
 
 
 async def delete_asins(asins: list, reason: str, by: str = "engine") -> dict:

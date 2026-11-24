@@ -1759,6 +1759,27 @@ async def engine_sephora_delete_asins(request: Request, body: dict = Body(...)):
     return await sephora.delete_asins(body.get("asins"), body.get("reason"))
 
 
+@app.post("/api/engine/sephora/catalog/park")
+async def engine_sephora_park(request: Request, body: dict = Body(...)):
+    """{keys: [{asin, product_id}] | null (= every restricted pair), reason} -> the pairs leave the Lead DB for
+    sephora_parked_pairs (Nick, Nov 24, 2026: listings he can't sell). Returns the parked rows (keep a backup)."""
+    auth.require_engine_key(request)
+    return await sephora.park_pairs(body.get("keys"), body.get("reason"))
+
+
+@app.get("/api/engine/sephora/parked")
+async def engine_sephora_parked(request: Request, offset: int = 0, limit: int = 2000):
+    auth.require_engine_key(request)
+    return await sephora.parked_pairs(offset, limit)
+
+
+@app.post("/api/engine/sephora/unpark")
+async def engine_sephora_unpark(request: Request, body: dict = Body(...)):
+    """{items: [{asin, sellable}]} from the monthly restriction check: open / approval_required listings come back."""
+    auth.require_engine_key(request)
+    return await sephora.unpark_pairs(body.get("items"))
+
+
 @app.get("/api/engine/sephora/blocked-asins")
 async def engine_sephora_blocked(request: Request):
     auth.require_engine_key(request)
