@@ -13,6 +13,8 @@
   .md .lede { margin: 6px 0 0; color: var(--muted); font-size: 14px; max-width: 80ch; line-height: 1.5; }
   .md-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 10px; }
   .samebox .row { justify-content: flex-start; }
+  img.sw { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; vertical-align: -4px; margin-right: 6px; border: 1px solid var(--line-2); background: #fff; }
+  img.sw.big { width: 36px; height: 36px; margin-right: 0; flex: none; }
   .md-bar .count { font-size: 13px; color: var(--muted); margin-left: auto; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
   .seg button { border: 0; background: var(--panel); padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--ink); }
@@ -119,6 +121,9 @@
   // the store_size the Lead DB saves for a pair: {sku_id, size label, price}
   const item = (x) => ({ sku_id: String(x.sku_id), size: [x.value, x.size && x.size !== x.value ? x.size : ''].filter(Boolean).join(' ').trim(), price: x.price });
 
+  // Sephora's swatch for an item (falls back to its product photo): unnamed shades can be picked by colour (Nov 24 2026)
+  const sw = (x, big) => x.sku_id ? `<img class="sw${big ? ' big' : ''}" loading="lazy" alt="" src="https://www.sephora.com/productimages/sku/s${encodeURIComponent(x.sku_id)}+sw.jpg" onerror="if(!this.dataset.f){this.dataset.f=1;this.src='https://www.sephora.com/productimages/sku/s${encodeURIComponent(x.sku_id)}-main-zoom.jpg'}else{this.remove()}">` : '';
+
   function sephImg(r) {
     const sku = r.store_sku_id || r.research.sku_id;
     return sku ? `https://www.sephora.com/productimages/sku/s${encodeURIComponent(sku)}-main-zoom.jpg` : null;
@@ -129,7 +134,7 @@
     const pics = (a.images || []).map((id) => `<img loading="lazy" src="https://m.media-amazon.com/images/I/${esc(id)}" alt="Amazon photo">`).join('');
     const si = sephImg(r);
     const saved = String(r.store_sku_id || r.research.sku_id || '');
-    const items = (r.sephora_items || []).map((x) => `<li class="${String(x.sku_id) === saved ? 'saved' : ''}"><span>${esc(x.value || x.size || x.sku_id)}${x.desc ? ' · ' + esc(x.desc) : ''}${x.oos ? ' <span class="oos">(out of stock)</span>' : ''}</span><span>${money(x.price)}</span></li>`).join('');
+    const items = (r.sephora_items || []).map((x) => `<li class="${String(x.sku_id) === saved ? 'saved' : ''}"><span>${sw(x)}${esc(x.value || x.size || x.sku_id)}${x.desc ? ' · ' + esc(x.desc) : ''}${x.oos ? ' <span class="oos">(out of stock)</span>' : ''}</span><span>${money(x.price)}</span></li>`).join('');
     const tags = guessTags(r);
     return `<article class="card" data-i="${i}">
       <div class="head">
@@ -154,7 +159,7 @@
         <button class="btn primary small" data-act="same">Same product ✓</button>
         <button class="btn small danger" data-act="wrong">Wrong match</button>
         <button class="btn small ghost" data-act="skip">Skip</button>
-        <div class="samebox">${(r.sephora_items || []).length > 1 ? `<span class="q">Which Sephora item is it?</span>${(r.sephora_items || []).map((x, k) => `<label><input type="radio" name="it${i}" value="${k}" ${String(x.sku_id) === saved || (!saved && k === 0 && (r.sephora_items || []).length === 1) ? 'checked' : ''}><span>${esc(x.value || x.size || x.sku_id)}${x.desc ? ' · ' + esc(x.desc) : ''}${x.size && x.value !== x.size ? ' · ' + esc(x.size) : ''}${x.oos ? ' (out of stock)' : ''}</span><span class="pr">${money(x.price)}</span></label>`).join('')}` : ''}
+        <div class="samebox">${(r.sephora_items || []).length > 1 ? `<span class="q">Which Sephora item is it?</span>${(r.sephora_items || []).map((x, k) => `<label><input type="radio" name="it${i}" value="${k}" ${String(x.sku_id) === saved || (!saved && k === 0 && (r.sephora_items || []).length === 1) ? 'checked' : ''}>${sw(x, true)}<span>${esc(x.value || (x.size ? x.size : 'item ' + x.sku_id))}${x.desc ? ' · ' + esc(x.desc) : ''}${x.size && x.value !== x.size ? ' · ' + esc(x.size) : ''}${x.oos ? ' (out of stock)' : ''}</span><span class="pr">${money(x.price)}</span></label>`).join('')}` : ''}
           <div class="row"><button class="btn primary small" data-act="same-go">Confirm same product</button></div></div>
         <div class="wrongbox">${TAGS.map(([k, l]) => `<button type="button" class="tag ${tags.includes(k) ? 'on' : ''}" data-tag="${k}">${l}</button>`).join('')}
           <input placeholder="Note (optional)" maxlength="300" value="${esc(String(r.research.lesson || '').slice(0, 300))}">
