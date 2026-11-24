@@ -868,8 +868,10 @@ async def approve(actor: Actor, cid: str, size: str | None = None) -> dict:
         if size:
             await mark_catalog(actor, c["asin"], c["product_id"], {"size_confirmed": size})
             c["size_confirmed"] = size
-        if c.get("needs_size") and c.get("size_confirmed") not in ("lo", "hi"):
-            raise LedgerError("Pick the size first (Mini / smaller size or Full size)")
+        # No size gate (Nick, Nov 24, 2026): the pair's own Sephora item (store_size) settles the size, and an unknown
+        # size keeps the job's full-size price ("size not checked" goes in the lead note).
+        if c.get("store_size"):
+            c["needs_size"] = False
         day = today()
         async with db.pool.connection() as conn:
             cur = await conn.execute("SELECT id FROM leads WHERE upper(btrim(asin)) = %s AND lead_date = %s LIMIT 1", (c["asin"], day))
@@ -884,8 +886,12 @@ async def approve(actor: Actor, cid: str, size: str | None = None) -> dict:
             bits.append(f"Lead Score {c['lead_score_band']} ({_pct(c.get('lead_score_pred_roi'))})")
         if c.get("shade"):
             bits.append(f"shade {c['shade']}")
-        if c.get("needs_size"):
+        if c.get("store_size"):
+            bits.append(f"size {c['store_size']}")
+        elif c.get("needs_size") and c.get("size_confirmed") in ("lo", "hi"):
             bits.append("full size" if c["size_confirmed"] == "hi" else "mini / smaller size")
+        elif c.get("needs_size"):
+            bits.append("size not checked (priced at full size)")
         if cost_note:
             bits.append(cost_note)
         data = {"lead_date": day, "asin": c["asin"], "stores": [c.get("store") or "Sephora"], "brands": [c["brand"]] if c.get("brand") else [],

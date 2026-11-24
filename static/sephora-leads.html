@@ -198,8 +198,10 @@
   function warnings(c) {
     const w = [];
     const sz = c.size_confirmed || S.size[c.id];
-    if (c.needs_size && !sz) w.push(['warn', 'Needs size']);
-    if (c.needs_size && sz) w.push(['', 'Size: ' + SIZE[sz]]);
+    // The pair's own Sephora item (store size) settles the size; the job priced it at that item (Nick, Nov 24 2026)
+    if (c.store_size) w.push(['', 'Size: ' + c.store_size]);
+    else if (c.needs_size && !sz) w.push(['warn', 'Size not checked (priced at full size)']);
+    else if (c.needs_size && sz) w.push(['', 'Size: ' + SIZE[sz]]);
     if (c.sellable === 'approval_required') w.push(['warn', 'Approval required']);
     if (c.sellable === 'restricted') w.push(['warn', 'Restricted']);
     if (c.amazon_on) w.push(['warn', 'Amazon on listing']);
@@ -217,7 +219,9 @@
         : `<span class="sl-tag ${c.status === 'rejected' ? 'warn' : ''}">${esc(c.status[0].toUpperCase() + c.status.slice(1))}</span>${c.decided_by ? `<div class="muted" style="font-size:11px">${esc(c.decided_by)} ${esc(when(c.decided_at))}</div>` : ''}${c.reject_reason || c.expired_reason ? `<div class="sl-why">${esc(c.reject_reason || c.expired_reason)}</div>` : ''}${stockLine(c)}`;
     }
     if (!editor()) return '';
-    const size = c.needs_size ? `<div class="sl-size" title="Sephora sells two sizes; which one matches the Amazon listing?">
+    // Size buttons only when the Sephora item isn't known; optional: without a pick the lead keeps the full-size price
+    // (Nick, Nov 24 2026: "why do i have to choose a size first?")
+    const size = c.needs_size && !c.store_size ? `<div class="sl-size" title="Optional. Sephora sells more than one size and the Amazon size isn't confirmed; it's priced at the full size. Pick Mini if the listing is the smaller size.">
         <button class="btn small ${sz === 'lo' ? 'on' : ''}" data-size="lo" data-id="${esc(c.id)}">Mini</button>
         <button class="btn small ${sz === 'hi' ? 'on' : ''}" data-size="hi" data-id="${esc(c.id)}">Full</button></div>` : '';
     const rej = S.rejecting === c.id
@@ -226,7 +230,7 @@
           <button type="button" class="btn small ghost" data-act="reject-cancel">Cancel</button></div>`
       : `<button class="btn small" data-act="reject" data-id="${esc(c.id)}">Reject</button>`;
     return `<div class="sl-acts" style="min-width:130px">${size}
-      <button class="btn primary small" data-act="approve" data-id="${esc(c.id)}" ${c.needs_size && !sz ? 'disabled title="Pick the size first"' : ''}>Approve → lead</button>
+      <button class="btn primary small" data-act="approve" data-id="${esc(c.id)}">Approve → lead</button>
       ${rej}
       <button class="btn small ghost danger" data-act="wrong" data-id="${esc(c.id)}" title="This Sephora product isn't the Amazon listing; it won't be suggested again">Wrong match</button></div>`;
   }
@@ -424,7 +428,7 @@
     }
     const a = b.dataset.act;
     if (a === 'approve') {
-      const c = find(id); const size = c && c.needs_size ? (c.size_confirmed || S.size[id]) : undefined;
+      const c = find(id); const size = c && c.needs_size && !c.store_size ? (c.size_confirmed || S.size[id]) : undefined;
       return act(id, () => api('POST', `/api/sephora/candidates/${encodeURIComponent(id)}/approve`, size ? { size } : {}),
         (r) => `Lead added for ${r.asin} at ${money(r.cost)}${r.promo_code ? ` (code ${r.promo_code})` : ''}${r.cost_note ? ' — ' + r.cost_note : ''}`);
     }
