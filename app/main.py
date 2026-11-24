@@ -1552,6 +1552,12 @@ async def lead_db_decisions_page(request: Request):
     return await _page(request, "sephora_leads", "match-decisions.html")
 
 
+@app.get("/api/engine/sephora/match-decisions")
+async def engine_sephora_match_decisions(request: Request, scope: str = "profitable", offset: int = 0, limit: int = 40):
+    auth.require_engine_key(request)
+    return await sephora.match_decisions(scope, offset, limit)
+
+
 @app.get("/api/sephora/match-decisions")
 async def api_sephora_match_decisions(request: Request, scope: str = "profitable", offset: int = 0, limit: int = 40):
     """The match check's undecided cases with photos and evidence (Match decisions page; Nick, Nov 24, 2026)."""
