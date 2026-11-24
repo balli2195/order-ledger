@@ -180,7 +180,7 @@ def fill_keepa(work):
         for p in d.get("products") or []:
             imgs = [{"l": x} for x in (p.get("imagesCSV") or "").split(",") if x]
             if not imgs and p.get("images"):
-                imgs = [{"l": x.get("l")} for x in p["images"] if x.get("l")]
+                imgs = [{"l": x.get("l") or x.get("m"), "variant": x.get("variant")} for x in p["images"] if x.get("l") or x.get("m")]
             extra[p["asin"]] = {"title": p.get("title"), "brand": p.get("brand"), "color": p.get("color"), "size": p.get("size"),
                                 "scent": p.get("scent"), "style": p.get("style"), "model": p.get("model"), "partNumber": p.get("partNumber"),
                                 "upcList": p.get("upcList"), "eanList": p.get("eanList"), "parentAsin": p.get("parentAsin"),
@@ -216,7 +216,10 @@ def screen(work):
                       "amazon": {"title": pg.get("title") or m.get("title"), "selected_variation": pg.get("selected"), "details": pg.get("details"),
                                  "bullets": (pg.get("bullets") or m.get("features") or [])[:4], "keepa_color": m.get("color"), "keepa_size": m.get("size"),
                                  "keepa_scent": m.get("scent"), "model": m.get("model"),
-                                 "main_image": next((i.get("l") for i in (m.get("images") or []) if i.get("l")), None) or pg.get("image")},
+                                 # MAIN photo first, large or medium size (Nov 24, 2026: B0CFM41RR9's serum photos had
+                                 # no large size, so only a third photo of another product was used)
+                                 "main_image": next((i.get("l") or i.get("m") for i in _photos(m) if i.get("variant") == "MAIN"), None)
+                                               or next((i.get("l") or i.get("m") for i in _photos(m)), None) or pg.get("image")},
                       "sephora": {"name": r.get("sephora_name") or sp.get("name"), "brand": r.get("brand"),
                                   "saved_item": ss if isinstance(ss, str) else None,
                                   "items": [" · ".join(x for x in (s.get("value"), s.get("desc"), s.get("size")) if x)[:90] + (f" ${s['price']}" if s.get("price") else "")
@@ -291,6 +294,12 @@ def collect(work):
           "| passed (recorded)", len(up), "| sized", sized, "| to research", len(flagged))
 
 
+def _photos(m):
+    """Keepa photo records with a file, MAIN first (large 'l' or medium 'm')."""
+    ims = [i for i in (m.get("images") or []) if isinstance(i, dict) and (i.get("l") or i.get("m"))]
+    return sorted(ims, key=lambda i: i.get("variant") != "MAIN")
+
+
 def research(work):
     pairs = (jload(f"{work}/near_pairs.json") or []) + (jload(f"{work}/flagged.json") or [])
     notes = jload(f"{work}/notes.json") or {}
@@ -338,7 +347,7 @@ def research(work):
         cases.append({"asin": a, "amazon_url": f"https://www.amazon.com/dp/{a}", "amazon_page_read_in_chrome_today": amz.get(a),
                       "nick_bought_from_sephora": bought.get(a) or None,
                       "keepa": {k: m.get(k) for k in ("title", "brand", "color", "size", "scent", "style", "model", "partNumber", "upcList", "eanList", "parentAsin", "variations")},
-                      "image_ids": [i.get("l") for i in (m.get("images") or [])][:8] or [x for x in [(amz.get(a) or {}).get("image")] if x],
+                      "image_ids": [i.get("l") or i.get("m") for i in _photos(m)][:8] or [x for x in [(amz.get(a) or {}).get("image")] if x],
                       "pairs_to_decide": [{"product_id": pid, "sephora_name": next((r["sephora_name"] for r in rows if r["product_id"] == pid), None), "skus": sk_img(pid),
                                            "saved_item": next(({"sku_id": r.get("store_sku_id"), "label": r.get("store_size")} for r in rows if r["product_id"] == pid), None),
                                            "quick_screen_note": notes.get(f"{a}|{pid}")} for pid in pids],
