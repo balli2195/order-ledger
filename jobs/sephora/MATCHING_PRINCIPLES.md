@@ -53,7 +53,9 @@ Draft for Nick, Nov 20, 2026. Everything that matches listings follows these pri
 
 When a weaker source contradicts a stronger one, the stronger one wins.
 
-**Barcodes are a later step (Nick, Nov 20).** Amazon UPCs / EANs are often seller-assigned or regional, so they can differ even when the product is the same. Check a barcode against the brand's own list (brand sites publish one per shade and size: Westman, Makeup by Mario, Haus Labs, Natasha Denona, Merit, ONE/SIZE, Josie Maran, LYS, REFY; Chanel and Dior barcodes map to their product references) only when the title and photos don't settle the shade or size, for example when no shade is named or printed. When the title and photos agree on the product, ignore a barcode that disagrees.
+**Barcodes are a later step (Nick, Nov 20).** Amazon UPCs / EANs are often seller-assigned or regional, so they can differ even when the product is the same. Check a barcode against the brand's own list (brand sites publish one per shade and size: Westman, Makeup by Mario, Haus Labs, Natasha Denona, Merit, ONE/SIZE, Josie Maran, LYS, REFY; Chanel and Dior barcodes map to their product references) only when the title and photos don't settle the shade or size, for example when no shade is named or printed. When the title and photos agree on the product, ignore a barcode that disagrees. Nick, Nov 24, 2026: always go by the title, photos, bullets, selected variation or product description; the UPC is
+only a clue. A shade named in any of them is not put in doubt by a barcode for another shade (B0F2RL8RXM, REFY concealer
+shade 5 with shade 21N's barcode, is shade 5), and on its own a barcode never makes a match high confidence.
 
 ## 3. When the evidence conflicts, verify instead of guessing
 

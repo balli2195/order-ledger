@@ -14,7 +14,12 @@ Cases: __CASES__. Each case has:
 
 Methods, in this order, stopping when one settles it:
 1. Title, selected variation, Product details and photos against the Sephora product name and items. Check line, format (set vs single, rollerball vs spray, refill), concentration and size, then the shade.
-2. Barcode: the listing's UPC/EAN against the brand's own catalog. Many brand sites are Shopify: https://<brand-site>/products/<handle>.json or .js lists each variant's barcode, title (shade/size) and SKU; find the handle with WebSearch or the site's /search?q=. Chanel and Dior barcodes map to their product references on chanel.com / dior.com. A barcode match settles shade and size (high confidence).
+Nick's rule (Nov 24, 2026): the listing's own content decides: its title, photos, bullets, selected variation and product
+description. A UPC/EAN is only a clue. When any of those names the shade and size, that is the answer, at high confidence,
+even if the barcode belongs to another shade (sellers often reuse or mistype barcodes: REFY concealer shade 5 carried shade
+21N's barcode). Never lower the confidence or ask Nick about a barcode that disagrees with the listing's content; say it in
+the evidence and move on. Ask Nick only when the listing's own content disagrees with itself (title vs photo, title vs selector).
+2. Barcode, only when the listing's content names no shade or size: the listing's UPC/EAN against the brand's own catalog. Many brand sites are Shopify: https://<brand-site>/products/<handle>.json or .js lists each variant's barcode, title (shade/size) and SKU; find the handle with WebSearch or the site's /search?q=. Chanel and Dior barcodes map to their product references on chanel.com / dior.com. A barcode match alone is a clue (medium): say which item it points to in the OPEN question.
 3. Amazon's selected variation on the page, and the variation family: if every sibling is clearly another shade or size, the one left is this listing's.
 4. Printed packaging in the photos, and Sephora's item images (`image_files`): compare the Amazon photos with each item's swatch and product shot. A shade name printed on Sephora's product shot, or the item's own name, settles it like a label (high). A match by colour alone is medium at most (Nick's rule: LYS Worthy, MERIT Light Brown); say which item it looks like in the OPEN question.
 5. Brand and other retailer pages (Ulta, Kohl's, the brand site) via WebSearch / WebFetch.
