@@ -321,9 +321,10 @@ async def unpark_pairs(items: list) -> dict:
                 "INSERT INTO sephora_catalog SELECT (jsonb_populate_record(NULL::sephora_catalog, "
                 "p.pair || jsonb_build_object('sellable', k.sellable, 'updated_at', now()))).* "
                 "FROM sephora_parked_pairs p JOIN unnest(%s::text[], %s::text[]) k(asin, sellable) ON p.asin = k.asin "
+                "WHERE p.reason NOT LIKE 'Nick:%%' "   # Nick's own "can't sell" stays parked whatever Amazon says
                 "ON CONFLICT (asin, product_id) DO NOTHING", (list(back), list(back.values())))
             pairs = cur.rowcount
-            await conn.execute("DELETE FROM sephora_parked_pairs WHERE asin = ANY(%s)", (list(back),))
+            await conn.execute("DELETE FROM sephora_parked_pairs WHERE asin = ANY(%s) AND reason NOT LIKE 'Nick:%%'", (list(back),))
             await _audit(conn, ENGINE, "unpark_pairs", "sephora", None, None, None, {"asins": len(back), "pairs": pairs})
             await _notify(conn)
     return {"ok": True, "restored": pairs, "checked": len(seen)}
@@ -1471,7 +1472,23 @@ async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match:
     out = {"ok": True, "status": "rejected", "reason": reason}
     if wrong_match:
         out.update(await mark_catalog(actor, c["asin"], c["product_id"], {"match_ok": False, **w, "_source": "candidate"}))
+    elif GATED_RE.search(reason or ""):
+        # "Can't sell / gated" (Nick, Nov 24, 2026): the listing leaves the Lead DB like any restricted one; the monthly
+        # restriction check puts it back if Amazon opens it up for him
+        async with db.pool.connection() as conn:
+            await conn.execute("UPDATE sephora_catalog SET sellable='restricted', updated_at=now() WHERE asin=%s", (c["asin"],))
+        out["parked"] = (await park_pairs([{"asin": c["asin"], "product_id": c["product_id"]}]
+                                          + await _pairs_of(c["asin"]), f"Nick: can't sell / gated ({actor.label})"))["parked"]
     return out
+
+
+GATED_RE = re.compile(r"\b(can'?t sell|cannot sell|gated|restricted)\b", re.I)
+
+
+async def _pairs_of(asin: str) -> list:
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT asin, product_id FROM sephora_catalog WHERE asin=%s", (asin,))
+        return [dict(r) for r in await cur.fetchall()]
 
 
 async def relist_wrong(actor: Actor, body: dict) -> dict:

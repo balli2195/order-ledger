@@ -27,6 +27,7 @@ Steps
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime as dt
 import json
 import os
@@ -43,6 +44,9 @@ COLLECTOR_HOURS = 36
 # To review filter (Nick, Nov 24, 2026): a listing under RANK_RULE_ROI needs a 30-day average sales rank under RANK30_MAX;
 # no rank in 30 days fails only when Keepa has no monthly sales estimate either. RANK_RULE_ROI and up passes on ROI alone
 RANK_RULE_ROI, RANK30_MAX = 0.50, 300_000   # a Keepa collector pull younger than this prices the row (Nick, Nov 23, 2026)
+HEALTH_COVERAGE, HEALTH_DONE_BY = 0.95, 7   # alert below 95% priced, or a morning run still going at 7 am Central
+from zoneinfo import ZoneInfo  # noqa: E402
+CT = ZoneInfo("America/Chicago")
 CAND_MIN, PREFILTER = 0.10, 0.15   # posting floor: predicted ROI 10% (Nick, Nov 19, 2026; was 21%)
 DECIDED_DAYS = 21
 
@@ -524,6 +528,41 @@ def main():
     C.log(f"held back by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI, 30-day avg rank {RANK30_MAX:,}+ or none): {len(held_rank)}")
     C.log(f"held back as out of stock at Sephora: {len(held_oos)}")
 
+    # Live restriction check (Nick, Nov 24, 2026): the monthly check can be weeks old and a listing can turn gated in between
+    # (6 of 20 rejections in two weeks were "Can't sell / gated"). Every listing about to be posted, and every open lead on
+    # To review, is asked again right before posting (Amazon Listing Restrictions, <= 4 a second, cached for the day).
+    # Restricted -> its pairs leave the Lead DB (the Hub parks them; the monthly check puts them back if they open up);
+    # approval required -> held, and its pairs' sellable is updated so the job stops watching them until approved.
+    held_gated, gated = [], {}
+    live_path = os.path.join(outdir, "live_restrictions.json")
+    live = json.load(open(live_path)) if os.path.exists(live_path) else {}
+    ask = list(dict.fromkeys([r["asin"] for _, r, _ in pool] + [o["asin"] for o in open_cands]))
+    todo_ = [x for x in ask if (live.get(x) or {}).get("status") in (None, "error")]
+    if todo_:
+        try:
+            import sp_restrictions as spr
+            C.log(f"live restriction check: {len(todo_)} listings")
+            for x in todo_:
+                live[x] = spr.check(x)
+            json.dump(live, open(live_path, "w"))
+        except Exception as e:  # noqa: BLE001  (a failed check never blocks the run; the monthly status stands)
+            problems.append(f"live restriction check failed (monthly status used): {e!r}"[:300])
+    for x in ask:
+        st_ = (live.get(x) or {}).get("status")
+        if st_ in ("restricted", "approval_required"):
+            gated[x] = st_
+    if gated:
+        keep = []
+        for roi_, r, e in pool:
+            if r["asin"] in gated:
+                held_gated.append((roi_, r, gated[r["asin"]]))
+            else:
+                keep.append((roi_, r, e))
+        pool = keep
+    counts["held_gated"] = len(held_gated)
+    counts["gated_today"] = dict(collections.Counter(gated.values()))
+    C.log(f"held as gated on Amazon today: {len(held_gated)} ({counts['gated_today']})")
+
     # ---- 5. Lead Score
     # Listings with demand and a Buy Box are scored first, then the "No competition / restock" ones (their ROI is often
     # inflated by a lone seller's price). No daily cap (Nick, Nov 23, 2026); --max-score N only for test runs.
@@ -696,6 +735,9 @@ def main():
         put(r, extra={**(r.get("extra") or {}), **(upd.get((r["asin"], r["product_id"]), {}).get("extra") or {}),
                       "listing_dead": day.isoformat()})
     counts["listings_dead"] = len({r["asin"] for r in dead_today})
+    for r in active:   # today's live restriction answers (a restricted pair is parked by the Hub when this upsert lands)
+        if r["asin"] in gated and r.get("sellable") != gated[r["asin"]]:
+            put(r, sellable=gated[r["asin"]])
     cat_rows = list(upd.values())
 
     # ---- 5b. re-price open candidates (Nick, Nov 17, 2026); the ones posted again today were replaced by today's row
@@ -703,7 +745,15 @@ def main():
     recheck, rechecked_expired = [], []
     for oc in open_cands:
         r = by_key.get((oc["asin"], oc["product_id"]))
-        if not r or oc["asin"] in posted_today or oc["asin"] not in amz:
+        if not r or oc["asin"] in posted_today:
+            continue
+        if oc["asin"] in gated:   # live restriction check today (an approval-required lead; a restricted one is parked)
+            why = (f"Gated on Amazon on {day:%b %-d}: "
+                   + ("restricted for your account" if gated[oc["asin"]] == "restricted" else "approval required in Seller Central"))
+            recheck.append({"id": oc["id"], "expire": True, "why": why})
+            rechecked_expired.append((r, why))
+            continue
+        if oc["asin"] not in amz:
             continue
         od = out_of_stock(r)
         if od:
@@ -855,6 +905,8 @@ def main():
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
              f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}; held by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI needs 30-day avg rank under {RANK30_MAX:,}): {len(held_rank)}; "
              f"held for the match check: {len(held_check)} unchecked (queued), {len(held_wrong)} the check says are wrong (for Nick)",
+             f"- Live Amazon restriction check: {len(gated)} gated today ({', '.join(f'{v_} {k_}' for k_, v_ in counts.get('gated_today', {}).items()) or 'none'}); "
+             f"{len(held_gated)} leads held" + (": " + "; ".join(f"{r['brand']} {r['asin']} ({g})" for _, r, g in held_gated[:8]) if held_gated else ""),
              f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
              f"- Posted with a match warning from the learned rules (Nick's wrong-match marks): {len(rule_skipped)}",
              f"- Open leads on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]
@@ -884,6 +936,36 @@ def main():
         lines += ["## Problems", ""] + [f"- {p}" for p in problems] + [""]
     else:
         lines += ["No problems.", ""]
+    # Health checks (Nick, Nov 24, 2026: failures must announce themselves; that morning's run priced 64% of the listings
+    # and nothing said so). Any ALERT line goes to Nick's phone from the daily task.
+    alerts = []
+    cov = len(refreshed) / len(order) if order else 1.0
+    if cov < HEALTH_COVERAGE:
+        alerts.append(f"Amazon prices fresh for only {len(refreshed):,} of {len(order):,} watched listings ({cov * 100:.0f}%, needs {HEALTH_COVERAGE * 100:.0f}%+)")
+    ls_fail = [p_ for p_ in problems if p_.startswith("Lead Score")]
+    if ls_fail:
+        alerts.append("Lead Score: " + "; ".join(p_[:120] for p_ in ls_fail[:2]))
+    hub_fail = [p_ for p_ in problems if ("Hub" in p_ or "failed" in p_) and not p_.startswith("Lead Score")]
+    if hub_fail:
+        alerts.append(f"{len(hub_fail)} step(s) failed: " + "; ".join(p_[:120] for p_ in hub_fail[:3]))
+    if fatal:
+        alerts.append(f"RUN FAILED: {fatal}")
+    now_ct = dt.datetime.now(CT)
+    start_ct = dt.datetime.fromtimestamp(t0, CT)
+    if start_ct.hour < HEALTH_DONE_BY and now_ct.hour >= HEALTH_DONE_BY and now_ct.date() == start_ct.date():
+        alerts.append(f"run finished at {now_ct:%-I:%M %p} Central, after {HEALTH_DONE_BY} am")
+    counts["alerts"] = len(alerts)
+    lines.insert(1, ("**ALERT:** " + " | ".join(alerts)) if alerts else "Health: OK (prices fresh for "
+                     f"{cov * 100:.0f}% of watched listings, Lead Score and Hub steps fine)")
+    lines.insert(2, "")
+    if not a.dry_run:
+        try:
+            C.hub("PUT", "/api/engine/docs/sephora_jobs/health",
+                  {"day": day.isoformat(), "at": now_ct.isoformat(timespec="seconds"), "ok": not alerts, "alerts": alerts,
+                   "coverage": round(cov, 4), "watched": len(order), "priced": len(refreshed), "posted": len(cands),
+                   "minutes": counts.get("minutes")})
+        except Exception as e:  # noqa: BLE001
+            C.log(f"health doc not saved: {e!r}")
     txt = "\n".join(lines)
     open(os.path.join(C.DATA, "daily_summary.md"), "w").write(txt)
     open(os.path.join(outdir, "daily_summary.md"), "w").write(txt)
