@@ -263,7 +263,8 @@ Nick: "the once a month sephora run should update this data". `brand_restriction
 - changed `sellable` values are written back to the catalog (the daily job watches only `open` rows);
 - the per-brand counts go to Hub doc `sephora_jobs/brand_restrictions`; a brand is `restricted` when ≥90% of at least 3 checked listings are restricted, and the jobs skip those brands;
 - `.data/brand_restrictions_summary.md` is the message: brand status changes, listings that opened up or became restricted.
-- Restricted listings are kept but not tracked (Nick, Nov 20, 2026): the Keepa collector skips ASINs whose every pair is restricted, the Lead DB catalog hides them unless "Restricted" or "Any" is picked (a search still finds them), and the daily run and verify step already skip them. This run is what brings an opened listing back.
+- Restricted listings leave the Lead DB (Nick, Nov 24, 2026: "if i can't sell them they shouldn't be added to the db"; replaces the Nov 20 keep-but-hide rule). They are parked whole, Nick's marks included, in table `sephora_parked_pairs` (`GET /api/engine/sephora/parked`). The catalog upsert skips parked pairs and new restricted ones, and parks a pair that turns restricted. This run also checks the parked ASINs and puts back the ones now open or needing approval (`POST /api/engine/sephora/unpark`). Nov 24: 1,955 pairs parked (78 Nick had marked same, 51 wrong); local backup in the session scratchpad `parked_restricted_2026-11-24.json`.
+- Approval required (one-click or invoices) stays in the Lead DB until each brand is sorted: one-click approval → request it and keep; invoices or Transparency → treat as restricted.
 Run: `python3 -I brand_restrictions.py` (about 30 minutes for ~6,700 ASINs). It writes nothing if more than 20% of checks fail. Scheduled task: "Monthly Sephora restriction check", the 1st of each month.
 
 ## 12. Weekly check of new pairs: `check_pairs/pairs.py` (Nick, Nov 20, 2026)
