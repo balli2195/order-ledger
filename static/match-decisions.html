@@ -40,6 +40,13 @@
   .ev { font-size: 13px; line-height: 1.5; margin: 10px 0 0; background: var(--panel-2); border-radius: 8px; padding: 8px 11px; }
   .ev .lab { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  .samebox { display: none; flex-direction: column; gap: 4px; margin-top: 10px; width: 100%; font-size: 13px; }
+  .samebox.open { display: flex; }
+  .samebox .q { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .samebox label { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 8px; cursor: pointer; }
+  .samebox label:has(input:checked) { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, transparent); }
+  .samebox label .pr { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .samebox .row { display: flex; gap: 8px; margin-top: 4px; }
   .wrongbox { display: none; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; width: 100%; }
   .wrongbox.open { display: flex; }
   .wrongbox .tag { border: 1px solid var(--line); background: var(--panel); border-radius: 99px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; }
@@ -106,6 +113,9 @@
     return out.length ? out.slice(0, 2) : ['other'];
   }
 
+  // the store_size the Lead DB saves for a pair: {sku_id, size label, price}
+  const item = (x) => ({ sku_id: String(x.sku_id), size: [x.value, x.size && x.size !== x.value ? x.size : ''].filter(Boolean).join(' ').trim(), price: x.price });
+
   function sephImg(r) {
     const sku = r.store_sku_id || r.research.sku_id;
     return sku ? `https://www.sephora.com/productimages/sku/s${encodeURIComponent(sku)}-main-zoom.jpg` : null;
@@ -141,6 +151,8 @@
         <button class="btn primary small" data-act="same">Same product ✓</button>
         <button class="btn small danger" data-act="wrong">Wrong match</button>
         <button class="btn small ghost" data-act="skip">Skip</button>
+        <div class="samebox">${(r.sephora_items || []).length > 1 ? `<span class="q">Which Sephora item is it?</span>${(r.sephora_items || []).map((x, k) => `<label><input type="radio" name="it${i}" value="${k}" ${String(x.sku_id) === saved || (!saved && k === 0 && (r.sephora_items || []).length === 1) ? 'checked' : ''}><span>${esc(x.value || x.size || x.sku_id)}${x.desc ? ' · ' + esc(x.desc) : ''}${x.size && x.value !== x.size ? ' · ' + esc(x.size) : ''}${x.oos ? ' (out of stock)' : ''}</span><span class="pr">${money(x.price)}</span></label>`).join('')}` : ''}
+          <div class="row"><button class="btn primary small" data-act="same-go">Confirm same product</button></div></div>
         <div class="wrongbox">${TAGS.map(([k, l]) => `<button type="button" class="tag ${tags.includes(k) ? 'on' : ''}" data-tag="${k}">${l}</button>`).join('')}
           <input placeholder="Note (optional)" maxlength="300" value="${esc(String(r.research.lesson || '').slice(0, 300))}">
           <button class="btn small danger" data-act="wrong-go">Mark wrong</button></div>
@@ -180,8 +192,20 @@
     const el = b.closest('.card'); const r = rows[+el.dataset.i];
     if (b.dataset.tag) { b.classList.toggle('on'); return; }
     const act = b.dataset.act;
-    if (act === 'same') mark(el, r, { match_ok: true }, `${r.asin} marked the same product`);
-    else if (act === 'wrong') el.querySelector('.wrongbox').classList.toggle('open');
+    if (act === 'same') {
+      // one Sephora item (or none listed): confirm straight away; several: ask which one (Nick, Nov 24 2026)
+      if ((r.sephora_items || []).length > 1) { el.querySelector('.samebox').classList.toggle('open'); el.querySelector('.wrongbox').classList.remove('open'); return; }
+      const x = (r.sephora_items || [])[0];
+      mark(el, r, x && String(x.sku_id) !== String(r.store_sku_id || '') ? { match_ok: true, store_size: item(x) } : { match_ok: true }, `${r.asin} marked the same product`);
+    } else if (act === 'same-go') {
+      const pick = el.querySelector('.samebox input:checked');
+      if (!pick) { LG.toast('Pick the Sephora item first', true); return; }
+      const x = r.sephora_items[+pick.value];
+      const body = { match_ok: true };
+      if (String(x.sku_id) !== String(r.store_sku_id || '')) body.store_size = item(x);
+      mark(el, r, body, `${r.asin} marked the same product: ${x.value || x.size}`);
+    }
+    else if (act === 'wrong') { el.querySelector('.wrongbox').classList.toggle('open'); el.querySelector('.samebox').classList.remove('open'); }
     else if (act === 'wrong-go') {
       const tags = [...el.querySelectorAll('.tag.on')].map((t) => t.dataset.tag);
       mark(el, r, { match_ok: false, tags: tags.length ? tags : ['other'], note: el.querySelector('.wrongbox input').value.trim() }, `${r.asin} marked a wrong match`);
