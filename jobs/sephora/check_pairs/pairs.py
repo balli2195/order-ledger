@@ -311,6 +311,25 @@ def research(work):
         a, pid = p.split("|")
         by[a].append(pid)
     meta, amz = _amazon(sorted(by), work)
+    # Sephora item images saved in Nick's old-MacBook Chrome (Nov 24, 2026): download the swatch / product shot of every
+    # item of the pairs to decide, so the research can compare shades without loading sephora.com
+    imgdir = f"{d}/sephora_images"
+    os.makedirs(imgdir, exist_ok=True)
+    want = sorted({str(x.get("sku_id")) for pids in by.values() for pid in pids for x in (skus.get(pid) or {}).get("skus", [])})
+    have = {}
+    for i in range(0, len(want), 200):
+        have.update(C.hub("GET", "/api/engine/sku-images", params={"skus": ",".join(want[i:i + 200])}) or {})
+    files = {}
+    for sku, kinds in have.items():
+        for kind in kinds:
+            fn = f"{imgdir}/{sku}_{kind}.jpg"
+            if not os.path.exists(fn):
+                r = subprocess.run(["curl", "-sf", "-m", "60", "-H", f"X-Engine-Key: {os.environ['ENGINE_KEY']}", "-o", fn,
+                                    f"{C.HUB}/api/engine/sku-image/{sku}/{kind}"], capture_output=True)
+                if r.returncode != 0:
+                    continue
+            files.setdefault(sku, {})[kind] = fn
+    sk_img = lambda pid: [{**x, **({"image_files": files[str(x["sku_id"])]} if str(x["sku_id"]) in files else {})} for x in sk(pid)]
     cases = []
     for a, pids in by.items():
         rows = C.hub("GET", "/api/engine/sephora/catalog", params={"asin": a})["rows"]
@@ -320,7 +339,7 @@ def research(work):
                       "nick_bought_from_sephora": bought.get(a) or None,
                       "keepa": {k: m.get(k) for k in ("title", "brand", "color", "size", "scent", "style", "model", "partNumber", "upcList", "eanList", "parentAsin", "variations")},
                       "image_ids": [i.get("l") for i in (m.get("images") or [])][:8] or [x for x in [(amz.get(a) or {}).get("image")] if x],
-                      "pairs_to_decide": [{"product_id": pid, "sephora_name": next((r["sephora_name"] for r in rows if r["product_id"] == pid), None), "skus": sk(pid),
+                      "pairs_to_decide": [{"product_id": pid, "sephora_name": next((r["sephora_name"] for r in rows if r["product_id"] == pid), None), "skus": sk_img(pid),
                                            "saved_item": next(({"sku_id": r.get("store_sku_id"), "label": r.get("store_size")} for r in rows if r["product_id"] == pid), None),
                                            "quick_screen_note": notes.get(f"{a}|{pid}")} for pid in pids],
                       "brand_sephora_products": [{"product_id": p["productId"], "name": p["name"], "price_lo": p.get("price_lo"), "price_hi": p.get("price_hi"),
@@ -331,7 +350,8 @@ def research(work):
         os.makedirs(f"{d}/work_{n}", exist_ok=True)
         _fill("research_prompt.md", f"{d}/prompt_{n}.txt", CASES=f"{d}/case_{n}.json", OUT=f"{d}/results_{n}.json", WORK=f"{d}/work_{n}")
         print(f"{d}/prompt_{n}.txt")
-    print(len(cases), "ASINs,", len(pairs), "pairs;", sum(1 for c in cases if c["amazon_page_read_in_chrome_today"]), "with an Amazon page")
+    print(len(cases), "ASINs,", len(pairs), "pairs;", sum(1 for c in cases if c["amazon_page_read_in_chrome_today"]), "with an Amazon page;",
+          len(files), "Sephora items with images")
 
 
 def finish(work, n):
