@@ -606,6 +606,104 @@ def detect_sale(ref_day: dt.date | None = None) -> tuple[bool, dict | None, list
     return True, {"text": text, "code": main["code"], "ends": main["ends"].isoformat()}, promos
 
 
+# ---------------------------------------------------------------- deal banners (Nick, Nov 24, 2026)
+# Sephora's codes are only part of it: Cyber Week runs brand deals ("30% off Kiehl's—Today Only"), category deals
+# ("Up to 30% off Select Fragrances") and multi-buys ("Buy 2 Minis, Get Both 50% Off"). Every banner on the deal pages
+# is saved each day (Hub doc sephora_jobs/promo_banners/<date>, .data/promo_banners.md) for a Claude review, and the
+# ones the job can price are parsed here.
+PROMO_PAGES = ["home", "beauty/beauty-offers", "beauty/savings-event", "beauty/cyber-week-deals"]
+DEAL_SLUG_RE = re.compile(r"^/beauty/([a-z0-9-]*(?:deal|sale|event|offer|cyber|black-friday|holiday|minis|bogo)[a-z0-9-]*)$")
+BANNER_RE = re.compile(r"\d{1,2}\s?%\s*off|\bcode\b|\bbuy\s+\d|\bget\s+(?:both|one|a|\d)|\bfree\b|gift with|\bbogo\b|"
+                       r"today only|today-only|\bends?\s+\d|through\s+\d{1,2}/\d{1,2}|\bdeal\b|\bsale\b|half off", re.I)
+BANNER_SKIP = re.compile(r"makeup sales are always on|^https?://|\.(?:png|jpe?g|svg|gif)\b", re.I)
+
+
+def promo_banners(max_extra: int = 6) -> list[dict]:
+    """[{page, text}] for every promo-looking string on Sephora's deal content pages (home, Beauty Offers, Savings
+    Event, Cyber Week, and up to max_extra other deal pages they link to), deduplicated, in page order."""
+    seen, out, pages, done = set(), [], list(PROMO_PAGES), set()
+    while pages:
+        path = pages.pop(0)
+        if path in done:
+            continue
+        done.add(path)
+        d = _content(path)
+        if not isinstance(d, dict) or not d.get("data"):
+            continue
+        if "after_sale" in json.dumps((d.get("data") or {}).get("layout") or {})[:20000]:
+            continue    # an ended sale's landing page ("Summer Beauty Minis Sale ... after sale copy")
+        for s_ in _visible_strings(d):
+            t = re.sub(r"\s+", " ", str(s_)).strip()
+            m = DEAL_SLUG_RE.match(t)
+            if m and len(done) + len(pages) < len(PROMO_PAGES) + max_extra and "beauty/" + m.group(1) not in done:
+                pages.append("beauty/" + m.group(1))
+                continue
+            if 8 <= len(t) <= 400 and BANNER_RE.search(t) and not BANNER_SKIP.search(t) and t.lower() not in seen:
+                seen.add(t.lower())
+                out.append({"page": path, "text": t})
+    return out
+
+
+def _visible_strings(o):
+    """Strings shown on the page: skips the 'seo' block, whose link list keeps old offers (Nov 24, 2026: 'Buy 2 Minis, Get
+    Both 50% Off' was only there, linking to July's ended minis sale)."""
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k not in ("seo", "schemas"):
+                yield from _visible_strings(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _visible_strings(v)
+    elif isinstance(o, str):
+        yield o
+
+
+def parse_deals(banners: list[dict], brands: list[str], ref_day: dt.date | None = None) -> list[dict]:
+    """Deals the job can act on, from the banner texts:
+      {kind: 'brand', brand, pct, today_only, text}   '30% off Kiehl's—Today Only', '30% off Select M·A·C Cosmetics'
+      {kind: 'category', what, pct, text}             'Up to 30% off Select Fragrances' (reported only)
+      {kind: 'multibuy', what: 'minis', pct, text}    'Buy 2 Minis, Get Both 50% Off'
+    brand is the Lead DB brand when one matches, else the banner's own name."""
+    norm = lambda x: re.sub(r"[^a-z0-9]", "", x.lower().replace("•", "").replace("·", ""))
+    nb = {norm(b): b for b in brands if b}
+    out, seen = [], set()
+    for b in banners:
+        t = re.sub(r"[\^∆Δ‡†]", "", b["text"])
+        m = re.search(r"buy\s+(\d)\s+minis?,?\s+get\s+(?:both|the second|one)?\s*(\d{1,2})%\s*off", t, re.I)
+        if m:
+            k = ("multibuy", "minis", m.group(2))
+            if k not in seen:
+                seen.add(k)
+                out.append({"kind": "multibuy", "what": "minis", "buy": int(m.group(1)), "pct": int(m.group(2)) / 100, "text": b["text"]})
+            continue
+        for m in re.finditer(r"(up to\s+)?(\d{1,2})%\s*off\s+(?:select\s+)?([A-Za-z0-9 &'.•·/-]{3,40}?)(?:\s*[—–-]+\s*(today only)|\s+through|\s*$|[.!|])",
+                             t, re.I):
+            upto, pct, name, today = m.group(1), int(m.group(2)), m.group(3).strip(), bool(m.group(4))
+            n = norm(name)
+            # the banner must name the whole Lead DB brand ("Select Beauty" is not Rare Beauty)
+            hit = next((orig for k_, orig in nb.items() if k_ and (k_ == n or (len(k_) >= 4 and k_ in n))), None)
+            if hit or today:
+                k = ("brand", hit or name, pct)
+                if k not in seen:
+                    seen.add(k)
+                    out.append({"kind": "brand", "brand": hit or name, "in_lead_db": bool(hit), "pct": pct / 100,
+                                "up_to": bool(upto), "today_only": today, "text": b["text"]})
+            elif re.search(r"makeup|skin|hair|fragrance|tools|korean|beauty|body|gift|sets?", name, re.I):
+                k = ("category", name.lower(), pct)
+                if k not in seen:
+                    seen.add(k)
+                    out.append({"kind": "category", "what": name, "pct": pct / 100, "up_to": bool(upto), "text": b["text"]})
+    return out
+
+
+MINI_RE = re.compile(r"\bmini\b|\bminis\b|travel size|deluxe sample", re.I)
+
+
+def is_mini(row: dict) -> bool:
+    """A pair whose Sephora item is a mini (its product or saved item says Mini)."""
+    return bool(MINI_RE.search(str(row.get("sephora_name") or "")) or MINI_RE.search(str(row.get("store_size") or "")))
+
+
 def promo_discounts(promos: list[dict], brands: list[str], event_pct: float, event_exclude=()) -> dict:
     """Flat discounts by catalog brand from the current promos: {'*': (frac, label)} for the site-wide event (Nick's
     configured event rate) and {brand: (frac, label)} where a banner says 'NN% off <brand>' / '<BRAND> NN% OFF'.

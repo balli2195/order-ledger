@@ -43,9 +43,9 @@ def keepa_meta(asins, max_tokens, kp):
             "variations", "parentAsin", "itemTypeKeyword", "scent", "style"]
     # the Keepa collector already holds a full pull of every Lead DB ASIN: read those first (no tokens)
     hub_n = 0
-    for i in range(0, len(todo), 300):
+    for i in range(0, len(todo), 50):
         try:
-            got = C.hub("GET", "/api/engine/keepa/meta", params={"asins": ",".join(todo[i:i + 300])}).get("products") or {}
+            got = C.hub("GET", "/api/engine/keepa/meta", params={"asins": ",".join(todo[i:i + 50])}).get("products") or {}
         except Exception as e:  # noqa: BLE001
             C.log(f"collector read failed ({e!r}); using Keepa"[:200])
             break

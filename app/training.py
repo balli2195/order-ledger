@@ -92,7 +92,7 @@ META_KEYS = ("asin", "title", "brand", "color", "size", "model", "partNumber", "
 async def keepa_meta(asins: list) -> dict:
     """Listing details from the collector's latest pull (no Keepa tokens): title, color, size, model / partNumber,
     bullets, description, photos and the variation selector, for up to 300 ASINs (Nov 19, 2026)."""
-    asins = [a.strip().upper() for a in asins if a and a.strip()][:300]
+    asins = [a.strip().upper() for a in asins if a and a.strip()][:100]   # 100 max: memory (Nov 24, 2026)
     if not asins:
         raise LedgerError("asins is required")
     out = {}
@@ -121,7 +121,8 @@ async def keepa_slim(asins: list, max_age_hours: float = 36) -> dict:
     """The collector's latest Keepa /product per ASIN (stats=90, Buy Box), without price history or offers, for up to
     300 ASINs pulled within max_age_hours. The daily Sephora job prices from these instead of spending its own tokens
     (Nick, Nov 23, 2026)."""
-    asins = list(dict.fromkeys(a.strip().upper() for a in asins if a and a.strip()))[:300]
+    # at most 100 per call: unpacking 300 full Keepa products at once ran the Hub out of memory (Nov 24, 2026)
+    asins = list(dict.fromkeys(a.strip().upper() for a in asins if a and a.strip()))[:100]
     if not asins:
         raise LedgerError("asins is required")
     out = {}
@@ -137,6 +138,7 @@ async def keepa_slim(asins: list, max_age_hours: float = 36) -> dict:
             d = {k: p.get(k) for k in SLIM_KEYS if k in p}
             d["pulled_at"] = r["pulled_at"].isoformat()
             out[r["asin"]] = d
+            del p
     return {"products": out, "missing": [a for a in asins if a not in out]}
 
 

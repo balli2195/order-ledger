@@ -120,9 +120,35 @@ def main():
     disc = C.promo_discounts(promos, brands, float(pcfg.get("savings_event_pct") or 0), pcfg.get("event_exclude_brands") or [])
     C.log(f"sale: {sale}  discounts: {disc}")
 
-    def promo_for(brand):
-        d = disc.get(brand) or disc.get("*")
-        return d if d and d[0] > 0 else None
+    # Every banner on Sephora's deal pages, for the Claude review in the daily task, and the deals the job can act on
+    # (Nick, Nov 24, 2026: "make sure we don't miss anything", e.g. "Buy 2 minis, get both 50% off").
+    try:
+        banners = C.promo_banners()
+    except Exception as e:  # noqa: BLE001
+        banners = []
+        problems.append(f"deal banners not read: {e!r}"[:200])
+    deals = C.parse_deals(banners, brands, day)
+    minis = next((d_ for d_ in deals if d_["kind"] == "multibuy" and d_["what"] == "minis"), None)
+    C.log(f"deal banners: {len(banners)}; deals: {[(d_['kind'], d_.get('brand') or d_.get('what'), d_['pct']) for d_ in deals]}")
+    with open(os.path.join(C.DATA, "promo_banners.md"), "w") as f_:
+        f_.write(f"# Sephora deal banners, {day.isoformat()}\n\nEvery promo-looking text on Sephora's deal pages today. "
+                 "Review them against the run summary's Deals section.\n\n")
+        for pg in dict.fromkeys(b_["page"] for b_ in banners):
+            f_.write(f"## {pg}\n" + "".join(f"- {b_['text']}\n" for b_ in banners if b_["page"] == pg) + "\n")
+    if not a.dry_run and banners:
+        try:
+            C.hub("PUT", f"/api/engine/docs/sephora_jobs/promo_banners/{day.isoformat()}", {"banners": banners, "deals": deals})
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"banner doc not saved: {e!r}"[:200])
+
+    def promo_for(r):
+        """The broad promo for this pair: its brand's code discount (or the site-wide event), and for a mini, a live
+        'Buy 2 minis, get both N% off' (Nick always buys 2+ units). The lower price wins in pick_price."""
+        d = disc.get(r["brand"]) or disc.get("*")
+        best = d if d and d[0] > 0 else None
+        if minis and C.is_mini(r) and (best is None or minis["pct"] > best[0]):
+            best = (minis["pct"], f"Buy {minis['buy']} minis, get {minis['pct'] * 100:.0f}% off — confirm this mini qualifies")
+        return best
 
     # sale-page items -> catalog products / new products
     seph_today = {}        # pid -> {lo, hi, sale, on_sale, dropped, why}
@@ -254,7 +280,7 @@ def main():
     pri = []
     for r in watch:
         lo, hi, sale_p = seph(r)
-        e = C.economics(r, lo, hi, sale_p, amz_of(r), "buy", promo_for(r["brand"]))
+        e = C.economics(r, lo, hi, sale_p, amz_of(r), "buy", promo_for(r))
         if not e:
             continue
         top = max([x for x in (e["roi_now"], e["roi_avg90"]) if x is not None], default=None)
@@ -292,8 +318,8 @@ def main():
     need = [x for x in order if x not in kcache]
     try:
         import keepa_pull as kp
-        for i in range(0, len(need), 300):
-            got_ = C.hub("POST", "/api/engine/keepa/latest", {"asins": need[i:i + 300], "max_age_hours": COLLECTOR_HOURS},
+        for i in range(0, len(need), 50):   # small calls: 300 at once ran the Hub out of memory (Nov 24, 2026)
+            got_ = C.hub("POST", "/api/engine/keepa/latest", {"asins": need[i:i + 50], "max_age_hours": COLLECTOR_HOURS},
                          timeout=300).get("products") or {}
             for k, p_ in got_.items():
                 try:
@@ -348,7 +374,7 @@ def main():
     # ---- 4. prefilter + SP-API
     def evaluate(r):
         lo, hi, sale_p = seph(r)
-        e = C.economics(r, lo, hi, sale_p, amz[r["asin"]], "buy", promo_for(r["brand"]))
+        e = C.economics(r, lo, hi, sale_p, amz[r["asin"]], "buy", promo_for(r))
         m = meta[r["asin"]]
         d, thin = flags_of(amz[r["asin"]], m["monthly_sold"], m["sales_rank"], m["offers_fba"])
         return e, d, thin
@@ -526,7 +552,7 @@ def main():
         if st.get("why"):
             bits.append(st["why"])
         if e["promo_applied"]:
-            bits.append(promo_for(r["brand"])[1])
+            bits.append(promo_for(r)[1])
         if m.get("amazon_on"):
             bits.append("Amazon sells it")
         asz = (r.get("extra") or {}).get("amazon_size")
@@ -554,7 +580,7 @@ def main():
                 bits.insert(0, f"Check the match: {br[0]}")
                 rule_skipped.append((r["asin"], r.get("sephora_name"), br[0]))
         if e["promo_applied"]:   # cost from a site-wide / brand event code, not the item's own sale price
-            bits.insert(0, "Event code — confirm brand qualifies at checkout")
+            bits.insert(0, "Promo price — confirm it applies at checkout")
         row = {"asin": r["asin"], "product_id": r["product_id"], "found_on": day.isoformat(),
                "reason": "sale" if hot else "price_watch", "cost": round(e["entered"], 2), "price_basis": e["label"][:200],
                "buybox": amz[r["asin"]]["buybox"] or amz[r["asin"]]["fba_low"], "roi_now": roi_,
@@ -699,8 +725,48 @@ def main():
             problems.append(f"run record failed: {e!r}"[:300])
 
     # ---- 7. summary
+    # markdowns by brand (from the Sale page) and the banner deals, with what the Lead DB can do with them (Nov 24, 2026)
+    brand_rows = {}
+    for r_ in cat:
+        brand_rows.setdefault(r_.get("brand"), []).append(r_)
+    def brand_state(b_):
+        rs_ = brand_rows.get(b_) or []
+        if not rs_:
+            return "not in your Lead DB"
+        if all(x.get("sellable") == "restricted" for x in rs_):
+            return "restricted for you"
+        return ""
+    mk = {}
+    for pid_, t_ in seph_today.items():
+        if not t_.get("on_sale") or pid_ not in by_pid:
+            continue
+        b_ = by_pid[pid_][0].get("brand")
+        lo_ = C.fnum(t_.get("plo")) or C.fnum(t_.get("lo"))
+        mk.setdefault(b_, []).append((C.fnum(t_.get("slo")) or 0) / lo_ if lo_ else None)
+    md_parts = []
+    for b_, v_ in sorted(mk.items(), key=lambda kv: -len(kv[1])):
+        rat = sorted(x for x in v_ if x)
+        pct_ = f"{round((1 - rat[len(rat) // 2]) * 100)}% off" if rat else "?"
+        st_ = brand_state(b_)
+        md_parts.append(f"{b_} {len(v_)} on sale, ~{pct_}" + (f" ({st_})" if st_ else ""))
+    md_txt = "; ".join(md_parts[:25]) + (f"; +{len(md_parts) - 25} more brands" if len(md_parts) > 25 else "")
+    dl_parts = []
+    for d_ in deals:
+        p_ = f"{'up to ' if d_.get('up_to') else ''}{d_['pct'] * 100:.0f}% off"
+        if d_["kind"] == "brand":
+            b_ = d_["brand"]
+            st_ = brand_state(b_) if d_.get("in_lead_db") else "not in your Lead DB"
+            seen_ = f"{len(mk.get(b_, []))} on sale" if b_ in mk else "no markdowns seen — check"
+            dl_parts.append(f"{b_} {p_}{' today only' if d_.get('today_only') else ''} ({st_ or seen_})")
+        elif d_["kind"] == "multibuy":
+            dl_parts.append(f"buy {d_['buy']} {d_['what']}, {p_} (minis priced at the deal, flagged to confirm)")
+        else:
+            dl_parts.append(f"{d_['what']} {p_} (category deal; shows as markdowns)")
+    deal_txt = "; ".join(dl_parts)
     lines = [f"# Sephora daily watch, {day.isoformat()}{' (DRY RUN: nothing written to the Hub)' if a.dry_run else ''}", "",
-             f"- Sale: {sale['text'] + ' (code ' + str(sale['code']) + ', ends ' + str(sale['ends']) + ')' if sale else ('none found' if sale_checked else 'NOT CHECKED (promo pages unreachable)')}",
+             f"- Promo codes: {sale['text'] + ' (code ' + str(sale['code']) + ', ends ' + str(sale['ends']) + ')' if sale else ('none found' if sale_checked else 'NOT CHECKED (promo pages unreachable)')}",
+             "- Markdowns today by brand (Sephora sale prices, priced by the job): " + (md_txt or "none"),
+             "- Deals on Sephora's banners: " + (deal_txt or "none found"),
              f"- Promo discounts applied: " + (", ".join(f"{'all other brands' if k == '*' else k}: {v[0] * 100:.0f}%" for k, v in disc.items()) or "none"),
              f"- Sephora Sale page: {len(sp['products'])} items; {counts['sale_page_in_catalog']} in the catalog "
              f"({price_drops} newly on sale / cheaper), {len(sale_ended)} catalog sales ended, {len(new_products)} not in the "
