@@ -213,6 +213,15 @@ Sephora product pages only load in Nick's Chrome. The reader posts what it reads
 3. Read each page (`#linkStore` → `currentSku` + every `*ChildSkus` list), one page every ~7 s, never two at once, and `POST /api/store-skus/upload {products:{P123:{vt, skus:[[sku_id,size,value,desc,price,oos],…]}}}`.
 4. In the cloud, `GET /api/engine/store-skus` returns everything read; match each pair's Amazon size/shade to a SKU and write `store_size` (and marks) through `/api/engine/sephora/catalog/mark`.
 
+**Item names and photos (Nov 24, 2026).** Each SKU row carries a 7th element `{names, alt, sw, img}`: Sephora's other name
+fields (digit-only values and the item number are dropped; `displayName` is the item number, `skuImages.altText` is only
+"product name + size", so neither is used as a shade name). For products sold in colours or shades, the reader also fetches
+each item's swatch (and the product shot when there are at most 8 items) during the same page visit and posts them to
+`/api/store-skus/images` (table `store_sku_images`). `SOURCE='images'` re-reads the list on Hub doc
+`reader/sephora_images_todo` (colour products with unnamed items, and those in Nick's match decisions). In the cloud:
+`GET /api/engine/sku-images?skus=…` lists what is stored, `GET /api/engine/sku-image/{sku}/{sw|main}` returns one image.
+Some products have no shade names anywhere on Sephora (REFY duo P526371): the swatch photo is then the only evidence.
+
 Status Nov 17: all 1,536 active Sephora products read (11 pages empty or 404, likely discontinued). Profitable pairs and every pair within reach of profit (≥5% now or ≥10% on the 90-day Buy Box) were reviewed by hand; the rest only got their exact size/price set automatically.
 
 ## 9. Checker loop (Nov 19, 2026)
@@ -277,6 +286,12 @@ or `extra.screened`, not already on his To review list) gets the same check as t
    `pairs.py finish $W NNN` cross-checks it (SKUs and products must be in the case file; a pair Nick bought can't be marked
    wrong automatically) and applies it with verify_apply.py: only high confidence with a source; the rest go to
    `sephora_jobs/verify_for_nick`. Undo: Hub doc `sephora_jobs/check_pairs_undo/<date>_<NNN>` (every touched ASIN's pairs before).
+   Case files include every Amazon listing photo, main photo first, large or medium size (Nov 24: medium-only photos were
+   being dropped, so B0CFM41RR9's research saw only a secondary photo of another product), and the stored Sephora
+   swatch/product shot of each item (`image_files`). A printed shade name on the photo settles it (high confidence); a
+   colour match alone is medium at best.
+   Undecided cases appear on the Hub page `/lead-db/decisions` (Match decisions): research verdict, Amazon photos, Sephora
+   items with swatches; "Same product" asks which item when there are several and saves it as the pair's store size.
 5. `pairs.py summary $W` → Nick's message.
 Writes: Lead DB pairs (catalog upsert / mark), Hub docs `reader/amazon_todo`, `sephora_jobs/verify_for_nick`,
 `sephora_jobs/verify_labels`, `sephora_jobs/check_pairs_undo/*`. Nothing else.
