@@ -11,14 +11,19 @@ What it does, forever:
      - cold: every other active Lead DB ASIN -> pulled every COLD_HOURS
      Pairs Nick or Claude marked wrong are left out (Nov 19, 2026): they only matter for review, not for leads.
      Listings Nick is restricted from selling are left out too (Nov 20, 2026), unless they're one of his recent leads.
-  2. Pulls the most overdue ASINs from Keepa, 20 per request (history, stats, Buy Box, 20 offers with stock, rating).
+  2. Pulls the most overdue ASINs from Keepa, 20 per request (history, stats, Buy Box, 20 offers with stock, rating),
+     at a steady pace spread over the whole day (Nick, Nov 23, 2026): the day's need (hot ASINs every HOT_HOURS, cold
+     every COLD_HOURS, at the recent tokens per ASIN) divided by 1,440 minutes, plus HEADROOM. When nothing is overdue
+     it keeps that pace by pulling the ASINs closest to due (at least PULL_AHEAD of their interval old), so pull times
+     spread out instead of coming due together; a backlog of more than an hour catches up at up to KEEPA_MAX_PER_MIN.
   3. Writes keepa_raw (latest full pull, gzipped, replaced) and one keepa_snapshots row (today's offers/stock).
   4. Spends only spare tokens: it never takes the shared key below KEEPA_RESERVE and averages at most
      KEEPA_MAX_PER_MIN tokens a minute, so the daily Sephora job, Lead Score and the other jobs always have room.
   5. Writes a heartbeat to keepa_collector_status (shown on the System map).
 
 Env: DATABASE_URL (the Hub database, internal URL), KEEPA_KEY.
-Optional: KEEPA_RESERVE (3000), KEEPA_MAX_PER_MIN (90), HOT_HOURS (22), COLD_HOURS (72), BATCH (20), PAUSED (1 = idle).
+Optional: KEEPA_RESERVE (3000), KEEPA_MAX_PER_MIN (90), HOT_HOURS (22), COLD_HOURS (72), BATCH (20), PAUSED (1 = idle),
+HEADROOM (1.15), PULL_AHEAD (0.6).
 Run: python3 -m jobs.keepa_collector.collector   (Render start command)    Test: add --once to do one batch and exit.
 """
 from __future__ import annotations
@@ -44,6 +49,8 @@ MAX_PER_MIN = float(os.environ.get("KEEPA_MAX_PER_MIN", "90"))
 HOT_H = float(os.environ.get("HOT_HOURS", "22"))
 COLD_H = float(os.environ.get("COLD_HOURS", "72"))
 BATCH = int(os.environ.get("BATCH", "20"))
+HEADROOM = float(os.environ.get("HEADROOM", "1.15"))       # steady pace = the day's need x this
+PULL_AHEAD = float(os.environ.get("PULL_AHEAD", "0.6"))    # nothing overdue: pull ASINs at least this share of their interval old
 KEEPA_EPOCH = dt.datetime(2011, 1, 1, tzinfo=dt.timezone.utc)
 STOP = False
 
@@ -127,19 +134,33 @@ SELECT a.asin, bool_or(a.hot) AS hot, k.pulled_at
 
 
 def due_list(conn) -> tuple[list[str], dict]:
+    """ASINs to pull, in order: never pulled, then overdue (hot first, most overdue first), then the pull-ahead queue
+    (closest to due first). Also the day's need: pulls a day to keep every ASIN inside its interval."""
     now = dt.datetime.now(dt.timezone.utc)
     rows = conn.execute(ASIN_SQL).fetchall()
-    due, n_hot = [], 0
+    due, n_hot, n_over, per_day = [], 0, 0, 0.0
+    # one row per ASIN (a missing keepa_raw row gives pulled_at NULL)
+    best = {}
     for r in rows:
-        n_hot += bool(r["hot"])
-        age = (now - r["pulled_at"]).total_seconds() / 3600 if r["pulled_at"] else None
+        b = best.get(r["asin"])
+        best[r["asin"]] = {"hot": bool(r["hot"]) or bool(b and b["hot"]), "pulled_at": r["pulled_at"] or (b and b["pulled_at"])}
+    for a, r in best.items():
+        n_hot += r["hot"]
         limit = HOT_H if r["hot"] else COLD_H
-        if age is None or age >= limit:
-            # never pulled first, then hot, then the most overdue
-            due.append((0 if age is None else 1, 0 if r["hot"] else 1, -(age or 0) / limit, r["asin"]))
+        per_day += 24 / limit
+        age = (now - r["pulled_at"]).total_seconds() / 3600 if r["pulled_at"] else None
+        ratio = None if age is None else age / limit
+        if ratio is None:
+            due.append((0, 0, 0, a))
+        elif ratio >= 1:
+            n_over += 1
+            due.append((1, 0 if r["hot"] else 1, -ratio, a))
+        elif ratio >= PULL_AHEAD:
+            due.append((2, 0, -ratio, a))
     due.sort()
-    return [d[3] for d in due], {"asins": len(rows), "hot": n_hot, "due": len(due),
-                                 "never_pulled": sum(1 for d in due if d[0] == 0)}
+    return [d[3] for d in due], {"asins": len(best), "hot": n_hot, "due": n_over + sum(1 for d in due if d[0] == 0),
+                                 "never_pulled": sum(1 for d in due if d[0] == 0), "ahead_ok": sum(1 for d in due if d[0] == 2),
+                                 "need_per_day": round(per_day)}
 
 
 def ensure_partitions(conn, now: dt.datetime):
@@ -193,6 +214,8 @@ def main(once: bool = False):
     spent = []            # (time, tokens) over the last hour, for the average cap
     stats = {"pulled_today": 0, "tokens_today": 0, "day": started.date().isoformat(), "errors": 0, "last_error": None}
     due, info, listed_at = [], {}, 0.0
+    tpa = 8.0             # recent tokens per ASIN (moving average)
+    next_at = 0.0         # steady pace: the next batch may start at this time
     conn = None
     while not STOP:
         try:
@@ -209,6 +232,14 @@ def main(once: bool = False):
                 due, info = due_list(conn)
                 listed_at = time.time()
                 log("ASINs", info)
+            # steady pace: the day's need spread over 1,440 minutes; catch up faster only on a backlog > 1 hour
+            target = min(MAX_PER_MIN, info.get("need_per_day", 0) * tpa / 1440 * HEADROOM) or MAX_PER_MIN
+            overdue = info.get("due", 0)
+            rate = MAX_PER_MIN if overdue * tpa > target * 60 else target
+            stats.update(target_per_min=round(target, 1), rate_per_min=round(rate, 1), tokens_per_asin=round(tpa, 2))
+            if time.time() < next_at:
+                beat(conn, f"steady pace ({rate:.0f} tokens/min)", {**info, **stats}, started)
+                time.sleep(min(next_at - time.time(), 60)); continue
             if not due:
                 beat(conn, "idle (everything fresh)", {**info, **stats}, started)
                 if once:
@@ -235,6 +266,9 @@ def main(once: bool = False):
                       only_live_offers=0)
             used = int(r.get("tokensConsumed") or 0)
             spent.append((time.time(), used))
+            if batch and used:
+                tpa = 0.9 * tpa + 0.1 * (used / len(batch))
+            next_at = max(next_at, time.time() - 60) + used / max(rate, 1) * 60
             n = save(conn, r.get("products") or [], batch, used, pulled)
             stats["pulled_today"] += n; stats["tokens_today"] += used
             stats["last_batch"] = {"at": pulled.isoformat(), "asins": len(batch), "saved": n, "tokens": used, "left": r.get("tokensLeft")}
