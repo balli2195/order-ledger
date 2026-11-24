@@ -1,6 +1,7 @@
 """Weekly check of new Lead DB pairs (Nick, Nov 20, 2026): the shared steps.
 
-    python3 -I pairs.py prep    <work> [--max 300]   pick the pairs, put their ASINs on the Chrome reader's list
+    python3 -I pairs.py prep    <work> [--max 300] [--queue]   pick the pairs (--queue: the daily run's held pairs,
+                                                 Hub doc sephora_jobs/check_queue), put their ASINs on the reader's list
     python3 -I pairs.py wait    <work> [max_min]     wait until the reader has saved >= 95% of the Amazon pages
     python3 -I pairs.py screen  <work>               quick-screen case files + prompts (50 pairs each)
     python3 -I pairs.py collect <work>               read the screen answers; record passes (extra.screened)
@@ -95,12 +96,16 @@ def sephora_products(rows):
     return by
 
 
-def prep(work, mx):
+def prep(work, mx, queue=False):
     rows = catalog_all()
     nick = for_nick()
-    pick = [r for r in rows if r["active"] and r.get("sellable") == "open" and r.get("match_ok") is None
-            and not (r.get("extra") or {}).get("verified") and not (r.get("extra") or {}).get("screened")
-            and (r["asin"], r["product_id"]) not in nick]
+    if queue:   # the daily run's held pairs (Hub doc sephora_jobs/check_queue; Nick, Nov 24, 2026)
+        q = set((C.hub("GET", "/api/engine/docs/sephora_jobs/check_queue").get("data") or {}).get("items") or [])
+        pick = [r for r in rows if f"{r['asin']}|{r['product_id']}" in q and r.get("match_ok") is not False]
+    else:
+        pick = [r for r in rows if r["active"] and r.get("sellable") == "open" and r.get("match_ok") is None
+                and not (r.get("extra") or {}).get("verified") and not (r.get("extra") or {}).get("screened")
+                and (r["asin"], r["product_id"]) not in nick]
     roi = lambda r: max(x for x in (r.get("roi_now"), r.get("roi_avg90"), -9) if x is not None)
     pick.sort(key=roi, reverse=True)
     left = len(pick) - mx if len(pick) > mx else 0
@@ -386,7 +391,7 @@ if __name__ == "__main__":
     cmd, work = sys.argv[1], os.path.abspath(sys.argv[2])
     os.makedirs(work, exist_ok=True)
     if cmd == "prep":
-        prep(work, int(sys.argv[sys.argv.index("--max") + 1]) if "--max" in sys.argv else 300)
+        prep(work, int(sys.argv[sys.argv.index("--max") + 1]) if "--max" in sys.argv else 300, "--queue" in sys.argv)
     elif cmd == "wait":
         wait(work, float(sys.argv[3]) if len(sys.argv) > 3 else 240)
     elif cmd == "screen":

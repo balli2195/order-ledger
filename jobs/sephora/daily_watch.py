@@ -456,6 +456,25 @@ def main():
     except Exception as e:  # noqa: BLE001
         problems.append(f"stock watch read failed: {e!r}")
     pool, skipped_decided, size_check, held_oos, held_rank = [], [], [], [], []
+    held_check, held_wrong = [], []
+    # Match-check gate (Nick, Nov 24, 2026): nothing reaches To review until its pair has been checked. Checked = Nick
+    # marked it OK, or the check passed it (extra.screened / extra.verified), or its research verdict waiting for Nick
+    # says the same product. A research verdict of another product / not sold holds it (Nick decides those on the
+    # for-Nick list); an unchecked pair goes on the check queue (Hub doc sephora_jobs/check_queue) and is posted after
+    # the daily task has checked it.
+    fn_ = C.state_get("verify_for_nick", {}) or {}
+    research = {(x["asin"], x["product_id"]): x for x in ((fn_.get("items") if isinstance(fn_, dict) else fn_) or [])}
+
+    def check_state(r):
+        ex_ = r.get("extra") or {}
+        if r.get("match_ok") is True or ex_.get("verified") or ex_.get("screened"):
+            return "ok", None
+        v_ = research.get((r["asin"], r["product_id"]))
+        if v_:
+            if v_.get("verdict") in ("other", "not_sold"):
+                return "wrong", v_
+            return "ok", v_    # same / cant_tell: posted; the note carries the research's doubt
+        return "unchecked", None
 
     def rank_fails(roi, asin):
         """Nick's rule (Nov 24, 2026): under 50% ROI needs a 30-day average rank under 300k. Returns the reason, or None."""
@@ -483,9 +502,25 @@ def main():
         if rf:
             held_rank.append((roi_, r, rf))
             continue
+        cs, v_ = check_state(r)
+        if cs == "wrong":
+            held_wrong.append((roi_, r, v_))
+            continue
+        if cs == "unchecked":
+            held_check.append((roi_, r))
+            continue
         pool.append((roi_, r, e))
     counts["held_out_of_stock"] = len(held_oos)
     counts["held_rank"] = len(held_rank)
+    counts["held_unchecked"], counts["held_check_says_wrong"] = len(held_check), len(held_wrong)
+    C.log(f"held for the match check: {len(held_check)} unchecked, {len(held_wrong)} the check says are another product / not sold")
+    if not a.dry_run:
+        try:
+            C.hub("PUT", "/api/engine/docs/sephora_jobs/check_queue",
+                  {"items": [f"{r['asin']}|{r['product_id']}" for _, r in sorted(held_check, key=lambda x: -(x[0] or 0))],
+                   "at": day.isoformat(), "why": "profitable pairs held from To review until the match check runs"})
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"check queue not saved: {e!r}"[:200])
     C.log(f"held back by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI, 30-day avg rank {RANK30_MAX:,}+ or none): {len(held_rank)}")
     C.log(f"held back as out of stock at Sephora: {len(held_oos)}")
 
@@ -603,6 +638,12 @@ def main():
             if br:
                 bits.insert(0, f"Check the match: {br[0]}")
                 rule_skipped.append((r["asin"], r.get("sephora_name"), br[0]))
+        v_ = research.get((r["asin"], r["product_id"]))
+        if v_ and r.get("match_ok") is not True and not (r.get("extra") or {}).get("verified"):
+            if v_.get("verdict") == "cant_tell":
+                bits.insert(0, "Match check couldn't tell: " + str(v_.get("lesson") or v_.get("evidence") or "")[:140])
+            elif v_.get("confidence") != "high":
+                bits.insert(0, f"Match check: same product ({v_.get('confidence') or '?'} confidence)")
         if e["promo_applied"]:   # cost from a site-wide / brand event code, not the item's own sale price
             bits.insert(0, "Promo price — confirm it applies at checkout")
         row = {"asin": r["asin"], "product_id": r["product_id"], "found_on": day.isoformat(),
@@ -675,6 +716,14 @@ def main():
         if not e or e["roi_now"] is None:
             continue
         bb = amz[r["asin"]]["buybox"] or amz[r["asin"]]["fba_low"]
+        cs, v_ = check_state(r)
+        if cs != "ok":
+            why = (f"Match check says {'another product' if v_ and v_.get('verdict') == 'other' else 'not sold at Sephora'}: "
+                   f"{str((v_ or {}).get('lesson') or (v_ or {}).get('evidence') or '')[:200]} (decide it on the for-Nick list)"
+                   if cs == "wrong" else "Waiting on the match check; posted again once the pair has been checked")
+            recheck.append({"id": oc["id"], "expire": True, "why": why})
+            rechecked_expired.append((r, why))
+            continue
         rf = rank_fails(e["roi_now"], r["asin"])
         if rf and e["roi_now"] >= PREFILTER:
             why = f"Rank rule on {day:%b %-d}: ROI {e['roi_now'] * 100:.0f}% with {rf}"
@@ -804,7 +853,8 @@ def main():
              f"- Watched {len(watch)} ASINs; Amazon prices fresh for {len(refreshed)} ({from_collector} from the Keepa collector's pulls, "
              f"{len(refreshed) - from_collector} pulled by this job with {tokens} tokens; {kstop or 'all done'})",
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
-             f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}; held by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI needs 30-day avg rank under {RANK30_MAX:,}): {len(held_rank)}",
+             f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}; held by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI needs 30-day avg rank under {RANK30_MAX:,}): {len(held_rank)}; "
+             f"held for the match check: {len(held_check)} unchecked (queued), {len(held_wrong)} the check says are wrong (for Nick)",
              f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
              f"- Posted with a match warning from the learned rules (Nick's wrong-match marks): {len(rule_skipped)}",
              f"- Open leads on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]
