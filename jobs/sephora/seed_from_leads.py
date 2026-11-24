@@ -378,7 +378,8 @@ def main():
     out, dropped_relinks = [], []
     for (asin, pid), r in new_rows.items():
         k = keepa.get(asin) or {}
-        if (k.get("brand") or "").strip().lower() == "generic":   # Nick can't sell generic-brand listings (Nov 24, 2026)
+        if (k.get("brand") or "").strip().lower() == "generic" or (k.get("title") or "").strip().lower().startswith("generic "):
+            # Nick can't sell generic-brand listings (Nov 24, 2026); some only say so in the title
             dropped_relinks.append(f"{asin}: Amazon brand is Generic (not added)")
             continue
         if r["confidence"] == "medium":
