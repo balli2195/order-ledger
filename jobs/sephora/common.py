@@ -810,3 +810,12 @@ def load_json(name: str, default=None):
 
 def pct(v):
     return "?" if v is None else f"{v * 100:.0f}%"
+
+
+def distinct_sizes(v, tol=0.12):
+    """Sizes in oz with near-duplicates (the same size in oz and mL, within tol) merged, ascending."""
+    out = []
+    for x in sorted(v or []):
+        if x and x > 0 and not any(abs(x - y) / max(x, y) <= tol for y in out):
+            out.append(x)
+    return out

@@ -37,6 +37,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import shade  # noqa: E402
 
 CONF_OK = ("high", "medium")
 OOS_DAYS = 10   # an item list older than this doesn't hold a pair back as out of stock
@@ -44,6 +45,7 @@ COLLECTOR_HOURS = 36
 # To review filter (Nick, Nov 24, 2026): a listing under RANK_RULE_ROI needs a 30-day average sales rank under RANK30_MAX;
 # no rank in 30 days fails only when Keepa has no monthly sales estimate either. RANK_RULE_ROI and up passes on ROI alone
 RANK_RULE_ROI, RANK30_MAX = 0.50, 300_000   # a Keepa collector pull younger than this prices the row (Nick, Nov 23, 2026)
+SIZE_TOL, SIZE_TOL_ONE = 0.25, 0.35   # hard size check (Nick, Nov 24, 2026)
 HEALTH_COVERAGE, HEALTH_DONE_BY = 0.95, 7   # alert below 95% priced, or a morning run still going at 7 am Central
 from zoneinfo import ZoneInfo  # noqa: E402
 CT = ZoneInfo("America/Chicago")
@@ -93,12 +95,13 @@ def main():
         by_pid.setdefault(r["product_id"], []).append(r)
     known_pids = {r["product_id"] for r in cat}
     # Sephora item lists (store-skus, read in Nick's Chrome): {product_id: {sku_id: price}} for products sold in sizes
-    sizes, stock = {}, {}   # stock: {product_id: (read date, {sku_id: out_of_stock})}
+    sizes, stock, item_sizes = {}, {}, {}   # item_sizes: {product_id: {sku_id: item}} for the hard size check; stock: {product_id: (read date, {sku_id: out_of_stock})}
     try:
         for row in C.hub("GET", "/api/engine/store-skus", timeout=300)["rows"]:
             if row.get("store") != "Sephora":
                 continue
             stock[row["product_id"]] = (str(row.get("read_at") or "")[:10], {str(x["sku_id"]): bool(x.get("oos")) for x in row.get("skus") or []})
+            item_sizes[row["product_id"]] = {str(x["sku_id"]): x for x in row.get("skus") or []}
             if "size" in str(row.get("variation_type") or "").lower():
                 sizes[row["product_id"]] = {str(x["sku_id"]): C.fnum(x.get("price")) for x in row.get("skus") or []
                                             if C.fnum(x.get("price"))}
@@ -493,6 +496,41 @@ def main():
         if rk30 >= RANK30_MAX:
             return f"30-day average rank {rk30:,} (needs under {RANK30_MAX:,} below {RANK_RULE_ROI * 100:.0f}% ROI)"
         return None
+    def size_fails(r):
+        """Hard size check (Nick, Nov 24, 2026: size was 10 of the 15 wrong matches he rejected Nov 17-24). The size in the
+        Amazon title must be one Sephora sells: the pair's own item when its store size is known, else any single item of
+        the product. Nearest Sephora size within 25% (label rounding: MAC 0.1 vs 0.12 oz), 35% for a one-size product
+        (markets and versions differ: MAC Studio Fix 15 g vs 12 g, MUFE Artist Blush 4 g vs 5 g). Skipped when Nick
+        marked the pair OK, when either side is a set or has no size, and for sizes under 0.05 oz. Keepa's size field is
+        not used (too often another listing's). Tested on Nov 24 against Nick's decisions: 10 of his 14 size rejects
+        caught (the other 4 have no size in the title), none of his 33 OK pairs or 7 approvals held. Returns the reason."""
+        if r.get("match_ok") is True:
+            return None
+        a = C.distinct_sizes(shade.oz_amounts(r.get("amazon_title") or ""))
+        if len(a) != 1:
+            return None
+        it = item_sizes.get(r["product_id"]) or {}
+        amounts = {k: C.distinct_sizes(shade.oz_amounts(str(x.get("size") or "")) or shade.oz_amounts(str(x.get("value") or "")))
+                   for k, x in it.items()}
+        own = amounts.get(str(r.get("store_sku_id") or ""))
+        if own is not None:
+            if len(own) != 1:
+                return None
+            sz, which = own, "its item"
+        else:
+            sz, which = sorted({v[0] for v in amounts.values() if len(v) == 1}), "the product's items"
+            if not sz:
+                sz, which = C.distinct_sizes(shade.oz_amounts(r.get("store_size") or "")), "its store size"
+                if len(sz) != 1:
+                    return None
+        if a[0] < 0.05 or max(sz) < 0.05:
+            return None
+        every = C.distinct_sizes([v for vs in amounts.values() for v in vs]) if amounts else sz
+        tol = SIZE_TOL_ONE if len(every) <= 1 else SIZE_TOL
+        if any(abs(a[0] - y) / max(a[0], y) <= tol for y in sz):
+            return None
+        return f"Amazon title says {a[0]:.2f} oz; Sephora sells {', '.join(f'{y:.2f}' for y in sz)} oz ({which})"
+
     for roi_, r, e in passed:
         dd = decided.get(r["asin"])
         if dd and (dd[1] is None or e["entered"] >= dd[1] - 0.01):
@@ -505,6 +543,10 @@ def main():
         rf = rank_fails(roi_, r["asin"])
         if rf:
             held_rank.append((roi_, r, rf))
+            continue
+        sf = size_fails(r)
+        if sf:
+            size_check.append((roi_, r, {**e, "size_why": sf}))
             continue
         cs, v_ = check_state(r)
         if cs == "wrong":
@@ -774,6 +816,12 @@ def main():
             recheck.append({"id": oc["id"], "expire": True, "why": why})
             rechecked_expired.append((r, why))
             continue
+        sf = size_fails(r)
+        if sf:
+            why = f"Size check on {day:%b %-d}: {sf}; mark the pair OK in the Lead DB if the size is right"
+            recheck.append({"id": oc["id"], "expire": True, "why": why})
+            rechecked_expired.append((r, why))
+            continue
         rf = rank_fails(e["roi_now"], r["asin"])
         if rf and e["roi_now"] >= PREFILTER:
             why = f"Rank rule on {day:%b %-d}: ROI {e['roi_now'] * 100:.0f}% with {rf}"
@@ -920,11 +968,10 @@ def main():
                          f"{C.pct(c_['lead_score_pred_roi']) if c_['lead_score_pred_roi'] is not None else '-'} | {c_['reason']} |")
         lines.append("")
     if size_check:
-        lines += ["## Needs your size check (not posted until Nick confirms the size on the Sephora leads tab)", "",
-                  "| ASIN | Brand | Sephora product | Sephora prices | Priced at | Amazon size | Buy Box | ROI |", "|---|---|---|---|---|---|---|---|"]
-        for roi_, r, e in size_check:
-            lines.append(f"| {r['asin']} | {r['brand']} | {r['sephora_name']} | ${C.fnum(r.get('price_lo')) or 0:.0f}-${C.fnum(r.get('price_hi')) or 0:.0f} | "
-                         f"{e['label']} | {(r.get('extra') or {}).get('amazon_size') or '?'} | "
+        lines += ["## Held by the size check (posted once Nick marks the pair OK in the Lead DB)", "",
+                  "| ASIN | Brand | Sephora product | Why | Buy Box | ROI |", "|---|---|---|---|---|---|"]
+        for roi_, r, e in sorted(size_check, key=lambda x: -(x[0] or 0))[:40]:
+            lines.append(f"| {r['asin']} | {r['brand']} | {r['sephora_name']} | {e.get('size_why') or e.get('label')} | "
                          f"${(amz[r['asin']]['buybox'] or amz[r['asin']]['fba_low'] or 0):.2f} | {C.pct(roi_)} |")
         lines.append("")
     if rule_skipped:
