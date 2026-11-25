@@ -365,8 +365,8 @@ def main():
                 from_collector += 1
         C.save_json(f"state/keepa_{day.isoformat()}.json", kcache)
     except Exception as e:  # noqa: BLE001
-        problems.append(f"Keepa collector read failed (own Keepa pulls only): {e!r}"[:300])
-    C.log(f"Keepa collector: {from_collector} of {len(need)} ASINs priced from its pulls ({len(must_be_fresh)} needed one under {COLLECTOR_HOURS} h)")
+        problems.append(f"Keepa recorder read failed (own Keepa pulls only): {e!r}"[:300])
+    C.log(f"Keepa recorder: {from_collector} of {len(need)} ASINs priced from its pulls ({len(must_be_fresh)} needed one under {COLLECTOR_HOURS} h)")
     todo = [x for x in order if x not in kcache]
     tokens, kstop = 0, None
     if a.no_keepa:
@@ -385,7 +385,7 @@ def main():
         problems.append(kstop)
     refreshed = [x for x in order if x in kcache]
     from_collector = sum(1 for x in refreshed if kcache[x].get("_src") == "collector")
-    C.log(f"Keepa: {len(refreshed)} of {len(order)} watch ASINs fresh ({from_collector} from the collector, "
+    C.log(f"Keepa: {len(refreshed)} of {len(order)} watch ASINs fresh ({from_collector} from the Keepa recorder, "
           f"{len(refreshed) - from_collector} pulled by this job: {tokens} tokens; {kstop or 'all done'})")
 
     amz, meta = {}, {}
@@ -584,7 +584,7 @@ def main():
     counts["held_out_of_stock"] = len(held_oos)
     counts["held_rank"] = len(held_rank)
     counts["held_unchecked"], counts["held_check_says_wrong"] = len(held_check), len(held_wrong)
-    C.log(f"held for the match check: {len(held_check)} unchecked, {len(held_wrong)} the check says are another product / not sold")
+    C.log(f"not posted, match check: {len(held_check)} unchecked, {len(held_wrong)} the check says are another product / not sold")
     if not a.dry_run:
         try:
             C.hub("PUT", "/api/engine/docs/sephora_jobs/check_queue",
@@ -592,8 +592,8 @@ def main():
                    "at": day.isoformat(), "why": "profitable pairs held from To review until the match check runs"})
         except Exception as e:  # noqa: BLE001
             problems.append(f"check queue not saved: {e!r}"[:200])
-    C.log(f"held back by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI, 30-day avg rank {RANK30_MAX:,}+ or none): {len(held_rank)}")
-    C.log(f"held back as out of stock at Sephora: {len(held_oos)}")
+    C.log(f"not posted, rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI, 30-day avg rank {RANK30_MAX:,}+ or none): {len(held_rank)}")
+    C.log(f"not posted, out of stock at Sephora: {len(held_oos)}")
 
     # Live restriction check (Nick, Nov 24, 2026): the monthly check can be weeks old and a listing can turn gated in between
     # (6 of 20 rejections in two weeks were "Can't sell / gated"). Every listing about to be posted, and every open lead on
@@ -628,7 +628,7 @@ def main():
         pool = keep
     counts["held_gated"] = len(held_gated)
     counts["gated_today"] = dict(collections.Counter(gated.values()))
-    C.log(f"held as gated on Amazon today: {len(held_gated)} ({counts['gated_today']})")
+    C.log(f"not posted, gated on Amazon today (restricted ones held): {len(held_gated)} ({counts['gated_today']})")
 
     # ---- 5. Lead Score
     # Listings with demand and a Buy Box are scored first, then the "No competition / restock" ones (their ROI is often
@@ -973,19 +973,21 @@ def main():
              f"- Sephora Sale page: {len(sp['products'])} items; {counts['sale_page_in_catalog']} in the catalog "
              f"({price_drops} newly on sale / cheaper), {len(sale_ended)} catalog sales ended, {len(new_products)} not in the "
              f"catalog ({counts['new_products_in_config']} from configured brands) -> new_products.json",
-             f"- Watched {len(watch)} ASINs; Amazon prices fresh for {len(refreshed)} ({from_collector} from the Keepa collector's pulls, "
+             f"- Watched {len(watch)} listings; Amazon prices fresh for {len(refreshed)} ({from_collector} from the Keepa recorder's pulls, "
              f"{len(refreshed) - from_collector} pulled by this job with {tokens} tokens; {kstop or 'all done'})",
              f"- ROI >= 15% after live check: {len(passed)}; skipped (Nick decided in the last {DECIDED_DAYS} days): {len(skipped_decided)}; "
-             f"scored: {counts['scored']}; candidates posted: {len(cands)}; held for a size check: {len(size_check)}; held as out of stock at Sephora: {len(held_oos)}; held by the rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI needs 30-day avg rank under {RANK30_MAX:,}): {len(held_rank)}; "
-             f"held for the match check: {len(held_check)} unchecked (queued), {len(held_wrong)} the check says are wrong (for Nick)",
+             f"scored: {counts['scored']}; suggestions posted to To review: {len(cands)}",
+             f"- Not posted (they stay in the Lead DB, checked again tomorrow): size check {len(size_check)}; out of stock at Sephora {len(held_oos)}; "
+             f"rank rule (under {RANK_RULE_ROI * 100:.0f}% ROI needs 30-day avg rank under {RANK30_MAX:,}) {len(held_rank)}; "
+             f"match check not done yet {len(held_check)} (queued); match check says another product {len(held_wrong)} (for Nick)",
              f"- Live Amazon restriction check: {len(gated)} gated today ({', '.join(f'{v_} {k_}' for k_, v_ in counts.get('gated_today', {}).items()) or 'none'}); "
-             f"{len(held_gated)} leads held" + (": " + "; ".join(f"{r['brand']} {r['asin']} ({g})" for _, r, g in held_gated[:8]) if held_gated else ""),
-             f"- Catalog rows updated: {len(cat_rows)}; runtime {counts['minutes']} min",
+             f"{len(held_gated)} not posted, restricted ones held" + (": " + "; ".join(f"{r['brand']} {r['asin']} ({g})" for _, r, g in held_gated[:8]) if held_gated else ""),
+             f"- Pairs updated: {len(cat_rows)}; runtime {counts['minutes']} min",
              f"- Posted with a match warning from the learned rules (Nick's wrong-match marks): {len(rule_skipped)}",
-             f"- Open leads on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]
+             f"- Suggestions on To review re-priced: {len(recheck)}; expired as no longer profitable (< 15% ROI): {len(rechecked_expired)}"]
     lines += [f"  - {r['asin']} {r.get('sephora_name') or ''}: {why}" for r, why in rechecked_expired[:15]] + [""]
     if cand_view:
-        lines += ["## Candidates", "", "| ASIN | Brand | Sephora product | Cost | Buy Box | ROI | Band | Pred ROI | Reason |",
+        lines += ["## Suggestions posted", "", "| ASIN | Brand | Sephora product | Cost | Buy Box | ROI | Band | Pred ROI | Reason |",
                   "|---|---|---|---|---|---|---|---|---|"]
         for c_ in sorted(cand_view, key=lambda x: -((x["lead_score_pred_roi"] if x["lead_score_pred_roi"] is not None else x["roi_now"]) or 0)):
             lines.append(f"| {c_['asin']} | {c_['brand']} | {c_['sephora_name']}{' (' + c_['shade'] + ')' if c_.get('shade') else ''} | "
@@ -993,7 +995,7 @@ def main():
                          f"{C.pct(c_['lead_score_pred_roi']) if c_['lead_score_pred_roi'] is not None else '-'} | {c_['reason']} |")
         lines.append("")
     if size_check:
-        lines += ["## Held by the size check (posted once Nick marks the pair OK in the Lead DB)", "",
+        lines += ["## Not posted: size check (posted once Nick marks the pair OK in the Lead DB)", "",
                   "| ASIN | Brand | Sephora product | Why | Buy Box | ROI |", "|---|---|---|---|---|---|"]
         for roi_, r, e in sorted(size_check, key=lambda x: -(x[0] or 0))[:40]:
             lines.append(f"| {r['asin']} | {r['brand']} | {r['sephora_name']} | {e.get('size_why') or e.get('label')} | "

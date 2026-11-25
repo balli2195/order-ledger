@@ -1,4 +1,4 @@
-# Keepa collector (Nov 11, 2026)
+# Keepa recorder (Nick's name for it; Render service `keepa-collector`, Nov 11, 2026)
 
 Always-on Render background worker (`keepa-collector`, Starter, Oregon) that keeps Keepa data for every Lead DB ASIN, for Lead Score training. Code: `collector.py` (its docstring has the details).
 

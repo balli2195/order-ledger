@@ -248,7 +248,7 @@ async def upsert_catalog(rows: list) -> dict:
     out = {"upserted": len(clean), "inserted": len(clean) - existing, "updated": existing, "blocked": blocked,
            "restricted_skipped": len(skipped_restricted)}
     if to_park:
-        out["parked"] = (await park_pairs(to_park, "Amazon listing restricted for Nick"))["parked"]
+        out["held"] = out["parked"] = (await park_pairs(to_park, "Amazon listing restricted for Nick"))["parked"]
     return out
 
 
@@ -1282,7 +1282,7 @@ async def store_skus(product_ids: list[str] | None) -> dict:
 
 async def match_decisions(scope: str = "profitable", offset: int = 0, limit: int = 40) -> dict:
     """The match check's undecided cases for Nick (Hub doc sephora_jobs/verify_for_nick), with what he needs to decide
-    each: the research verdict and evidence, the Amazon photos and title (Keepa collector), the Sephora product, its
+    each: the research verdict and evidence, the Amazon photos and title (Keepa recorder), the Sephora product, its
     item list and a photo of the saved item, and the lead's numbers (Nick, Nov 24, 2026: "Match decisions" page).
     scope: profitable (an open suggestion, or ROI now / 90-day 15%+) | all. Decided pairs (match_ok set) drop out."""
     from . import docs as hubdocs, training
@@ -1476,11 +1476,11 @@ async def reject(actor: Actor, cid: str, reason: str | None = None, wrong_match:
     if wrong_match:
         out.update(await mark_catalog(actor, c["asin"], c["product_id"], {"match_ok": False, **w, "_source": "candidate"}))
     elif GATED_RE.search(reason or ""):
-        # "Can't sell / gated" (Nick, Nov 24, 2026): the listing leaves the Lead DB like any restricted one; the monthly
-        # restriction check puts it back if Amazon opens it up for him
+        # "Can't sell / gated" (Nick, Nov 24, 2026): the listing is held (leaves the Lead DB) like any restricted one; his
+        # own call is never put back automatically (unpark refuses "Nick:" reasons)
         async with db.pool.connection() as conn:
             await conn.execute("UPDATE sephora_catalog SET sellable='restricted', updated_at=now() WHERE asin=%s", (c["asin"],))
-        out["parked"] = (await park_pairs([{"asin": c["asin"], "product_id": c["product_id"]}]
+        out["held"] = out["parked"] = (await park_pairs([{"asin": c["asin"], "product_id": c["product_id"]}]
                                           + await _pairs_of(c["asin"]), f"Nick: can't sell / gated ({actor.label})"))["parked"]
     return out
 

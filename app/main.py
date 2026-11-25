@@ -240,7 +240,7 @@ async def api_sephora_mismatches(request: Request, kind: str = "wrong", limit: i
 
 @app.get("/lead-db/guide", include_in_schema=False)
 async def lead_db_guide_page(request: Request):
-    """How the Lead DB works: tables, jobs, the Keepa collector and the Lead Score training plan (Nov 11, 2026)."""
+    """How the Lead DB works: tables, jobs, the Keepa recorder and the Lead Score training plan (Nov 11, 2026)."""
     return await _page(request, "sephora_leads", "lead-db-guide.html")
 
 
@@ -1576,7 +1576,7 @@ async def api_sephora_mark(request: Request, body: dict = Body(...)):
 
 @app.get("/api/engine/keepa/meta")
 async def engine_keepa_meta(request: Request, asins: str = ""):
-    """Listing details (title, color, variations, photos...) from the Keepa collector's latest pulls: no tokens."""
+    """Listing details (title, color, variations, photos...) from the Keepa recorder's latest pulls: no tokens."""
     auth.require_engine_key(request)
     from . import training
     return await training.keepa_meta(asins.split(","))
@@ -1584,7 +1584,7 @@ async def engine_keepa_meta(request: Request, asins: str = ""):
 
 @app.post("/api/engine/keepa/latest")
 async def engine_keepa_latest(request: Request, body: dict = Body(...)):
-    """{asins: [...] (<= 100), max_age_hours?: 36} -> the Keepa collector's latest pull per ASIN (stats + Buy Box, no
+    """{asins: [...] (<= 100), max_age_hours?: 36} -> the Keepa recorder's latest pull per ASIN (stats + Buy Box, no
     history): no tokens. Used by the daily Sephora job (Nick, Nov 23, 2026)."""
     auth.require_engine_key(request)
     from . import training
@@ -1601,7 +1601,7 @@ async def engine_keepa_raw(request: Request, asin: str = "", max_age_hours: floa
 
 @app.get("/api/engine/training/summary")
 async def engine_training_summary(request: Request):
-    """Keepa store + Lead DB sizes and the Keepa collector's heartbeat."""
+    """Keepa store + Lead DB sizes and the Keepa recorder's heartbeat."""
     from . import training
     auth.require_engine_key(request)
     return await training.summary()
@@ -1769,21 +1769,24 @@ async def engine_sephora_delete_asins(request: Request, body: dict = Body(...)):
 
 @app.post("/api/engine/sephora/catalog/park")
 async def engine_sephora_park(request: Request, body: dict = Body(...)):
-    """{keys: [{asin, product_id}] | null (= every restricted pair), reason} -> the pairs leave the Lead DB for
-    sephora_parked_pairs (Nick, Nov 24, 2026: listings he can't sell). Returns the parked rows (keep a backup)."""
+    """Hold pairs: {keys: [{asin, product_id}] | null (= every restricted pair), reason} -> the pairs leave the Lead DB
+    and are kept whole in sephora_parked_pairs, "held pairs" (Nick, Nov 24, 2026: listings he can't sell). Returns the
+    held rows (keep a backup)."""
     auth.require_engine_key(request)
     return await sephora.park_pairs(body.get("keys"), body.get("reason"))
 
 
 @app.get("/api/engine/sephora/parked")
 async def engine_sephora_parked(request: Request, offset: int = 0, limit: int = 2000):
+    """Held pairs (sephora_parked_pairs), with the reason each was held."""
     auth.require_engine_key(request)
     return await sephora.parked_pairs(offset, limit)
 
 
 @app.post("/api/engine/sephora/unpark")
 async def engine_sephora_unpark(request: Request, body: dict = Body(...)):
-    """{items: [{asin, sellable}]} from the monthly restriction check: open / approval_required listings come back."""
+    """Put held pairs back: {items: [{asin, sellable}]} from the monthly restriction check (open / approval_required
+    listings come back) or the no-rank re-check (reason_prefix "No sales rank"). Nick's own can't-sell calls never do."""
     auth.require_engine_key(request)
     return await sephora.unpark_pairs(body.get("items"), body.get("reason_prefix") or "Amazon ")
 

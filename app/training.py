@@ -143,7 +143,7 @@ async def keepa_slim(asins: list, max_age_hours: float = 36) -> dict:
 
 
 async def keepa_raw_one(asin: str, max_age_hours: float = 24) -> dict:
-    """The Keepa collector's latest full pull of one ASIN (the same request Lead Score makes: history, Buy Box, 20 offers
+    """The Keepa recorder's latest full pull of one ASIN (the same request Lead Score makes: history, Buy Box, 20 offers
     with stock, rating), if it is at most max_age_hours old. One product at a time keeps the Hub's memory small.
     Lead Score uses it instead of its own Keepa pull (Nick, Nov 24, 2026: faster scoring, fewer tokens)."""
     asin = (asin or "").strip().upper()

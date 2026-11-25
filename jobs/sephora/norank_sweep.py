@@ -65,7 +65,7 @@ def main():
                 break
             off += 5000
     except Exception as e:  # noqa: BLE001
-        sys.exit(f"leads unreadable, nothing parked: {e!r}")
+        sys.exit(f"leads unreadable, nothing held: {e!r}")
     # 1. candidates: latest pull shows no rank and no monthly sold (collector, no tokens)
     cand = []
     for i in range(0, len(watched), 50):
@@ -117,12 +117,12 @@ def main():
                 C.hub("POST", "/api/engine/sephora/unpark", {"items": [{"asin": x, "sellable": "open"} for x in restored],
                                                              "reason_prefix": "No sales rank"})
     except Exception as e:  # noqa: BLE001
-        C.log(f"re-check of parked listings failed: {e!r}")
+        C.log(f"re-check of held listings failed: {e!r}")
     L = [f"# No-rank, no-sales filter, {now.date().isoformat()}{' (DRY RUN)' if a.dry_run else ''}", "",
          f"- Watched listings: {len(watched)}; no rank and no sales in their latest pull: {len(cand)}",
-         f"- Parked now (on Amazon {MIN_AGE_DAYS}+ days, no rank in {RANK_DAYS // 365} years, no sales): {len(park)} listings, {parked_now} pairs",
+         f"- Held now (on Amazon {MIN_AGE_DAYS}+ days, no rank in {RANK_DAYS // 365} years, no sales): {len(park)} listings, {parked_now} pairs",
          f"- Kept because Nick marked them OK or bought them: {len(keep_nick)}; kept (young, or a rank / sales in the window): {len(stay)}",
-         f"- Parked listings re-checked: {rechecked}; back in the Lead DB (rank or sales again): {len(restored)}", ""]
+         f"- Held listings re-checked: {rechecked}; back in the Lead DB (rank or sales again): {len(restored)}", ""]
     if park:
         L += ["| ASIN | Days on Amazon | Title |", "|---|---|---|"] + [f"| {x} | {v['age_days']} | {t} |" for x, v, t in park[:60]]
     open(os.path.join(C.DATA, "norank_summary.md"), "w").write("\n".join(L) + "\n")

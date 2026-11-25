@@ -65,7 +65,7 @@ def main():
     asins = list(dict.fromkeys([r["asin"] for r in rows] + [p["asin"] for p in parked]))
     if a.limit:
         asins = asins[:a.limit]
-    C.log(f"{len(rows)} active pairs + {len(parked)} parked, {len(asins)} ASINs to check")
+    C.log(f"{len(rows)} active pairs + {len(parked)} held, {len(asins)} ASINs to check")
     res = {}
     for i, asin in enumerate(asins):
         res[asin] = spr.check(asin)
@@ -92,12 +92,12 @@ def main():
         v = res.get(p["asin"])
         if v and v["status"] in ("open", "approval_required"):
             back[p["asin"]] = v["status"]
-            opened.append((p.get("brand"), p["asin"], "(parked pair)", "restricted", v["status"]))
+            opened.append((p.get("brand"), p["asin"], "(held pair, back in the Lead DB)", "restricted", v["status"]))
     if parked and not a.dry_run:
         items = [{"asin": x, "sellable": back[x]} if x in back else {"asin": x, "checked": True}
                  for x in dict.fromkeys(p["asin"] for p in parked) if res.get(x) and res[x]["status"] != "error"]
         for i in range(0, len(items), 5000):
-            C.log("parked pairs:", C.hub("POST", "/api/engine/sephora/unpark", {"items": items[i:i + 5000]}))
+            C.log("held pairs:", C.hub("POST", "/api/engine/sephora/unpark", {"items": items[i:i + 5000]}))
 
     # 3. per-brand summary (one count per ASIN and brand)
     seen, cnt = set(), collections.defaultdict(lambda: collections.Counter())
@@ -135,7 +135,7 @@ def main():
          f"- Brands: {dict(st)}",
          f"- Restricted brands (skipped by the Sephora jobs): {', '.join(b for b, x in brands.items() if x['status'] == 'restricted') or 'none'}"]
     L.append(f"- Brand status changes since last run: " + ("; ".join(f"{b}: {o or 'new'} → {n}" for b, o, n in changed) or "none"))
-    for title, items in (("Listings that opened up", opened), ("Listings that became restricted", closed)):
+    for title, items in (("Listings that opened up", opened), ("Listings that became restricted (now held)", closed)):
         L.append(f"- {title}: {len(items)}")
         for b, asin, t, o, n in items[:10]:
             L.append(f"  - {b}: {t} (https://www.amazon.com/dp/{asin}) {o} → {n}")

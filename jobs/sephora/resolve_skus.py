@@ -47,13 +47,13 @@ def keepa_meta(asins, max_tokens, kp):
         try:
             got = C.hub("GET", "/api/engine/keepa/meta", params={"asins": ",".join(todo[i:i + 50])}).get("products") or {}
         except Exception as e:  # noqa: BLE001
-            C.log(f"collector read failed ({e!r}); using Keepa"[:200])
+            C.log(f"Keepa recorder read failed ({e!r}); using Keepa"[:200])
             break
         for a_, rec in got.items():
             rec["_ts"] = now
             cache[a_] = rec
             hub_n += 1
-    C.log(f"listing details from the Keepa collector: {hub_n}")
+    C.log(f"listing details from the Keepa recorder: {hub_n}")
     todo = [a for a in todo if a not in cache or now - cache[a].get("_ts", 0) > META_DAYS * 86400]
     used = 0
     for i in range(0, len(todo), 100):
