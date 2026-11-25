@@ -142,6 +142,22 @@ async def keepa_slim(asins: list, max_age_hours: float = 36) -> dict:
     return {"products": out, "missing": [a for a in asins if a not in out]}
 
 
+async def keepa_raw_one(asin: str, max_age_hours: float = 24) -> dict:
+    """The Keepa collector's latest full pull of one ASIN (the same request Lead Score makes: history, Buy Box, 20 offers
+    with stock, rating), if it is at most max_age_hours old. One product at a time keeps the Hub's memory small.
+    Lead Score uses it instead of its own Keepa pull (Nick, Nov 24, 2026: faster scoring, fewer tokens)."""
+    asin = (asin or "").strip().upper()
+    if len(asin) != 10:
+        return {"found": False, "why": "bad asin"}
+    async with db.pool.connection() as conn:
+        cur = await conn.execute("SELECT pulled_at, raw_gz FROM keepa_raw WHERE asin = %s AND bytes > 0 "
+                                 "AND pulled_at >= now() - make_interval(secs => %s)", (asin, float(max_age_hours) * 3600))
+        r = await cur.fetchone()
+    if not r:
+        return {"found": False}
+    return {"found": True, "pulled_at": r["pulled_at"].isoformat(), "product": json.loads(gzip.decompress(bytes(r["raw_gz"])))}
+
+
 async def summary() -> dict:
     """Counts and sizes, for the export script and the System map."""
     async with db.pool.connection() as conn:

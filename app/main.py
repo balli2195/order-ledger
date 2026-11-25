@@ -1591,6 +1591,14 @@ async def engine_keepa_latest(request: Request, body: dict = Body(...)):
     return await training.keepa_slim(body.get("asins") or [], body.get("max_age_hours") or 36)
 
 
+@app.get("/api/engine/keepa/raw")
+async def engine_keepa_raw(request: Request, asin: str = "", max_age_hours: float = 24):
+    """One ASIN's latest full Keepa pull from the collector (<= max_age_hours old) for Lead Score: no tokens."""
+    auth.require_engine_key(request)
+    from . import training
+    return await training.keepa_raw_one(asin, max_age_hours)
+
+
 @app.get("/api/engine/training/summary")
 async def engine_training_summary(request: Request):
     """Keepa store + Lead DB sizes and the Keepa collector's heartbeat."""
