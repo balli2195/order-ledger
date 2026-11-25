@@ -252,6 +252,22 @@ async def api_lead_db_stats(request: Request):
     return await training.guide_stats()
 
 
+@app.get("/api/lead-db/table-sample")
+async def api_lead_db_table_sample(request: Request, node: str):
+    """The newest rows of the table(s) behind one box of the guide's data-flow diagram (Nick, Nov 25, 2026)."""
+    await auth.require(request, tab="sephora_leads")
+    from . import training
+    return await training.table_sample(node)
+
+
+@app.get("/api/engine/lead-db/table-sample")
+async def engine_lead_db_table_sample(request: Request, node: str):
+    """Same sample rows as /api/lead-db/table-sample, for checks from a Claude session (read only)."""
+    auth.require_engine_key(request)
+    from . import training
+    return await training.table_sample(node)
+
+
 @app.get("/sephora-leads", include_in_schema=False)
 async def sephora_leads_old(request: Request):
     return RedirectResponse("/lead-db", 301)

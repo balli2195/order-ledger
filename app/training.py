@@ -201,3 +201,110 @@ async def guide_stats() -> dict:
         st = await (await conn.execute("SELECT beat_at, state, detail FROM keepa_collector_status WHERE id = 1")).fetchone()
         db_bytes = (await (await conn.execute("SELECT pg_database_size(current_database()) b")).fetchone())["b"]
     return jsonable({**dict(r), "db_bytes": db_bytes, "collector": dict(st) if st else None})
+
+
+# Sample rows for the Lead DB guide's data-flow diagram (Nick, Nov 25, 2026: "when i click on a table i would like for the
+# table to be displayed under the diagram with a short description... it can be a sample table"). One entry per diagram
+# node: a few readable columns, newest rows first. Column kinds tell the page how to format: asin, money, pct, date, ts,
+# int, bool, text.
+_SAMPLE_N = 10
+_CAT_NAME = ("LEFT JOIN LATERAL (SELECT COALESCE((SELECT sephora_name FROM sephora_catalog c WHERE c.asin = t.asin "
+             "AND c.product_id = t.product_id LIMIT 1), (SELECT pair->>'sephora_name' FROM sephora_parked_pairs p "
+             "WHERE p.asin = t.asin AND p.product_id = t.product_id LIMIT 1)) AS sephora_name) c ON true")   # held pairs too
+TABLE_SAMPLES = {
+    "catalog": [("sephora_catalog", "Pairs, most recently updated first",
+        "SELECT asin, brand, sephora_name, left(amazon_title, 70), COALESCE(sale_price, price_lo), buybox, roi_now, confidence, "
+        "sellable, CASE WHEN match_ok THEN 'OK' WHEN match_ok IS FALSE THEN 'wrong' ELSE '' END, updated_at "
+        "FROM sephora_catalog WHERE active ORDER BY updated_at DESC LIMIT %s",
+        "SELECT count(*) FROM sephora_catalog WHERE active",
+        [("ASIN", "asin"), ("Brand", "text"), ("Sephora item", "text"), ("Amazon title", "text"), ("Sephora price", "money"),
+         ("Buy Box", "money"), ("ROI now", "pct"), ("Confidence", "text"), ("Can sell", "text"), ("Your mark", "text"),
+         ("Updated", "ts")])],
+    "history": [("catalog_history", "Latest changes to pairs",
+        "SELECT t.at, t.asin, c.sephora_name, t.price_lo, t.sale_price, t.on_sale, t.buybox, t.offers_fba, t.roi_now "
+        "FROM (SELECT * FROM catalog_history ORDER BY at DESC LIMIT %s) t " + _CAT_NAME + " ORDER BY t.at DESC",
+        "SELECT count(*) FROM catalog_history",
+        [("When", "ts"), ("ASIN", "asin"), ("Sephora item", "text"), ("List price", "money"), ("Sale price", "money"),
+         ("On sale", "bool"), ("Buy Box", "money"), ("FBA offers", "int"), ("ROI now", "pct")])],
+    "held": [("sephora_parked_pairs", "Held pairs, most recently held first",
+        "SELECT asin, pair->>'brand', pair->>'sephora_name', reason, parked_at, checked_at FROM sephora_parked_pairs "
+        "ORDER BY parked_at DESC, asin LIMIT %s",
+        "SELECT count(*) FROM sephora_parked_pairs",
+        [("ASIN", "asin"), ("Brand", "text"), ("Sephora item", "text"), ("Why held", "text"), ("Held on", "date"),
+         ("Last checked", "date")])],
+    "items": [("store_skus", "Sephora item lists, most recently read first",
+        "SELECT s.product_id, c.brand, c.sephora_name, s.variation_type, jsonb_array_length(s.skus), "
+        "(SELECT count(*) FROM jsonb_array_elements(s.skus) e WHERE NOT COALESCE((e->>5) IN ('true', '1'), false)), s.read_at "
+        "FROM (SELECT * FROM store_skus ORDER BY read_at DESC LIMIT %s) s LEFT JOIN LATERAL (SELECT brand, sephora_name "
+        "FROM sephora_catalog c WHERE c.product_id = s.product_id LIMIT 1) c ON true ORDER BY s.read_at DESC",
+        "SELECT count(*) FROM store_skus",
+        [("Sephora product", "text"), ("Brand", "text"), ("Name", "text"), ("Sold by", "text"), ("Items", "int"),
+         ("In stock", "int"), ("Read", "ts")]),
+              ("sephora_stock_watch", "Stock watch: listings you rejected as out of stock",
+        "SELECT t.asin, c.sephora_name, t.status, t.checks, t.last_in_stock, t.last_checked_at, t.added_at "
+        "FROM (SELECT * FROM sephora_stock_watch ORDER BY added_at DESC LIMIT %s) t " + _CAT_NAME + " ORDER BY t.added_at DESC",
+        "SELECT count(*) FROM sephora_stock_watch",
+        [("ASIN", "asin"), ("Sephora item", "text"), ("Status", "text"), ("Checks", "int"), ("In stock at last check", "bool"),
+         ("Last checked", "ts"), ("Added", "date")])],
+    "cands": [("sephora_candidates", "Suggestions, newest first",
+        "SELECT t.found_on, t.asin, c.sephora_name, t.cost, t.buybox, t.roi_now, t.lead_score_band, t.lead_score_pred_roi, "
+        "t.status, COALESCE(t.reject_reason, t.expired_reason), t.decided_by "
+        "FROM (SELECT * FROM sephora_candidates ORDER BY found_on DESC, updated_at DESC LIMIT %s) t " + _CAT_NAME +
+        " ORDER BY t.found_on DESC",
+        "SELECT count(*) FROM sephora_candidates",
+        [("Found", "date"), ("ASIN", "asin"), ("Sephora item", "text"), ("Cost", "money"), ("Buy Box", "money"),
+         ("ROI", "pct"), ("Band", "int"), ("Pred ROI", "pct"), ("Status", "text"), ("Why", "text"), ("Decided by", "text")])],
+    "feedback": [("match_feedback", "Wrong-match marks, newest first",
+        "SELECT created_at, asin, brand, sephora_name, array_to_string(tags, ', '), note, correct_asin, marked_by "
+        "FROM match_feedback ORDER BY created_at DESC LIMIT %s",
+        "SELECT count(*) FROM match_feedback",
+        [("Marked", "date"), ("ASIN", "asin"), ("Brand", "text"), ("Sephora item", "text"), ("Why", "text"), ("Note", "text"),
+         ("Correct ASIN", "asin"), ("By", "text")])],
+    "leads": [("leads", "Leads, newest first",
+        "SELECT lead_date, asin, left(product_name, 60), sourced_by, cost, buy_qty, qty_ordered, lead_score_band "
+        "FROM leads ORDER BY lead_date DESC NULLS LAST, created_at DESC LIMIT %s",
+        "SELECT count(*) FROM leads",
+        [("Date", "date"), ("ASIN", "asin"), ("Product", "text"), ("Sourced by", "text"), ("Cost", "money"),
+         ("Buy qty", "int"), ("Ordered", "int"), ("Band", "int")])],
+    "raw": [("keepa_raw", "Latest Keepa recorder pulls (the full product is stored compressed)",
+        "SELECT t.pulled_at, t.asin, c.sephora_name, t.tokens, round(t.bytes / 1024.0) "
+        "FROM (SELECT asin, pulled_at, tokens, bytes FROM keepa_raw ORDER BY pulled_at DESC LIMIT %s) t "
+        "LEFT JOIN LATERAL (SELECT sephora_name FROM sephora_catalog c WHERE c.asin = t.asin LIMIT 1) c ON true "
+        "ORDER BY t.pulled_at DESC",
+        "SELECT count(*) FROM keepa_raw",
+        [("Pulled", "ts"), ("ASIN", "asin"), ("Sephora item", "text"), ("Tokens", "int"), ("Size (KB)", "int")])],
+    "snaps": [("keepa_snapshots", "Latest offer/stock snapshots (each seller's stock is stored compressed)",
+        "SELECT pulled_at, asin, buybox, buybox_seller, buybox_fba, fba_low, amazon, offers_fba, monthly_sold, sales_rank "
+        "FROM keepa_snapshots ORDER BY pulled_at DESC LIMIT %s",
+        "SELECT count(*) FROM keepa_snapshots",
+        [("Pulled", "ts"), ("ASIN", "asin"), ("Buy Box", "money"), ("Buy Box seller", "text"), ("FBA", "bool"),
+         ("Lowest FBA", "money"), ("Amazon", "money"), ("FBA offers", "int"), ("Monthly sold", "int"), ("Rank", "int")])],
+    "runs": [("sephora_runs", "Latest job runs",
+        "SELECT at, kind, (counts->>'watched')::int, (counts->>'keepa_from_collector')::int, (counts->>'posted')::int, "
+        "(counts->>'held_rank')::int, (counts->>'held_out_of_stock')::int, (counts->>'needs_size_check')::int, "
+        "(counts->>'minutes')::numeric, sale->>'text' FROM sephora_runs ORDER BY at DESC LIMIT %s",
+        "SELECT count(*) FROM sephora_runs",
+        [("When", "ts"), ("Job", "text"), ("Watched", "int"), ("Priced by Keepa recorder", "int"), ("Posted", "int"),
+         ("Not posted: rank", "int"), ("Not posted: out of stock", "int"), ("Not posted: size", "int"), ("Minutes", "int"),
+         ("Sale", "text")])],
+}
+
+
+async def table_sample(node: str) -> dict:
+    """A few newest rows of the table(s) behind one diagram node, for the guide page."""
+    specs = TABLE_SAMPLES.get(node)
+    if not specs:
+        raise LedgerError("No table for that box")
+    out = []
+    from psycopg.rows import tuple_row   # positional rows: unnamed expressions would collide in a dict row
+    async with db.pool.connection() as conn:
+        for name, caption, sql, count_sql, cols in specs:
+            async with conn.cursor(row_factory=tuple_row) as cur:
+                await cur.execute(sql, (_SAMPLE_N,))
+                rows = await cur.fetchall()
+                await cur.execute(count_sql)
+                total = (await cur.fetchone())[0]
+            out.append({"table": name, "caption": caption, "total": total,
+                        "columns": [{"label": l, "kind": k} for l, k in cols],
+                        "rows": [jsonable(list(r)) for r in rows]})
+    return {"node": node, "tables": out}

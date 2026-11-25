@@ -65,6 +65,11 @@
   .g-terms { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin: 8px 0 0; }
   .g-terms div { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; }
   .g-terms dt { font-weight: 600; font-size: 13.5px; } .g-terms dd { margin: 2px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
+  .g-sample { margin-top: 12px; border-top: 1px solid var(--line-2); padding-top: 4px; }
+  .g-sample h5 { margin: 12px 0 0; font-size: 13.5px; font-weight: 600; }
+  .g-sample .cnt { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  .g-sample .g-tbl table { font-size: 12px; } .g-sample .g-tbl td, .g-sample .g-tbl th { padding: 5px 8px; white-space: nowrap; }
+  .g-sample .g-tbl td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
   .linkbtn { font: inherit; font-weight: 600; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-align: left; }
   .g-tbl td .muted { font-size: 12px; color: var(--muted); margin-top: 2px; }
   @media (max-width: 600px) { .g-kv div { grid-template-columns: 1fr; gap: 0; } }
@@ -142,7 +147,7 @@
 
   <section id="flow">
     <h3>Data flow</h3>
-    <p>Click any job, source, table or use to see what it does, what it reads and what it writes.</p>
+    <p>Click any job, source, table or use to see what it does, what it reads and what it writes. A table also shows a sample of its newest rows.</p>
     <div class="g-chips" id="jobChips" role="toolbar" aria-label="Jobs"></div>
     <figure class="g-fig">
       <svg id="flowSvg" viewBox="0 0 960 545" role="img" aria-labelledby="dfT"><title id="dfT">How data moves through the Lead DB</title></svg>
@@ -533,7 +538,39 @@
       + (d.when ? `<p class="when">${d.when}${d.tokens ? ` · Keepa tokens: ${d.tokens}` : ''}</p>` : '')
       + (d.what ? `<p class="what">${d.what}</p>` : '') + (d.body || '')
       + `<p class="io">${ins.length ? `<b>Gets data from:</b> ${ins.join(', ')}. ` : ''}${outs.length ? `<b>Sends data to:</b> ${outs.join(', ')}.` : ''}</p>`;
+    if (n.col === 'tbl') loadSample(id);
     if (scroll) document.getElementById('flow').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // Sample rows of the clicked table (Nick, Nov 25, 2026): the newest 10, read live from the Hub
+  const sampleCache = {};
+  const escH = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const fmt = (v, k) => {
+    if (v == null || v === '') return '<span class="muted">—</span>';
+    if (k === 'money') return '$' + Number(v).toFixed(2);
+    if (k === 'pct') return (Number(v) * 100).toFixed(0) + '%';
+    if (k === 'int') return Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 });
+    if (k === 'bool') return v ? 'yes' : 'no';
+    if (k === 'date' || k === 'ts') {
+      const d = new Date(String(v).length === 10 ? v + 'T12:00:00' : v);
+      return isNaN(d) ? escH(v) : d.toLocaleString('en-US', k === 'date' ? { month: 'short', day: 'numeric', year: 'numeric' }
+        : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+    if (k === 'asin' && /^[A-Z0-9]{10}$/.test(v)) return `<a href="https://www.amazon.com/dp/${v}" target="_blank" rel="noopener" class="mono">${v}</a>`;
+    const t = String(v); return t.length > 90 ? `<span title="${escH(t)}">${escH(t.slice(0, 88))}…</span>` : escH(t);
+  };
+  function drawSample(id, d) {
+    const box = document.getElementById('sampleBox'); if (!box || box.dataset.node !== id) return;
+    box.innerHTML = d.tables.map((t) => `<h5>${escH(t.caption)} <code>${escH(t.table)}</code></h5>`
+      + `<p class="cnt">Sample: the newest ${t.rows.length} of ${Number(t.total).toLocaleString('en-US')} rows.</p>`
+      + `<div class="g-tbl"><table><thead><tr>${t.columns.map((c) => `<th class="${['money', 'pct', 'int'].includes(c.kind) ? 'num' : ''}">${escH(c.label)}</th>`).join('')}</tr></thead>`
+      + `<tbody>${t.rows.length ? t.rows.map((r) => `<tr>${r.map((v, i) => `<td class="${['money', 'pct', 'int'].includes(t.columns[i].kind) ? 'num' : ''}">${fmt(v, t.columns[i].kind)}</td>`).join('')}</tr>`).join('')
+        : `<tr><td colspan="${t.columns.length}" class="muted">No rows yet.</td></tr>`}</tbody></table></div>`).join('');
+  }
+  async function loadSample(id) {
+    det.insertAdjacentHTML('beforeend', `<div class="g-sample" id="sampleBox" data-node="${id}"><p class="cnt">Loading sample rows…</p></div>`);
+    if (sampleCache[id]) return drawSample(id, sampleCache[id]);
+    try { sampleCache[id] = await LG.api('GET', '/api/lead-db/table-sample?node=' + encodeURIComponent(id)); drawSample(id, sampleCache[id]); }
+    catch (e) { const box = document.getElementById('sampleBox'); if (box && box.dataset.node === id) box.innerHTML = `<p class="cnt">Sample rows unavailable (${escH(e.message || e)}).</p>`; }
   }
   nodeG.addEventListener('click', (e) => { const g = e.target.closest('.nd'); if (g) select(g.dataset.id); });
   nodeG.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.nd')) { e.preventDefault(); select(e.target.closest('.nd').dataset.id); } });
