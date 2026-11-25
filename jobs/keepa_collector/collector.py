@@ -48,6 +48,14 @@ RESERVE = int(os.environ.get("KEEPA_RESERVE", "3000"))
 MAX_PER_MIN = float(os.environ.get("KEEPA_MAX_PER_MIN", "90"))
 HOT_H = float(os.environ.get("HOT_HOURS", "22"))
 COLD_H = float(os.environ.get("COLD_HOURS", "72"))
+WEEK_H = float(os.environ.get("WEEK_HOURS", "168"))
+# Tiers (Nick, Nov 24, 2026: spend the key where it matters, leave room for store #2). Daily (HOT_HOURS): on To review,
+# in Nick's leads in the last 30 days, on sale at Sephora, or within reach of profit (best of ROI now / 90-day >= NEAR).
+# Every 3 days (COLD_HOURS): the other watched listings down to FAR. Weekly (WEEK_HOURS): further from profit than FAR,
+# and listings not watched (approval required). Slower tiers come due at a fixed slot per ASIN inside their interval
+# (hash of the ASIN), so they are spread evenly over the days instead of all coming due together.
+NEAR = float(os.environ.get("TIER_NEAR_ROI", "0.05"))
+FAR = float(os.environ.get("TIER_FAR_ROI", "-0.30"))
 BATCH = int(os.environ.get("BATCH", "20"))
 HEADROOM = float(os.environ.get("HEADROOM", "1.15"))       # steady pace = the day's need x this
 PULL_AHEAD = float(os.environ.get("PULL_AHEAD", "0.6"))    # nothing overdue: pull ASINs at least this share of their interval old
@@ -114,7 +122,9 @@ ASIN_SQL = """
 WITH cat AS (
   SELECT asin,
          bool_or(active AND sellable = 'open' AND match_ok IS NOT FALSE) AS watched,   -- any confidence (Nick, Nov 19, 2026)
-         bool_or(active AND on_sale) AS on_sale
+         bool_or(active AND on_sale) AS on_sale,
+         max(CASE WHEN roi_now IS NULL AND roi_avg90 IS NULL THEN NULL
+                  ELSE greatest(coalesce(roi_now, -9), coalesce(roi_avg90, -9)) END) AS best_roi
     FROM sephora_catalog WHERE active AND match_ok IS NOT FALSE GROUP BY asin
   -- listings Nick can't sell (every pair restricted) aren't pulled (Nick, Nov 20, 2026); the monthly restriction check
   -- (jobs/sephora/brand_restrictions.py, SP-API, no Keepa) re-checks them and an opened listing is pulled again
@@ -123,42 +133,65 @@ cand AS (SELECT DISTINCT asin FROM sephora_candidates WHERE status = 'new'),
 lead AS (SELECT DISTINCT upper(btrim(asin)) AS asin FROM leads
           WHERE asin IS NOT NULL AND btrim(asin) <> '' AND COALESCE(lead_date, created_at::date) >= current_date - 30),
 allx AS (
-  SELECT asin, (watched OR on_sale) AS hot FROM cat
-  UNION ALL SELECT asin, true FROM cand
-  UNION ALL SELECT asin, true FROM lead)
-SELECT a.asin, bool_or(a.hot) AS hot, k.pulled_at
+  SELECT asin, CASE WHEN on_sale OR (watched AND (best_roi IS NULL OR best_roi >= %(near)s)) THEN 1
+                    WHEN watched AND best_roi >= %(far)s THEN 2 ELSE 3 END AS tier FROM cat
+  UNION ALL SELECT asin, 1 FROM cand
+  UNION ALL SELECT asin, 1 FROM lead)
+SELECT a.asin, min(a.tier) AS tier, k.pulled_at
   FROM allx a LEFT JOIN keepa_raw k ON k.asin = a.asin
  WHERE a.asin ~ '^[A-Z0-9]{10}$'
  GROUP BY a.asin, k.pulled_at
 """
 
 
+def _slot(asin: str, hours: float) -> float:
+    """A fixed offset (hours) inside the interval for this ASIN, so slow tiers come due spread over the days."""
+    import zlib
+    return (zlib.crc32(asin.encode()) % 100000) / 100000 * hours
+
+
 def due_list(conn) -> tuple[list[str], dict]:
-    """ASINs to pull, in order: never pulled, then overdue (hot first, most overdue first), then the pull-ahead queue
-    (closest to due first). Also the day's need: pulls a day to keep every ASIN inside its interval."""
+    """ASINs to pull, in order: never pulled, then overdue (daily tier first, most overdue first), then the pull-ahead
+    queue (daily tier only, closest to due first). Also the day's need: pulls a day to keep every ASIN inside its interval.
+    The daily tier is due HOT_HOURS after its last pull; the 3-day and weekly tiers at their own slot in each interval
+    (due once the slot passed since the last pull, and never older than 1.5 intervals)."""
     now = dt.datetime.now(dt.timezone.utc)
-    rows = conn.execute(ASIN_SQL).fetchall()
-    due, n_hot, n_over, per_day = [], 0, 0, 0.0
-    # one row per ASIN (a missing keepa_raw row gives pulled_at NULL)
+    rows = conn.execute(ASIN_SQL, {"near": NEAR, "far": FAR}).fetchall()
+    due, per_day = [], 0.0
+    tiers = {1: 0, 2: 0, 3: 0}
     best = {}
-    for r in rows:
+    for r in rows:   # one row per ASIN (a missing keepa_raw row gives pulled_at NULL)
         b = best.get(r["asin"])
-        best[r["asin"]] = {"hot": bool(r["hot"]) or bool(b and b["hot"]), "pulled_at": r["pulled_at"] or (b and b["pulled_at"])}
+        best[r["asin"]] = {"tier": min(int(r["tier"]), b["tier"]) if b else int(r["tier"]),
+                           "pulled_at": r["pulled_at"] or (b and b["pulled_at"])}
+    now_h = (now - KEEPA_EPOCH).total_seconds() / 3600
+    n_over = 0
     for a, r in best.items():
-        n_hot += r["hot"]
-        limit = HOT_H if r["hot"] else COLD_H
+        t = r["tier"]
+        tiers[t] += 1
+        limit = {1: HOT_H, 2: COLD_H, 3: WEEK_H}[t]
         per_day += 24 / limit
-        age = (now - r["pulled_at"]).total_seconds() / 3600 if r["pulled_at"] else None
-        ratio = None if age is None else age / limit
-        if ratio is None:
+        if not r["pulled_at"]:
             due.append((0, 0, 0, a))
-        elif ratio >= 1:
-            n_over += 1
-            due.append((1, 0 if r["hot"] else 1, -ratio, a))
-        elif ratio >= PULL_AHEAD:
-            due.append((2, 0, -ratio, a))
+            continue
+        age = (now - r["pulled_at"]).total_seconds() / 3600
+        ratio = age / limit
+        if t == 1:
+            if ratio >= 1:
+                n_over += 1
+                due.append((1, 0, -ratio, a))
+            elif ratio >= PULL_AHEAD:
+                due.append((2, 0, -ratio, a))
+        else:
+            slot = _slot(a, limit)
+            last_slot_h = now_h - ((now_h - slot) % limit)          # the most recent slot time (hours since epoch)
+            pulled_h = (r["pulled_at"] - KEEPA_EPOCH).total_seconds() / 3600
+            if pulled_h < last_slot_h or ratio >= 1.5:
+                n_over += 1
+                due.append((1, t - 1, -ratio, a))
     due.sort()
-    return [d[3] for d in due], {"asins": len(best), "hot": n_hot, "due": n_over + sum(1 for d in due if d[0] == 0),
+    return [d[3] for d in due], {"asins": len(best), "hot": tiers[1], "tier_3day": tiers[2], "tier_weekly": tiers[3],
+                                 "due": n_over + sum(1 for d in due if d[0] == 0),
                                  "never_pulled": sum(1 for d in due if d[0] == 0), "ahead_ok": sum(1 for d in due if d[0] == 2),
                                  "need_per_day": round(per_day)}
 

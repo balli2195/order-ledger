@@ -41,7 +41,8 @@ import shade  # noqa: E402
 
 CONF_OK = ("high", "medium")
 OOS_DAYS = 10   # an item list older than this doesn't hold a pair back as out of stock
-COLLECTOR_HOURS = 36
+COLLECTOR_HOURS = 36       # pulls this fresh price anything
+COLLECTOR_MAX_HOURS = 192  # the collector's slower tiers (Nick, Nov 24, 2026): 3-day and weekly listings far from profit
 # To review filter (Nick, Nov 24, 2026): a listing under RANK_RULE_ROI needs a 30-day average sales rank under RANK30_MAX;
 # no rank in 30 days fails only when Keepa has no monthly sales estimate either. RANK_RULE_ROI and up passes on ROI alone
 RANK_RULE_ROI, RANK30_MAX = 0.50, 300_000   # a Keepa collector pull younger than this prices the row (Nick, Nov 23, 2026)
@@ -345,22 +346,27 @@ def main():
     order = list(dict.fromkeys(r["asin"] for _, _, r in pri))   # Keepa is per ASIN: each once, in priority order
     from_collector = 0
     need = [x for x in order if x not in kcache]
+    must_be_fresh = {o["asin"] for o in open_cands} | {r["asin"] for r in active if (seph_today.get(r["product_id"]) or {}).get("dropped")}
     try:
         import keepa_pull as kp
         for i in range(0, len(need), 50):   # small calls: 300 at once ran the Hub out of memory (Nov 24, 2026)
-            got_ = C.hub("POST", "/api/engine/keepa/latest", {"asins": need[i:i + 50], "max_age_hours": COLLECTOR_HOURS},
+            got_ = C.hub("POST", "/api/engine/keepa/latest", {"asins": need[i:i + 50], "max_age_hours": COLLECTOR_MAX_HOURS},
                          timeout=300).get("products") or {}
             for k, p_ in got_.items():
                 try:
                     ts_ = dt.datetime.fromisoformat(p_["pulled_at"]).timestamp()
                 except Exception:  # noqa: BLE001
                     ts_ = time.time()
+                # a pull older than COLLECTOR_HOURS only prices a listing whose Sephora side didn't change today and that
+                # isn't on To review: a new markdown or an open lead gets a fresh pull from this job's own tokens
+                if time.time() - ts_ > COLLECTOR_HOURS * 3600 and k in must_be_fresh:
+                    continue
                 kcache[k] = {**kp.compact(p_), "_ts": ts_, "_src": "collector"}
                 from_collector += 1
         C.save_json(f"state/keepa_{day.isoformat()}.json", kcache)
     except Exception as e:  # noqa: BLE001
         problems.append(f"Keepa collector read failed (own Keepa pulls only): {e!r}"[:300])
-    C.log(f"Keepa collector: {from_collector} of {len(need)} ASINs pulled in the last {COLLECTOR_HOURS} h")
+    C.log(f"Keepa collector: {from_collector} of {len(need)} ASINs priced from its pulls ({len(must_be_fresh)} needed one under {COLLECTOR_HOURS} h)")
     todo = [x for x in order if x not in kcache]
     tokens, kstop = 0, None
     if a.no_keepa:
