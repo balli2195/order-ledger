@@ -151,13 +151,32 @@ def main():
         except Exception as e:  # noqa: BLE001
             problems.append(f"banner doc not saved: {e!r}"[:200])
 
+    # Deals the website shows but doesn't price (Nick, Nov 24, 2026: app-only and checkout discounts "you can see them on
+    # the website and then apply the discount manually but then i purchase in the app"). Hub doc sephora_jobs/manual_deals
+    # = {"deals": [{"pct": 0.5, "brand": "..."} or {"pct": .., "product_ids": ["P123", ...]}, "ends": "YYYY-MM-DD",
+    # "note": "Black Friday: half off in the app"}]}, written by Claude from the deal pages or from Nick's message.
+    manual = []
+    try:
+        for x in (C.hub("GET", "/api/engine/docs/sephora_jobs/manual_deals").get("data") or {}).get("deals") or []:
+            if C.fnum(x.get("pct")) and str(x.get("ends") or "9999") >= day.isoformat():
+                manual.append(x)
+    except Exception as e:  # noqa: BLE001
+        if "404" not in repr(e):
+            problems.append(f"manual deals unreadable: {e!r}"[:200])
+    counts["manual_deals"] = len(manual)
+
     def promo_for(r):
-        """The broad promo for this pair: its brand's code discount (or the site-wide event), and for a mini, a live
-        'Buy 2 minis, get both N% off' (Nick always buys 2+ units). The lower price wins in pick_price."""
+        """The broad promo for this pair: its brand's code discount (or the site-wide event), a manual app/checkout deal
+        that names its product or brand, and for a mini, a live 'Buy 2 minis, get both N% off' (Nick always buys 2+
+        units). The biggest discount is kept; the lower of it and the sale price wins in pick_price."""
         d = disc.get(r["brand"]) or disc.get("*")
         best = d if d and d[0] > 0 else None
         if minis and C.is_mini(r) and (best is None or minis["pct"] > best[0]):
             best = (minis["pct"], f"Buy {minis['buy']} minis, get {minis['pct'] * 100:.0f}% off — confirm this mini qualifies")
+        for x in manual:
+            hit = r["product_id"] in (x.get("product_ids") or []) or (x.get("brand") and x["brand"].lower() == (r.get("brand") or "").lower())
+            if hit and (best is None or float(x["pct"]) > best[0]):
+                best = (float(x["pct"]), f"{x.get('note') or 'App / checkout deal'}: {float(x['pct']) * 100:.0f}% off — buy in the Sephora app, confirm at checkout")
         return best
 
     # sale-page items -> catalog products / new products
