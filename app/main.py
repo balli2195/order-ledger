@@ -1785,7 +1785,7 @@ async def engine_sephora_parked(request: Request, offset: int = 0, limit: int = 
 async def engine_sephora_unpark(request: Request, body: dict = Body(...)):
     """{items: [{asin, sellable}]} from the monthly restriction check: open / approval_required listings come back."""
     auth.require_engine_key(request)
-    return await sephora.unpark_pairs(body.get("items"))
+    return await sephora.unpark_pairs(body.get("items"), body.get("reason_prefix") or "Amazon ")
 
 
 @app.get("/api/engine/sephora/blocked-asins")

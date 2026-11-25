@@ -303,7 +303,7 @@ async def parked_pairs(offset: int = 0, limit: int = 2000) -> dict:
         return {"total": n, "rows": [jsonable(dict(r)) for r in await cur.fetchall()]}
 
 
-async def unpark_pairs(items: list) -> dict:
+async def unpark_pairs(items: list, reason_prefix: str = "Amazon ") -> dict:
     """The monthly restriction check found these parked listings open (or needing one-click approval):
     items = [{asin, sellable}] -> each ASIN's parked pairs go back into the Lead DB as they were, with the new sellable.
     items = [{asin, checked: true}] (still restricted) only stamps checked_at."""
@@ -311,6 +311,9 @@ async def unpark_pairs(items: list) -> dict:
         raise LedgerError("items must be a list of at most 5000 {asin, sellable}")
     back = {_asin(i.get("asin")): i.get("sellable") for i in items if i.get("sellable") in ("open", "approval_required")}
     seen = [_asin(i.get("asin")) for i in items]
+    if str(reason_prefix or "").startswith("Nick:"):
+        raise LedgerError("Nick's own can't-sell calls are only undone by Nick")
+    like = str(reason_prefix or "Amazon ").replace("%", "") + "%"
     async with db.pool.connection() as conn:
         async with conn.transaction():
             await conn.execute("UPDATE sephora_parked_pairs SET checked_at = now() WHERE asin = ANY(%s)", (seen,))
@@ -321,10 +324,10 @@ async def unpark_pairs(items: list) -> dict:
                 "INSERT INTO sephora_catalog SELECT (jsonb_populate_record(NULL::sephora_catalog, "
                 "p.pair || jsonb_build_object('sellable', k.sellable, 'updated_at', now()))).* "
                 "FROM sephora_parked_pairs p JOIN unnest(%s::text[], %s::text[]) k(asin, sellable) ON p.asin = k.asin "
-                "WHERE p.reason NOT LIKE 'Nick:%%' "   # Nick's own "can't sell" stays parked whatever Amazon says
-                "ON CONFLICT (asin, product_id) DO NOTHING", (list(back), list(back.values())))
+                "WHERE p.reason LIKE %s "   # by default only restriction / approval parks ("Amazon ..."); Nick's own calls stay
+                "ON CONFLICT (asin, product_id) DO NOTHING", (list(back), list(back.values()), like))
             pairs = cur.rowcount
-            await conn.execute("DELETE FROM sephora_parked_pairs WHERE asin = ANY(%s) AND reason NOT LIKE 'Nick:%%'", (list(back),))
+            await conn.execute("DELETE FROM sephora_parked_pairs WHERE asin = ANY(%s) AND reason LIKE %s", (list(back), like))
             await _audit(conn, ENGINE, "unpark_pairs", "sephora", None, None, None, {"asins": len(back), "pairs": pairs})
             await _notify(conn)
     return {"ok": True, "restored": pairs, "checked": len(seen)}
