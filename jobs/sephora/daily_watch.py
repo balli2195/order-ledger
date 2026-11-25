@@ -1018,7 +1018,7 @@ def main():
         alerts.append(f"RUN FAILED: {fatal}")
     now_ct = dt.datetime.now(CT)
     start_ct = dt.datetime.fromtimestamp(t0, CT)
-    if start_ct.hour < HEALTH_DONE_BY and now_ct.hour >= HEALTH_DONE_BY and now_ct.date() == start_ct.date():
+    if not a.no_keepa and start_ct.hour < HEALTH_DONE_BY and now_ct.hour >= HEALTH_DONE_BY and now_ct.date() == start_ct.date():   # the main morning run, not a --no-keepa re-run
         alerts.append(f"run finished at {now_ct:%-I:%M %p} Central, after {HEALTH_DONE_BY} am")
     counts["alerts"] = len(alerts)
     lines.insert(1, ("**ALERT:** " + " | ".join(alerts)) if alerts else "Health: OK (prices fresh for "
