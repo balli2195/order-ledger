@@ -36,11 +36,38 @@
   .g-fig .use rect { fill: color-mix(in srgb, var(--ok) 10%, var(--panel)); stroke: color-mix(in srgb, var(--ok) 45%, var(--line)); }
   .g-fig .plan rect { stroke-dasharray: 5 4; }
   .g-fig .t { font-size: 13px; font-weight: 600; fill: var(--ink); }
-  .g-fig .tbl .t { font-family: var(--mono); font-size: 12.5px; }
   .g-fig .s { font-size: 11.5px; fill: var(--muted); }
-  .g-fig .a { fill: none; stroke: var(--muted); stroke-opacity: .55; stroke-width: 1.2; }
-  .g-fig .a.d { stroke-dasharray: 3 3; }
-  .g-fig .ahp { fill: var(--muted); }
+  .g-fig .s.m { font-family: var(--mono); font-size: 10.5px; }
+  .g-fig .nd { cursor: pointer; transition: opacity .15s; }
+  .g-fig .nd:hover rect, .g-fig .nd:focus-visible rect { stroke: var(--accent); stroke-width: 2; }
+  .g-fig .nd:focus { outline: none; }
+  .g-fig .nd.sel rect { stroke: var(--accent); stroke-width: 2.4; }
+  .g-fig .nd.dim { opacity: .38; }
+  .g-fig .a { fill: none; stroke-width: 1.5; }
+  .g-fig .a.w { stroke: var(--accent); }
+  .g-fig .a.r { stroke: var(--muted); stroke-dasharray: 4 3; }
+  .g-fig .a.d { stroke: color-mix(in srgb, var(--ok) 70%, var(--line)); stroke-opacity: .7; stroke-dasharray: 2 3; }
+  .g-fig .ahw { fill: var(--accent); } .g-fig .ahr { fill: var(--muted); } .g-fig .ahd { fill: color-mix(in srgb, var(--ok) 70%, var(--line)); }
+  .g-fig .lg { display: inline-block; width: 22px; height: 0; vertical-align: middle; border-top: 2px solid var(--accent); }
+  .g-fig .lg.r { border-top: 2px dashed var(--muted); }
+  .g-fig .lg.d { border-top: 2px dotted var(--ok); }
+  .g-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+  .g-chips button { font: inherit; font-size: 12.5px; border: 1px solid var(--line); border-radius: 99px; padding: 3px 11px; background: var(--panel); color: var(--ink); cursor: pointer; }
+  .g-chips button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .g-detail { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 12px 16px; margin-top: 10px; }
+  .g-detail h4 { margin: 0 0 2px; font-size: 16px; }
+  .g-detail .when { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .g-detail .what { margin: 6px 0; font-weight: 500; }
+  .g-detail .io { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+  .g-kv { margin: 8px 0 0; display: grid; gap: 4px; }
+  .g-kv div { display: grid; grid-template-columns: 140px 1fr; gap: 10px; font-size: 13.5px; line-height: 1.5; }
+  .g-kv dt { font-weight: 600; } .g-kv dd { margin: 0; }
+  .g-terms { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin: 8px 0 0; }
+  .g-terms div { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; }
+  .g-terms dt { font-weight: 600; font-size: 13.5px; } .g-terms dd { margin: 2px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
+  .linkbtn { font: inherit; font-weight: 600; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-align: left; }
+  .g-tbl td .muted { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  @media (max-width: 600px) { .g-kv div { grid-template-columns: 1fr; gap: 0; } }
   .g-tbl { overflow-x: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
   .g-tbl table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .g-tbl th, .g-tbl td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line-2); }
@@ -83,68 +110,83 @@
   <p class="g-back"><a href="/lead-db">← Lead DB</a></p>
   <h2>How the Lead DB works</h2>
   <nav class="g-toc" aria-label="On this page">
-    <a href="#numbers">Numbers</a><a href="#flow">Data flow</a><a href="#tables">Tables</a><a href="#jobs">Jobs</a><a href="#page">Using the page</a><a href="#learning">Wrong matches</a><a href="#training">Training</a><a href="#enough">Enough data?</a><a href="#size">Size &amp; upgrades</a><a href="#local">Local or cloud</a>
+    <a href="#numbers">Numbers</a><a href="#terms">Words</a><a href="#flow">Data flow</a><a href="#tables">Tables</a><a href="#jobs">Jobs</a><a href="#page">Using the page</a><a href="#learning">Wrong matches</a><a href="#training">Training</a><a href="#enough">Enough data?</a><a href="#size">Size &amp; upgrades</a><a href="#local">Local or cloud</a>
   </nav>
 
   <section id="numbers">
     <div class="g-stats" id="stats">
-      <div class="g-stat"><div class="k">Matched pairs</div><div class="v" data-k="active_pairs">6,037</div><div class="n"><span data-k="asins">6,035</span> ASINs · <span data-k="brands">70</span> brands</div></div>
-      <div class="g-stat"><div class="k">Watched daily</div><div class="v" data-k="watched">3,528</div><div class="n">sellable, likely right match</div></div>
-      <div class="g-stat"><div class="k">Candidates</div><div class="v" data-k="candidates">60</div><div class="n"><span data-k="approved">0</span> approved · <span data-k="rejected">2</span> rejected</div></div>
-      <div class="g-stat"><div class="k">Wrong-match marks</div><div class="v" data-k="wrong_marks">2</div><div class="n"><span data-k="marked_ok">2</span> pairs marked OK</div></div>
-      <div class="g-stat"><div class="k">Keepa products stored</div><div class="v" data-k="raw_asins">680</div><div class="n"><span data-k="raw_gb">0.20</span> GB compressed</div></div>
-      <div class="g-stat"><div class="k">Offer/stock snapshots</div><div class="v" data-k="snapshots">760</div><div class="n">since <span data-k="snap_since">Nov 11, 2026</span></div></div>
-      <div class="g-stat"><div class="k">Past leads</div><div class="v" data-k="leads">14,046</div><div class="n"><span data-k="leads_gradable">12,884</span> old enough to grade</div></div>
+      <div class="g-stat"><div class="k">Pairs</div><div class="v" data-k="active_pairs">—</div><div class="n"><span data-k="asins">—</span> listings · <span data-k="brands">—</span> brands</div></div>
+      <div class="g-stat"><div class="k">Watched</div><div class="v" data-k="watched">—</div><div class="n">priced every morning</div></div>
+      <div class="g-stat"><div class="k">Held</div><div class="v" data-k="held">—</div><div class="n"><span data-k="held_amazon">—</span> Amazon · <span data-k="held_norank">—</span> no rank · <span data-k="held_yours">—</span> yours</div></div>
+      <div class="g-stat"><div class="k">Posted to To review</div><div class="v" data-k="candidates">—</div><div class="n"><span data-k="approved">—</span> approved · <span data-k="rejected">—</span> rejected</div></div>
+      <div class="g-stat"><div class="k">Wrong-match marks</div><div class="v" data-k="wrong_marks">—</div><div class="n"><span data-k="marked_ok">—</span> pairs marked OK</div></div>
+      <div class="g-stat"><div class="k">Keepa products stored</div><div class="v" data-k="raw_asins">—</div><div class="n"><span data-k="raw_gb">—</span> GB compressed</div></div>
+      <div class="g-stat"><div class="k">Offer/stock snapshots</div><div class="v" data-k="snapshots">—</div><div class="n">since <span data-k="snap_since">Nov 11, 2026</span></div></div>
+      <div class="g-stat"><div class="k">Past leads</div><div class="v" data-k="leads">—</div><div class="n"><span data-k="leads_gradable">—</span> old enough to grade</div></div>
       <div class="g-stat"><div class="k">Database size</div><div class="v" data-k="db_gb">—</div><div class="n">of 50 GB disk</div></div>
     </div>
-    <p class="g-asof" id="collector">Keepa collector: loading…</p>
+    <p class="g-asof" id="collector">Keepa recorder: loading…</p>
+  </section>
+
+  <section id="terms">
+    <h3>Words used on this page</h3>
+    <dl class="g-terms">
+      <div><dt>Pair</dt><dd>One Sephora item matched to one Amazon listing (ASIN). One row of the Catalog.</dd></div>
+      <div><dt>Watched</dt><dd>A pair the daily run prices every morning: you can sell the listing and the pair isn't marked wrong.</dd></div>
+      <div><dt>Suggestion</dt><dd>A row on To review. Approving it makes a lead on the Leads tab.</dd></div>
+      <div><dt>Not posted</dt><dd>A watched pair the daily run priced but kept off To review today (out of stock, size check…). It stays in the Lead DB and is checked again tomorrow.</dd></div>
+      <div><dt>Held</dt><dd>A pair taken out of the Lead DB but kept whole, with your marks and the reason: restricted on Amazon, approval needs invoices or Transparency, no sales rank in 2 years, or your "Can't sell" reject. No job prices it or pulls Keepa for it. Some come back on their own (below).</dd></div>
+      <div><dt>Keepa recorder</dt><dd>The 24/7 job that pulls Keepa data for every listing, so the other jobs read it instead of spending tokens.</dd></div>
+    </dl>
   </section>
 
   <section id="flow">
     <h3>Data flow</h3>
+    <p>Click any job, source, table or use to see what it does, what it reads and what it writes.</p>
+    <div class="g-chips" id="jobChips" role="toolbar" aria-label="Jobs"></div>
     <figure class="g-fig">
-      <svg viewBox="0 0 960 420" role="img" aria-labelledby="dfT"><title id="dfT">How data moves through the Lead DB</title><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ahp"/></marker></defs><text x="20" y="14" class="h">Sources</text><text x="220" y="14" class="h">Jobs and you</text><text x="450" y="14" class="h">Tables (Postgres on Render)</text><text x="740" y="14" class="h">Uses</text><path class="a" d="M840,300 L840,338" marker-end="url(#ah)"/><path class="a" d="M680,388 C710,388 710,293 738,293" marker-end="url(#ah)"/><path class="a" d="M680,322 C710,322 710,287 738,287" marker-end="url(#ah)"/><path class="a" d="M680,268 C710,268 710,281 738,281" marker-end="url(#ah)"/><path class="a" d="M680,204 C710,204 710,275 738,275" marker-end="url(#ah)"/><path class="a" d="M680,150 C710,150 710,269 738,269" marker-end="url(#ah)"/><path class="a" d="M680,96 C710,96 710,263 738,263" marker-end="url(#ah)"/><path class="a" d="M680,42 C710,42 710,257 738,257" marker-end="url(#ah)"/><path class="a" d="M680,150 C710,150 710,155 738,155" marker-end="url(#ah)"/><path class="a" d="M680,150 C710,150 710,77 738,77" marker-end="url(#ah)"/><path class="a" d="M680,42 C710,42 710,65 738,65" marker-end="url(#ah)"/><path class="a d" d="M565,64 L565,72" marker-end="url(#ah)"/><path class="a" d="M410,383 C430,383 430,388 448,388" marker-end="url(#ah)"/><path class="a" d="M410,355 C430,355 430,160 448,160" marker-end="url(#ah)"/><path class="a" d="M410,361 C430,361 430,204 448,204" marker-end="url(#ah)"/><path class="a" d="M410,265 C430,265 430,322 448,322" marker-end="url(#ah)"/><path class="a" d="M410,265 C430,265 430,268 448,268" marker-end="url(#ah)"/><path class="a" d="M410,155 C430,155 430,150 448,150" marker-end="url(#ah)"/><path class="a" d="M410,155 C430,155 430,50 448,50" marker-end="url(#ah)"/><path class="a" d="M410,65 C430,65 430,42 448,42" marker-end="url(#ah)"/><path class="a" d="M180,251 C200,251 200,77 218,77" marker-end="url(#ah)"/><path class="a" d="M180,239 C200,239 200,165 218,165" marker-end="url(#ah)"/><path class="a" d="M180,155 C200,155 200,265 218,265" marker-end="url(#ah)"/><path class="a" d="M180,155 C200,155 200,155 218,155" marker-end="url(#ah)"/><path class="a" d="M180,149 C200,149 200,65 218,65" marker-end="url(#ah)"/><path class="a" d="M180,65 C200,65 200,155 218,155" marker-end="url(#ah)"/><path class="a" d="M180,65 C200,65 200,65 218,65" marker-end="url(#ah)"/><g class="src"><rect x="20" y="40" width="160" height="50" rx="8"/><text x="32" y="61" class="t">Sephora site</text><text x="32" y="78" class="s">prices, sales, new items</text></g><g class="src"><rect x="20" y="130" width="160" height="50" rx="8"/><text x="32" y="151" class="t">Keepa API</text><text x="32" y="168" class="s">prices, offers, stock</text></g><g class="src"><rect x="20" y="220" width="160" height="50" rx="8"/><text x="32" y="241" class="t">Amazon SP-API</text><text x="32" y="258" class="s">fees, gating, offers</text></g><g class="src"><rect x="220" y="350" width="190" height="50" rx="8"/><text x="232" y="371" class="t">You, on the Lead DB page</text><text x="232" y="388" class="s">approve, reject, mark wrong</text></g><g class="job"><rect x="220" y="40" width="190" height="50" rx="8"/><text x="232" y="61" class="t">Weekly new products</text><text x="232" y="78" class="s">Sun 2:13 am CT</text></g><g class="job"><rect x="220" y="130" width="190" height="50" rx="8"/><text x="232" y="151" class="t">Daily watch</text><text x="232" y="168" class="s">every day 4:47 am CT</text></g><g class="job"><rect x="220" y="240" width="190" height="50" rx="8"/><text x="232" y="261" class="t">Keepa collector</text><text x="232" y="278" class="s">24/7 Render worker</text></g><g class="tbl"><rect x="450" y="20" width="230" height="44" rx="8"/><text x="462" y="41" class="t">sephora_catalog</text><text x="462" y="58" class="s">1 row per store item ↔ ASIN</text></g><g class="tbl"><rect x="450" y="74" width="230" height="44" rx="8"/><text x="462" y="95" class="t">catalog_history</text><text x="462" y="112" class="s">every change to a row</text></g><g class="tbl"><rect x="450" y="128" width="230" height="44" rx="8"/><text x="462" y="149" class="t">sephora_candidates</text><text x="462" y="166" class="s">daily buy queue + decisions</text></g><g class="tbl"><rect x="450" y="182" width="230" height="44" rx="8"/><text x="462" y="203" class="t">match_feedback</text><text x="462" y="220" class="s">wrong-match reasons</text></g><g class="tbl"><rect x="450" y="246" width="230" height="44" rx="8"/><text x="462" y="267" class="t">keepa_raw</text><text x="462" y="284" class="s">latest full Keepa product</text></g><g class="tbl"><rect x="450" y="300" width="230" height="44" rx="8"/><text x="462" y="321" class="t">keepa_snapshots</text><text x="462" y="338" class="s">dated offers + stock</text></g><g class="tbl"><rect x="450" y="366" width="230" height="44" rx="8"/><text x="462" y="387" class="t">leads</text><text x="462" y="404" class="s">every lead since Apr 2024</text></g><g class="use"><rect x="740" y="40" width="200" height="50" rx="8"/><text x="752" y="61" class="t">Lead DB page</text><text x="752" y="78" class="s">review queue, catalog</text></g><g class="use"><rect x="740" y="130" width="200" height="50" rx="8"/><text x="752" y="151" class="t">Lead Score</text><text x="752" y="168" class="s">scores candidates</text></g><g class="use"><rect x="740" y="250" width="200" height="50" rx="8"/><text x="752" y="271" class="t">Training export</text><text x="752" y="288" class="s">Parquet files</text></g><g class="use plan"><rect x="740" y="340" width="200" height="50" rx="8"/><text x="752" y="361" class="t">Model training</text><text x="752" y="378" class="s">planned: Lead Score v2</text></g></svg>
-      <figcaption>Orange boxes are the scheduled jobs; grey boxes are where data comes from, including your clicks. Every table sits in the same Postgres database as orders and leads. The dashed line is a database trigger: each change to a catalog row is copied into <code>catalog_history</code> automatically. Model training (dashed box) is planned, not built.</figcaption>
+      <svg id="flowSvg" viewBox="0 0 960 545" role="img" aria-labelledby="dfT"><title id="dfT">How data moves through the Lead DB</title></svg>
+      <figcaption><span class="lg w"></span> writes or sends &nbsp; <span class="lg r"></span> reads &nbsp; <span class="lg d"></span> then used by. Orange boxes are jobs; grey boxes are where data comes from, including your clicks. Every table is in the same Postgres database as orders and leads. Model training (dashed) is planned, not built.</figcaption>
     </figure>
+    <div class="g-detail" id="detail" aria-live="polite"></div>
   </section>
 
   <section id="tables">
     <h3>The tables</h3>
-    <p>Each row of the Lead DB page's <b>Catalog</b> view is one row of <code>sephora_catalog</code>. The other tables keep what that row can't: its past, the competitor picture on each day, and your answers.</p>
+    <p>Each row of the Lead DB page's <b>Catalog</b> view is one pair in <code>sephora_catalog</code>. The other tables keep what a pair can't: its past, the competitor picture on each day, held pairs, and your answers.</p>
     <div class="g-tbl"><table>
       <thead><tr><th>Table</th><th>One row is</th><th>Written by</th><th>What it holds</th><th>Kept</th></tr></thead>
       <tbody>
-        <tr><td><code>sephora_catalog</code></td><td>One store product (and size) matched to one ASIN. Key: ASIN + store product ID.</td><td>Weekly and daily jobs; you (OK / wrong / size)</td><td><code>store</code> (Sephora today), brand, store name, URL and price (low/high, sale price), the Amazon title, Buy Box, lowest FBA, 90-day Buy Box average, fees, monthly sold, FBA offer count, Amazon on the listing, ROI now and at the 90-day average, match confidence, whether you can sell it, and your answers (<code>match_ok</code>, <code>size_confirmed</code>, wrong-match tags and note, correct ASIN). The jobs never overwrite your answers.</td><td>Current state only</td></tr>
-        <tr><td><code>catalog_history</code></td><td>One change to one catalog row, with the time.</td><td>A database trigger on every insert or update</td><td>The values at that moment: store price low/high, sale price, on sale, Buy Box, lowest FBA, 90-day average, FBA offers, monthly sold, Amazon on, ROI now, active. This is how we know what the store charged on any past day.</td><td>Forever</td></tr>
-        <tr><td><code>sephora_candidates</code></td><td>One buy suggestion for one ASIN on one day.</td><td>Daily watch; you (approve / reject)</td><td>Cost, the price basis (sale, event code), Buy Box, ROI now, Lead Score band and predicted ROI, status (new, approved, rejected, expired), your reject reason, who decided and when, and the lead created on approve.</td><td>Forever</td></tr>
-        <tr><td><code>match_feedback</code></td><td>One "wrong match" mark.</td><td>You, from a card or the catalog</td><td>The ASIN and store product, the reason tags (size, shade, concentration, set, bonus, multi-pack, version, product, other), your note, the correct ASIN if you know it, and who marked it.</td><td>Until you undo it</td></tr>
-        <tr><td><code>keepa_raw</code></td><td>The latest full Keepa product for one ASIN.</td><td>Keepa collector</td><td>Everything Keepa returns: full price, rank and offer-count histories, Buy Box history, 20 offers with seller stock, rating, fees. Gzipped JSON, the same format the Lead Score training used. Replaced on each pull, because Keepa's histories already include the past.</td><td>Latest pull per ASIN</td></tr>
-        <tr><td><code>keepa_snapshots</code></td><td>One ASIN on one pull.</td><td>Keepa collector</td><td>Buy Box price and seller, whether the Buy Box is FBA, lowest FBA and new price, Amazon's price, new and FBA offer counts, monthly sold, sales rank, rating, reviews, plus each seller's price and stock that day (gzipped). Keepa does not keep seller stock history, so this is the only record of it. Split into one partition per month.</td><td>Forever (see <a href="#size">size</a>)</td></tr>
-        <tr><td><code>leads</code></td><td>One lead you or a VA added.</td><td>Leads tab; approving a candidate</td><td>ASIN, date, cost, store link, quantities. These are the 14k rows Lead Score v1 was trained on.</td><td>Forever</td></tr>
-        <tr><td><code>sephora_runs</code>, <code>keepa_collector_status</code></td><td>One job run; the collector's heartbeat.</td><td>The jobs</td><td>The sale seen on each run (text, code, end date), counts and problems; the collector's state, tokens used today and ASINs due.</td><td>Forever; one row</td></tr>
+        <tr><td><code>sephora_catalog</code><br>Pairs</td><td>One Sephora item matched to one Amazon listing. Key: ASIN + Sephora product ID.</td><td>Weekly run, daily run, match check, monthly check; you (OK / wrong / size)</td><td>Store, brand, Sephora name, URL, size or shade, prices (low/high, sale), the Amazon title, Buy Box, lowest FBA, 90-day Buy Box average, fees, monthly sold, FBA offers, Amazon on the listing, ROI now and at the 90-day average, match confidence and check marks, whether you can sell it, and your answers (<code>match_ok</code>, size, wrong-match tags, correct ASIN). Jobs never overwrite your answers.</td><td>Current state</td></tr>
+        <tr><td><code>catalog_history</code></td><td>One change to one pair, with the time.</td><td>A database trigger on every change</td><td>The prices, sale status, Buy Box, offers, monthly sold and ROI at that moment. This is how we know what Sephora charged on any past day.</td><td>Forever</td></tr>
+        <tr><td><code>sephora_parked_pairs</code><br>Held pairs</td><td>One held pair, whole.</td><td>Live and monthly restriction checks, the no-rank filter, your "Can't sell / gated" rejects</td><td>The full pair as it was (your marks included), the reason, when it was held and last checked. The catalog refuses a held pair, so no job can add it back by accident. The monthly check puts back listings that opened (never your own can't-sell calls); the no-rank filter puts back listings that show a rank or sales again.</td><td>Until it comes back</td></tr>
+        <tr><td><code>store_skus</code>, <code>store_sku_images</code><br>Sephora items</td><td>One Sephora item (size or shade) of one product; its photos.</td><td>Sephora reader in the old MacBook's Chrome (match check, stock check)</td><td>Size, shade, price, in stock, SKU ID, read time; swatch and product photos, so checks compare shades without loading Sephora from the cloud.</td><td>Latest read</td></tr>
+        <tr><td><code>sephora_candidates</code><br>To review</td><td>One suggestion for one listing on one day.</td><td>Daily run; you (approve / reject)</td><td>Cost, price basis (sale, code, app deal), Buy Box, ROI, Lead Score band and predicted ROI, the note, status (new, approved, rejected, expired with the reason), your reject reason, who decided and when, and the lead made on approve.</td><td>Forever</td></tr>
+        <tr><td><code>match_feedback</code></td><td>One "wrong match" mark.</td><td>You</td><td>The pair, reason tags (size, shade, concentration, set, bonus, multi-pack, version, product, other), your note, the correct ASIN, who marked it.</td><td>Until you undo it</td></tr>
+        <tr><td><code>sephora_stock_watch</code></td><td>One listing you rejected as "Not in stock at Sephora".</td><td>Your reject; the stock check</td><td>The Sephora item to watch, checks so far, last result. Ends when the item is back in stock.</td><td>Forever</td></tr>
+        <tr><td><code>sephora_blocked_asins</code></td><td>One listing that never belongs in the Lead DB.</td><td>Claude, on your call</td><td>ASIN and reason (for example Amazon brand "Generic": you can't sell those). The catalog refuses pairs for them.</td><td>Forever</td></tr>
+        <tr><td><code>keepa_raw</code></td><td>The latest full Keepa product for one listing.</td><td>Keepa recorder</td><td>Everything Keepa returns: price, rank and offer-count histories, Buy Box history, 20 offers with seller stock, fees. Gzipped JSON, replaced on each pull (Keepa's histories already hold the past).</td><td>Latest pull</td></tr>
+        <tr><td><code>keepa_snapshots</code></td><td>One listing on one pull.</td><td>Keepa recorder</td><td>Buy Box price and seller, lowest FBA, Amazon's price, offer counts, monthly sold, rank, and each seller's price and stock that day. Keepa keeps no seller-stock history, so this is the only record. One partition per month.</td><td>Forever (see <a href="#size">size</a>)</td></tr>
+        <tr><td><code>leads</code></td><td>One lead you or a VA added.</td><td>Leads tab; approving a suggestion</td><td>ASIN, date, cost, store link, quantities. The 14k rows Lead Score v1 learned from.</td><td>Forever</td></tr>
+        <tr><td><code>sephora_runs</code>, job docs</td><td>One job run; small Hub docs.</td><td>The jobs</td><td>Each run's sale, counts and problems; the health line, check queue, app/checkout deals, stock to-do list, for-you match cases; the Keepa recorder's heartbeat (<code>keepa_collector_status</code>).</td><td>Forever; latest</td></tr>
       </tbody>
     </table></div>
     <h4>Built for a much bigger table</h4>
     <ul>
-      <li><b>One table for every store.</b> Each catalog and candidate row carries a <code>store</code> column. A second store adds rows, not tables. The page shows a store filter as soon as there are 2 stores.</li>
-      <li><b>Indexes on what the page and jobs ask for:</b> store + brand, ASIN, unchecked matches, and candidates by store and status. A page of the catalog reads one index range, not the whole table, so it stays fast at 100,000+ rows.</li>
-      <li><b>The biggest data lives apart from the catalog.</b> Keepa products (about 0.3 MB each compressed) sit in <code>keepa_raw</code>, stored as-is without recompression. Snapshots are split by month, so old months can be moved out to files without touching recent ones.</li>
-      <li><b>Same database as orders and leads.</b> Joins between your leads, the catalog and Keepa data are one query, with no copying between systems.</li>
+      <li><b>One table for every store.</b> Each pair and suggestion carries a <code>store</code> column. A second store adds rows, not tables. The page shows a store filter as soon as there are 2 stores.</li>
+      <li><b>Indexes on what the page and jobs ask for:</b> store + brand, ASIN, unchecked pairs, and suggestions by store and status. A page of the catalog reads one index range, so it stays fast at 100,000+ rows.</li>
+      <li><b>The biggest data lives apart from the catalog.</b> Keepa products (about 0.3 MB each compressed) sit in <code>keepa_raw</code>. Snapshots are split by month, so old months can move out to files without touching recent ones.</li>
+      <li><b>Same database as orders and leads.</b> Joins between your leads, pairs and Keepa data are one query.</li>
     </ul>
   </section>
 
   <section id="jobs">
     <h3>Jobs and when they run</h3>
+    <p>All times Central. Click a job for its full detail.</p>
     <div class="g-tbl"><table>
-      <thead><tr><th>Job</th><th>When</th><th>What it does</th><th class="num">Keepa tokens</th></tr></thead>
-      <tbody>
-        <tr><td>Weekly Sephora new products + brands</td><td>Sundays 2:13 am CT</td><td>Re-reads every brand's Sephora listing (prices, sales, items gone), reads New Arrivals and the brand list, adds your new Sephora leads, builds new brands, matches new products to ASINs (title search, size/shade/set checks, your wrong-match rules), checks gating and offers, and downgrades existing matches that break a rule.</td><td class="num">≤ 4,000 a week</td></tr>
-        <tr><td>Daily Sephora leads</td><td>Every day 4:47 am CT</td><td>Reads the Sephora sale and promo pages, refreshes watched ASINs, keeps rows at 15%+ ROI, checks live offers, scores the top 60 with Lead Score, and posts the ones at 10%+ predicted ROI to the review queue. Multi-size items with no known size are priced at the full size and flagged "Size not checked".</td><td class="num">≤ 2,500 a day</td></tr>
-        <tr><td>Keepa collector</td><td>24/7 (Render worker <code>keepa-collector</code>)</td><td>Pulls every Lead DB ASIN: "hot" ones (watched, on sale, open candidates, your leads from the last 30 days) every 22 hours, the rest every 72 hours. Writes <code>keepa_raw</code> and one <code>keepa_snapshots</code> row per pull. It only spends spare tokens: never below 3,000 left on the shared key and at most 90 a minute, so the other jobs always have room.</td><td class="num">≈ 42,000 a day</td></tr>
-        <tr><td>Training export</td><td>On demand</td><td><code>tools/export_training.py</code> downloads everything above into Parquet files for training (see <a href="#local">Local or cloud</a>).</td><td class="num">0</td></tr>
-      </tbody>
+      <thead><tr><th>Job</th><th>When</th><th>Runs on</th><th class="num">Keepa tokens</th></tr></thead>
+      <tbody id="jobRows"></tbody>
     </table></div>
-    <p>Collector math: about 8.6 Keepa tokens per ASIN. 3,814 hot ASINs every 22 hours is 4,161 pulls a day; 2,403 cold ASINs every 72 hours is 801 a day. 4,962 pulls × 8.6 ≈ 42,700 tokens a day, out of the key's 180,000 (125 a minute). The first pass over all 6,217 ASINs takes about 10 hours.</p>
   </section>
 
   <section id="page">
@@ -176,7 +218,7 @@
     <div class="g-tbl"><table>
       <thead><tr><th>Addition</th><th>Where it comes from</th><th>What it fixes</th><th>Status</th></tr></thead>
       <tbody>
-        <tr><td><b>Real competitor stock on the day</b></td><td><code>keepa_snapshots</code>, one row per ASIN every 22–72 hours from Nov 11, 2026</td><td>Caveat 7. Competitor inputs carry 29% of v1's weight but are reconstructed; from now on they are recorded on the day. The Sales Model's stock and cover inputs use the same data.</td><td><span class="pill built">collecting</span></td></tr>
+        <tr><td><b>Real competitor stock on the day</b></td><td><code>keepa_snapshots</code>, one row per listing every 1–7 days (daily for anything near profit) from Nov 11, 2026</td><td>Caveat 7. Competitor inputs carry 29% of v1's weight but are reconstructed; from now on they are recorded on the day. The Sales Model's stock and cover inputs use the same data.</td><td><span class="pill built">collecting</span></td></tr>
         <tr><td><b>"Could-have-bought" rows</b></td><td><code>catalog_history</code> (store price on each day) + <code>keepa_raw</code> (later Buy Box)</td><td>v1 only learns from leads a VA chose. Every watched pair, on every week, is a lead we could have made at the store price that day. That adds unpicked items, full-price days and sale days, which is the exact choice the daily job makes.</td><td><span class="pill built">collecting</span> <span class="pill plan">builder planned</span></td></tr>
         <tr><td><b>Your decisions</b></td><td><code>sephora_candidates</code> status and reject reasons</td><td>Lets us check whether the model agrees with your judgment, and which reasons ("too many sellers", "historical price too low") it misses. Too few so far to train on alone (60 candidates).</td><td><span class="pill built">collecting</span></td></tr>
         <tr><td><b>Clean matches</b></td><td><code>match_feedback</code>, <code>match_ok</code></td><td>Rows from wrong matches are dropped; rows you marked OK are trusted first.</td><td><span class="pill built">built</span></td></tr>
@@ -195,7 +237,7 @@
 
     <h4>Timeline</h4>
     <ul class="g-tl">
-      <li class="done"><b>Nov 11, 2026</b>: catalog history, snapshots and the collector start.</li>
+      <li class="done"><b>Nov 11, 2026</b>: pair history, snapshots and the Keepa recorder start.</li>
       <li><b>Nov 12, 2026</b>: first full pass of all 6,217 ASINs done (about 10 hours).</li>
       <li><b>Jan 28, 2027</b>: the first rows (from Nov 11) reach day 78 and can be graded.</li>
       <li><b>Apr 19, 2027</b>: every row from Nov 11 – Jan 31 is graded. That is the first full test quarter: train v2 on everything before it and compare v2 with v1 on the same quarter, walk-forward, exactly as v1 was tested.</li>
@@ -211,7 +253,7 @@
       <tbody>
         <tr><td>Your real leads (v1's training set)</td><td class="num" data-k="leads_gradable">12,884</td><td class="num">≈ 15,200</td><td>The graded leads today, plus about 1,160 leads from the last 80 days that aren't graded yet, plus about 1,150 more added by Jan 29 (at the recent 14.5 a day).</td></tr>
         <tr><td>Could-have-bought rows (weekly)</td><td class="num">0 graded</td><td class="num">≈ 41,000</td><td>3,528 watched pairs × 11.7 weeks (Nov 11 – Jan 31). About 3,500 different ASINs, so it adds breadth more than depth.</td></tr>
-        <tr><td>Leads with recorded competitor stock</td><td class="num">0 graded</td><td class="num">≈ 1,200</td><td>Your leads from Nov 11 – Jan 31 (82 days × 14.5 a day). Every lead of the last 30 days is a hot ASIN, so each gets a snapshot within 22 hours.</td></tr>
+        <tr><td>Leads with recorded competitor stock</td><td class="num">0 graded</td><td class="num">≈ 1,200</td><td>Your leads from Nov 11 – Jan 31 (82 days × 14.5 a day). Every lead of the last 30 days is in the recorder's daily tier, so each gets a snapshot within 22 hours.</td></tr>
         <tr><td>Your candidate decisions</td><td class="num" data-k="candidates">60</td><td class="num">depends on sales</td><td>60 came in 3 sale days (Nov 9–11); far fewer arrive outside a sale. Enough to measure agreement with the model, not to train a separate one.</td></tr>
       </tbody>
     </table></div>
@@ -231,7 +273,7 @@
     </table></div>
     <ul>
       <li><b>Disk:</b> at today's size, 50 GB lasts about 4 years. At 30,000 ASINs it lasts about a year. When the disk passes 80% (40 GB), either add disk on Render (about $0.30 per GB a month) or move snapshot months older than 12 months to Parquet files in Dropbox and drop those partitions. The export already writes them as Parquet, so nothing is lost.</li>
-      <li><b>Keepa tokens:</b> at 30,000 ASINs on the same schedule the collector would need about 200,000 tokens a day, more than the key's 180,000. Before adding a big store: pull cold ASINs every 7 days instead of 3, or move to a larger Keepa plan.</li>
+      <li><b>Keepa tokens:</b> the Keepa recorder pulls about 5,200 listings at about 22 tokens a minute (≈ 30,000 a day), far-from-profit ones only weekly. At 30,000 listings on the same tiers it would need about 170,000 a day, close to the key's 180,000. Before adding a big store: widen the slow tiers or move to a larger Keepa plan.</li>
       <li><b>CPU / RAM:</b> the Lead DB page and jobs use indexes, so 0.5 CPU / 1 GB is enough. Upgrade if pages start taking more than 2 seconds or the System map shows the database near its memory limit. Training never runs on the database.</li>
     </ul>
   </section>
@@ -258,6 +300,251 @@
 <script src="/static/bonus.js"></script>
 <script src="/static/common.js"></script>
 <script>
+// Data flow: one model drives the diagram, the detail panel and the jobs table (Nick, Nov 25, 2026: "make the jobs
+// clickable... concise but complete"; his terms: pair, watched, held, Keepa recorder).
+(() => {
+  const COL = { src: [10, 165], job: [225, 195], tbl: [480, 215], use: [775, 175] };
+  const N = {
+    // sources
+    sephora: { col: 'src', y: 40, t: 'Sephora site', s: 'prices, deals, items, stock' },
+    amazon: { col: 'src', y: 140, t: 'Amazon pages', s: 'read in the old MacBook' },
+    spapi: { col: 'src', y: 240, t: 'Amazon SP-API', s: 'can-sell, offers, fees' },
+    keepa: { col: 'src', y: 340, t: 'Keepa API', s: 'price, rank, offer history' },
+    you: { col: 'src', y: 455, t: 'You', s: 'Lead DB page, Leads tab' },
+    // jobs
+    weekly: { col: 'job', y: 30, t: 'Weekly new products', s: 'Sun 2:13 am', job: 1 },
+    check: { col: 'job', y: 92, t: 'Weekly match check', s: 'Sun 3:07 am + daily queue', job: 1 },
+    monthly: { col: 'job', y: 154, t: 'Monthly restriction check', s: '1st of month, 1:19 am', job: 1 },
+    stock: { col: 'job', y: 216, t: 'Daily stock check', s: 'every day 4:17 am', job: 1 },
+    daily: { col: 'job', y: 278, t: 'Daily Sephora run', s: 'every day 4:47 am', job: 1 },
+    score: { col: 'job', y: 340, t: 'Lead Score', s: 'when the daily run asks', job: 1 },
+    rec: { col: 'job', y: 402, t: 'Keepa recorder', s: '24/7 on Render', job: 1 },
+    watchdog: { col: 'job', y: 464, t: 'Watchdog', s: 'every day 7:13 am', job: 1 },
+    // tables
+    catalog: { col: 'tbl', y: 22, t: 'Pairs', s: 'sephora_catalog' },
+    history: { col: 'tbl', y: 74, t: 'Pair history', s: 'catalog_history' },
+    held: { col: 'tbl', y: 126, t: 'Held pairs', s: 'sephora_parked_pairs' },
+    items: { col: 'tbl', y: 178, t: 'Sephora items + stock watch', s: 'store_skus, sephora_stock_watch' },
+    cands: { col: 'tbl', y: 230, t: 'To review', s: 'sephora_candidates' },
+    feedback: { col: 'tbl', y: 282, t: 'Wrong-match marks', s: 'match_feedback' },
+    leads: { col: 'tbl', y: 334, t: 'Leads', s: 'leads' },
+    raw: { col: 'tbl', y: 386, t: 'Keepa products', s: 'keepa_raw' },
+    snaps: { col: 'tbl', y: 438, t: 'Offer/stock snapshots', s: 'keepa_snapshots' },
+    runs: { col: 'tbl', y: 490, t: 'Job records', s: 'sephora_runs, health, queues' },
+    // uses
+    review: { col: 'use', y: 60, t: 'To review tab', s: 'approve or reject' },
+    decisions: { col: 'use', y: 160, t: 'Match decisions', s: 'cases the check left you' },
+    msg: { col: 'use', y: 260, t: 'Your messages', s: 'morning, weekly, alerts' },
+    training: { col: 'use', y: 370, t: 'Training export', s: 'Parquet files' },
+    model: { col: 'use', y: 465, t: 'Model training', s: 'planned: Lead Score v2', plan: 1 },
+  };
+  // [from, to] = data moves from -> to
+  const E = [
+    ['sephora', 'weekly'], ['keepa', 'weekly'], ['spapi', 'weekly'], ['catalog', 'weekly'], ['feedback', 'weekly'], ['leads', 'weekly'], ['raw', 'weekly'],
+    ['weekly', 'catalog'], ['weekly', 'held'], ['weekly', 'runs'],
+    ['amazon', 'check'], ['catalog', 'check'], ['items', 'check'], ['raw', 'check'], ['runs', 'check'], ['check', 'catalog'], ['check', 'runs'],
+    ['spapi', 'monthly'], ['catalog', 'monthly'], ['held', 'monthly'], ['monthly', 'catalog'], ['monthly', 'held'], ['monthly', 'runs'],
+    ['sephora', 'stock'], ['items', 'stock'], ['runs', 'stock'], ['stock', 'items'], ['stock', 'runs'],
+    ['sephora', 'daily'], ['spapi', 'daily'], ['keepa', 'daily'], ['catalog', 'daily'], ['items', 'daily'], ['raw', 'daily'], ['cands', 'daily'], ['feedback', 'daily'], ['runs', 'daily'],
+    ['daily', 'score'], ['daily', 'catalog'], ['daily', 'cands'], ['daily', 'held'], ['daily', 'runs'],
+    ['raw', 'score'], ['keepa', 'score'], ['score', 'daily'],
+    ['keepa', 'rec'], ['catalog', 'rec'], ['cands', 'rec'], ['leads', 'rec'], ['rec', 'raw'], ['rec', 'snaps'],
+    ['runs', 'watchdog'], ['watchdog', 'msg'],
+    ['you', 'cands'], ['you', 'catalog'], ['you', 'feedback'], ['you', 'held'], ['you', 'leads'], ['you', 'items'],
+    // tables -> uses
+    ['cands', 'review'], ['catalog', 'review'], ['items', 'review'], ['catalog', 'decisions'], ['runs', 'decisions'], ['items', 'decisions'], ['runs', 'msg'],
+    ['catalog', 'training'], ['history', 'training'], ['cands', 'training'], ['feedback', 'training'], ['leads', 'training'], ['raw', 'training'], ['snaps', 'training'],
+    ['training', 'model'], ['catalog', 'history'],
+  ];
+  const ul = (a) => '<ul>' + a.map((x) => `<li>${x}</li>`).join('') + '</ul>';
+  const ol = (a) => '<ol>' + a.map((x) => `<li>${x}</li>`).join('') + '</ol>';
+  const kv = (rows) => '<dl class="g-kv">' + rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('') + '</dl>';
+  const D = {
+    daily: {
+      when: 'Every day 4:47 am, in the cloud. Extra run Thu Nov 26, 8:45 pm for Black Friday.', where: 'Cloud', tokens: '≤ 2,500 a run, usually few',
+      what: 'Prices every watched pair and posts the profitable ones to To review.',
+      body: ol([
+        '<b>Sephora cost.</b> Reads the Sale page (each item\'s sale price), the promo and deal pages (codes, brand and category deals, "buy 2 minis" offers), and app or checkout deals Claude records from the deal pages or your message. The biggest deal that applies sets the cost. A product sold in sizes is priced at its own size, or the full size when the size isn\'t known ("Size not checked").',
+        '<b>Amazon price.</b> From the Keepa recorder\'s latest pull: no older than 36 hours for suggestions already on To review and items whose Sephora price changed today, no older than 8 days for the rest. A listing the recorder hasn\'t pulled gets a pull from this run\'s own tokens.',
+        '<b>15% ROI first cut</b>, then Amazon\'s live offers and fees (SP-API).',
+        '<b>Not posted</b> when: out of stock at Sephora (that product goes on the stock check\'s list); you decided that listing in the last 21 days, unless it\'s now cheaper; under 50% ROI with a 30-day average rank of 300,000+ (or no rank and no sales estimate); the Amazon title size isn\'t within 25% of a Sephora size (35% for one-size products) until you mark the pair OK; the match check hasn\'t passed the pair yet (it goes on the check queue) or says it\'s another product.',
+        '<b>Live can-sell check</b> on every listing about to be posted and every suggestion on To review. Restricted: its pairs are held. Approval needed: not posted, and no longer watched until approved.',
+        '<b>Lead Score</b> scores everything left (no cap). Suggestions at 10%+ predicted ROI go to To review, one per listing.',
+        '<b>Re-prices</b> every suggestion already on To review. One that fails any rule above, or whose sale ended, expires with the reason.',
+        '<b>Saves</b> prices and ROI on every pair (each change also lands in Pair history), records the run and writes the health line.',
+        '<b>Then the daily task</b> (Claude): matches Sale-page items not in the Lead DB yet (≤ 2,000 tokens), checks the pairs on the check queue and re-runs to post the ones that pass, looks for deals the run didn\'t account for, and sends your morning message.',
+      ]) + kv([['Tells you', 'Morning message: new suggestions, deals seen, what was not posted and why, problems. It starts with <b>ALERT</b> when under 95% of watched pairs were priced, a step failed, or the run was still going at 7 am.'], ['Code', '<code>jobs/sephora/daily_watch.py</code>, <code>sale_new_products.py</code>']]),
+    },
+    rec: {
+      when: '24/7, Render worker <code>keepa-collector</code>.', where: 'Render', tokens: '≈ 30,000 a day (≈ 3,400 pulls, ≈ 22 a minute)',
+      what: 'Keeps a fresh Keepa pull for every listing, so the other jobs read it instead of spending tokens.',
+      body: kv([
+        ['Pulls', 'Every listing with a pair you can sell or might (approval needed) that isn\'t marked wrong, plus suggestions on To review and ASINs in your leads of the last 30 days. Held pairs and restricted listings are never pulled.'],
+        ['Daily (every 22 h)', 'Suggestions on To review, your leads of the last 30 days, pairs on sale at Sephora, and watched listings at 5%+ ROI now or at the 90-day average (or ROI not known yet).'],
+        ['Every 3 days', 'Watched listings between −30% and 5% ROI.'],
+        ['Weekly', 'Everything else: watched listings under −30% ROI, and listings that need approval.'],
+        ['Spread out', 'Each 3-day and weekly listing has its own fixed time slot in its window, so pulls are even across the days, never one burst. None is left older than 1.5× its interval. A listing moves up a tier as soon as it goes on sale or its ROI rises.'],
+        ['Leaves room', 'Never takes the shared key under 3,000 tokens and never more than 90 a minute, so the daily run and Lead Score always have tokens.'],
+        ['Writes', 'Keepa products (latest full product, replaced each pull), one offer/stock snapshot per pull (each seller\'s stock that day), and its heartbeat, shown at the top of this page.'],
+        ['Code', '<code>jobs/keepa_collector/collector.py</code>'],
+      ]),
+    },
+    score: {
+      when: 'When the daily run asks (and when you score a lead on the Leads tab).', where: 'Render (Lead Score server)', tokens: 'Only when the recorder\'s pull is over 24 h old',
+      what: 'Predicts the ROI you\'d get, from price history, competitors and their stock, and brand track record.',
+      body: kv([
+        ['Input', 'ASIN, date, cost, store link.'],
+        ['Keepa data', 'The Keepa recorder\'s pull when it\'s under 24 hours old (no tokens); otherwise its own Keepa pull.'],
+        ['Output', 'A band from 1 to 10, the predicted ROI and notes. The daily run posts at 10%+ predicted ROI.'],
+        ['Model', 'v1, learned from 12.5k of your past leads. See <a href="#training">Training</a>.'],
+        ['Code', '<code>lead-score</code> repo, <code>app.py</code>'],
+      ]),
+    },
+    weekly: {
+      when: 'Sundays 2:13 am, then the no-rank filter.', where: 'Cloud', tokens: '≤ 4,000 a week',
+      what: 'Finds new products and new brands, refreshes every brand\'s Sephora prices, and learns from your marks.',
+      body: ol([
+        '<b>Sephora prices:</b> re-reads every brand\'s Sephora listing (prices, sales, items gone), New Arrivals and the brand list.',
+        '<b>Your leads:</b> Sephora leads from the last 14 days become pairs (you already checked them).',
+        '<b>New brands:</b> brands with no pairs yet are built (Keepa brand search, matcher, can-sell check, offers). Unseen Sephora brands are screened on whether you can sell them: mostly open → added; mostly restricted → skipped; approval needed → listed for you.',
+        '<b>New products</b> of known brands (New flag, New Arrivals, Sale-page finds): up to 80 a week, by brand + name words, up to 10 listings each. What doesn\'t fit waits a week.',
+        '<b>Clean-up:</b> re-matches listings whose every pair you marked wrong, sweeps a few brands\' best sellers, fills in the Sephora size or shade where missing.',
+        '<b>Learns from your marks:</b> a wrong-match reason (size, shade, concentration, set, bonus, multi-pack) turns that check on for the brand; the same reason in 3+ brands turns it on for all.',
+        '<b>No-rank filter:</b> holds a listing that has been on Amazon 90+ days, had no sales rank at any point in 2 years (full Keepa history) and shows no sales estimate. Pairs you marked OK and listings in your leads are never held. Held ones are re-checked each week and come back when a rank or sales show up.',
+      ]) + kv([['Never adds', 'Pairs for restricted listings, held pairs, blocked listings (Amazon brand "Generic") or approvals that need invoices or Transparency.'], ['Tells you', 'Weekly message: new brands and products, brands for you to decide, what was held.'], ['Code', '<code>weekly_new_products.py</code>, <code>norank_sweep.py</code>']]),
+    },
+    check: {
+      when: 'Sundays 3:07 am for new pairs; every morning for the daily run\'s check queue.', where: 'Cloud + old MacBook Chrome', tokens: '0',
+      what: 'Checks that each new pair really is the same product before it can reach To review.',
+      body: ol([
+        '<b>Picks</b> up to 300 new pairs you can sell that no one has checked, best ROI first (the rest wait a week), plus the daily run\'s check queue.',
+        '<b>Reads their Amazon pages</b> in the old MacBook\'s signed-out "Lead search" Chrome. It never clicks, signs in or gets past a "continue shopping" or captcha page.',
+        '<b>Quick screen:</b> title, photos, bullets, variation and the Sephora item. Clear matches pass.',
+        '<b>Research</b> for the rest: every Amazon photo, Sephora swatches and outside sources. Title, image, bullets, variation and description decide; the barcode is only a clue.',
+        '<b>Applies</b> only high-confidence answers with a source (an undo list is kept). Everything else goes to Match decisions for you. A pair you bought is never marked wrong automatically.',
+      ]) + kv([['Code', '<code>jobs/sephora/check_pairs/pairs.py</code>']]),
+    },
+    stock: {
+      when: 'Every day 4:17 am, before the daily run.', where: 'Old MacBook Chrome', tokens: '0',
+      what: 'Re-reads Sephora pages for items that were out of stock, so restocks get posted.',
+      body: ol([
+        '<b>Stock watch:</b> listings you rejected as "Not in stock at Sephora" are watched with no time limit. When the item is back, the watch ends and the 4:47 run can post it again.',
+        '<b>Out-of-stock re-read:</b> products the daily run didn\'t post as out of stock get their item lists read again, most profitable first.',
+      ]) + kv([['Limits', 'At most 60 Sephora pages a day, one every 7–8 seconds. Reads only: never adds to bag or signs in.'], ['Tells you', 'Only when something is back in stock, or a step failed.'], ['Code', '<code>stock_check.js</code>, <code>check_pairs/sephora_reader.js</code>']]),
+    },
+    monthly: {
+      when: '1st of each month, 1:19 am (about 30 minutes).', where: 'Cloud', tokens: '0',
+      what: 'Asks Amazon whether you can sell every listing in the Lead DB and every held one.',
+      body: ul([
+        'Updates each pair\'s can-sell status. A listing now restricted is held.',
+        'Held listings that opened up, or now need only a one-click approval, come back. Your own "Can\'t sell" calls and no-rank holds never come back this way.',
+        'Brand status: a brand is restricted when 90%+ of at least 3 checked listings are; the jobs skip it.',
+        'Writes nothing if more than 20% of the checks fail.',
+      ]) + kv([['Tells you', 'Brands and listings whose status changed.'], ['Code', '<code>brand_restrictions.py</code>']]),
+    },
+    watchdog: {
+      when: 'Every day 7:13 am.', where: 'Cloud', tokens: '0',
+      what: 'Makes sure a failed morning run never goes unnoticed.',
+      body: ul(['Reads the health line the daily run writes at the end.', 'If it isn\'t from today (the run crashed or never started), sends you an alert.']),
+    },
+    you: {
+      what: 'Your clicks are data too: every answer is kept and used.',
+      body: ul([
+        '<b>To review, Approve:</b> makes a lead on the Leads tab.',
+        '<b>Reject "Can\'t sell / gated":</b> the listing is held and never comes back on its own.',
+        '<b>Reject "Not in stock at Sephora":</b> starts a stock watch instead of a 21-day skip.',
+        '<b>Other rejects:</b> the listing is skipped 21 days unless it gets cheaper; the reason is used in training.',
+        '<b>Catalog, OK:</b> the pair passes the match and size checks for good. <b>Wrong match</b> with reasons feeds the learned checks.',
+        '<b>Match decisions:</b> your answer settles the cases the check couldn\'t.',
+      ]),
+    },
+    sephora: { what: 'Sale page, deal and promo pages, brand listings, New Arrivals, item lists (size, shade, price, stock) and photos. Item lists and photos are read only in the old MacBook\'s Chrome.' },
+    amazon: { what: 'Amazon product pages (title, photos, bullets, variations), read only in the old MacBook\'s signed-out Chrome for the match check. Never from the cloud.' },
+    spapi: { what: 'Amazon\'s API on your seller account: whether you can sell a listing (and what approval needs), live offers and FBA fees.' },
+    keepa: { what: 'Price, sales rank, offer-count and Buy Box histories, current offers with seller stock, monthly sales estimate. One shared key; the Keepa recorder spends most of it, evenly over the day.' },
+    catalog: { what: 'One row per pair: prices, ROI, can-sell status, match confidence and check marks, your answers. Jobs never overwrite your answers.' },
+    history: { what: 'Every change to a pair, with the time, written by a database trigger. Tells us what Sephora charged on any past day.' },
+    held: { what: 'Held pairs, whole, with the reason and date. Back automatically: listings the monthly check finds open again, and no-rank ones that show a rank or sales. Never back: your own can\'t-sell calls.' },
+    items: { what: 'Each Sephora product\'s items (size, shade, price, in stock) and photos, read in the old MacBook\'s Chrome; and the stock watch for listings you rejected as out of stock.' },
+    cands: { what: 'Every suggestion the daily run posted, with its cost, ROI, Lead Score, note, and what happened: approved, rejected (your reason) or expired (the rule that ended it).' },
+    feedback: { what: 'Your wrong-match marks: reason tags, note, correct ASIN. They switch on learned checks and keep bad pairs out of training.' },
+    leads: { what: 'Every lead you or a VA added, and the ones made by approving a suggestion. Lead Score v1 learned from these.' },
+    raw: { what: 'The latest full Keepa product per listing, from the Keepa recorder. The daily run, Lead Score, match check and no-rank filter read it instead of spending tokens.' },
+    snaps: { what: 'One row per listing per pull: Buy Box, offers, rank, and each seller\'s price and stock that day. The only record of competitor stock over time.' },
+    runs: { what: 'Each run\'s sale, counts and problems, plus small job docs: health line, check queue, app/checkout deals, stock to-do list, match cases for you, and the recorder\'s heartbeat.' },
+    review: { what: 'The Lead DB page\'s To review tab: today\'s suggestions with cost, Buy Box, ROI, Lead Score and the note.' },
+    decisions: { what: 'Pairs the match check couldn\'t settle: the research verdict, Amazon and Sephora photos, and your answer buttons.' },
+    msg: { what: 'The daily task\'s morning message, the weekly and monthly messages, stock-check restocks, and alerts on your phone.' },
+    training: { what: '<code>tools/export_training.py</code> writes these tables as Parquet files for training. See <a href="#local">Local or cloud</a>.' },
+    model: { what: 'Lead Score v2, trained once the first quarter of recorded data is graded (Apr 2027). See <a href="#training">Training</a>.' },
+  };
+  const svg = document.getElementById('flowSvg'), det = document.getElementById('detail');
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (n, a, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+  const H = (id) => (N[id].col === 'tbl' ? 42 : 46);
+  const defs = el('defs', {}, svg);
+  for (const [id, cls] of [['ahw', 'ahw'], ['ahr', 'ahr'], ['ahd', 'ahd']]) {
+    const m = el('marker', { id, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
+    el('path', { d: 'M0,0 L10,5 L0,10 z', class: cls }, m);
+  }
+  [['Sources', 'src'], ['Jobs', 'job'], ['Tables (Postgres on Render)', 'tbl'], ['Uses', 'use']].forEach(([t, c]) => {
+    el('text', { x: COL[c][0], y: 12, class: 'h' }, svg).textContent = t;
+  });
+  const edgeG = el('g', {}, svg), nodeG = el('g', {}, svg);
+  const kind = { src: 'src', job: 'job', tbl: 'tbl', use: 'use' };
+  for (const [id, n] of Object.entries(N)) {
+    const [x, w] = COL[n.col], h = H(id);
+    const g = el('g', { class: `nd ${kind[n.col]}${n.plan ? ' plan' : ''}`, tabindex: 0, role: 'button', 'data-id': id, 'aria-label': `${n.t}: show details` }, nodeG);
+    el('rect', { x, y: n.y, width: w, height: h, rx: 8 }, g);
+    el('text', { x: x + 11, y: n.y + (h === 42 ? 18 : 20), class: 't' }, g).textContent = n.t;
+    el('text', { x: x + 11, y: n.y + (h === 42 ? 34 : 37), class: n.col === 'tbl' ? 's m' : 's' }, g).textContent = n.s;
+  }
+  const order = { src: 0, job: 1, tbl: 2, use: 3 };
+  function path(a, b) {
+    const A = N[a], B = N[b], ay = A.y + H(a) / 2, by = B.y + H(b) / 2;
+    if (A.col === B.col) {   // same column (daily <-> Lead Score): loop on the left side
+      const x = COL[A.col][0], dx = a === 'daily' || a === 'catalog' ? 26 : 46;
+      return `M${x},${ay} C${x - dx},${ay} ${x - dx},${by} ${x},${by}`;
+    }
+    const fwd = order[A.col] < order[B.col];
+    const ax = fwd ? COL[A.col][0] + COL[A.col][1] : COL[A.col][0], bx = fwd ? COL[B.col][0] - 2 : COL[B.col][0] + COL[B.col][1] + 2;
+    const mx = (ax + bx) / 2;
+    return `M${ax},${ay} C${mx},${ay} ${mx},${by} ${bx},${by}`;
+  }
+  function select(id, scroll) {
+    if (!N[id]) return;
+    const show = [], on = new Set([id]);
+    for (const [a, b] of E) {
+      if (a === id) { show.push([a, b, 'w']); on.add(b); }
+      else if (b === id) { show.push([a, b, 'r']); on.add(a); }
+    }
+    // then used by: tables this node writes -> their uses
+    if (N[id].col !== 'tbl') for (const [a, b] of E) if (N[a].col === 'tbl' && N[b].col === 'use' && show.some(([x, y, k]) => k === 'w' && y === a) ) { show.push([a, b, 'd']); on.add(b); }
+    edgeG.textContent = '';
+    for (const [a, b, k] of show) el('path', { d: path(a, b), class: `a ${k}`, 'marker-end': `url(#ah${k})` }, edgeG);
+    nodeG.querySelectorAll('.nd').forEach((g) => {
+      const i = g.dataset.id; g.classList.toggle('sel', i === id); g.classList.toggle('dim', !on.has(i));
+      g.setAttribute('aria-pressed', i === id ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-pick]').forEach((b) => b.classList.toggle('on', b.dataset.pick === id));
+    const n = N[id], d = D[id] || {};
+    const ins = [...new Set(E.filter(([, b]) => b === id).map(([a]) => N[a].t))], outs = [...new Set(E.filter(([a]) => a === id).map(([, b]) => N[b].t))];
+    det.innerHTML = `<h4>${n.t}${n.col === 'tbl' ? ` <code>${n.s}</code>` : ''}</h4>`
+      + (d.when ? `<p class="when">${d.when}${d.tokens ? ` · Keepa tokens: ${d.tokens}` : ''}</p>` : '')
+      + (d.what ? `<p class="what">${d.what}</p>` : '') + (d.body || '')
+      + `<p class="io">${ins.length ? `<b>Gets data from:</b> ${ins.join(', ')}. ` : ''}${outs.length ? `<b>Sends data to:</b> ${outs.join(', ')}.` : ''}</p>`;
+    if (scroll) document.getElementById('flow').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  nodeG.addEventListener('click', (e) => { const g = e.target.closest('.nd'); if (g) select(g.dataset.id); });
+  nodeG.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.nd')) { e.preventDefault(); select(e.target.closest('.nd').dataset.id); } });
+  const jobs = Object.keys(N).filter((k) => N[k].job);
+  document.getElementById('jobChips').innerHTML = jobs.map((j) => `<button type="button" data-pick="${j}">${N[j].t}</button>`).join('');
+  document.getElementById('jobRows').innerHTML = jobs.map((j) => `<tr><td><button type="button" class="linkbtn" data-pick="${j}" data-scroll="1">${N[j].t}</button><div class="muted">${D[j].what}</div></td><td>${D[j].when}</td><td>${D[j].where}</td><td class="num">${D[j].tokens}</td></tr>`).join('');
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-pick]'); if (b) select(b.dataset.pick, !!b.dataset.scroll); });
+  select(location.hash.startsWith('#job-') ? location.hash.slice(5) : 'daily');
+})();
+</script>
+<script>
 (async () => {
   try { await LG.header(); } catch (e) { /* header is optional here */ }
   const f = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US'));
@@ -274,8 +561,8 @@
     if (c) {
       const d = c.detail || {}, beat = c.beat_at ? new Date(c.beat_at) : null;
       const mins = beat ? Math.round((Date.now() - beat) / 60000) : null;
-      document.getElementById('collector').textContent = `Keepa collector: ${c.state || '—'} · last heartbeat ${mins == null ? '—' : mins + ' min ago'} · `
-        + `${f(d.asins)} ASINs tracked (${f(d.hot)} hot) · ${f(d.never_pulled)} not pulled yet · ${f(d.pulled_today)} pulled today using ${f(d.tokens_today)} tokens`
+      document.getElementById('collector').textContent = `Keepa recorder: ${c.state || '—'} · last heartbeat ${mins == null ? '—' : mins + ' min ago'} · `
+        + `${f(d.asins)} listings: ${f(d.hot)} daily, ${f(d.tier_3day)} every 3 days, ${f(d.tier_weekly)} weekly · ${f(d.never_pulled)} not pulled yet · ${f(d.pulled_today)} pulled today using ${f(d.tokens_today)} tokens`
         + (d.errors ? ` · ${f(d.errors)} errors` : '');
     }
   } catch (e) {
