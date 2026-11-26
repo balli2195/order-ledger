@@ -1019,7 +1019,13 @@ def main():
     ls_fail = [p_ for p_ in problems if p_.startswith("Lead Score")]
     if ls_fail:
         alerts.append("Lead Score: " + "; ".join(p_[:120] for p_ in ls_fail[:2]))
-    hub_fail = [p_ for p_ in problems if ("Hub" in p_ or "failed" in p_) and not p_.startswith("Lead Score")]
+    # Sephora unreachable (blocked / 403 / timeouts): the Sale page or the promo pages weren't read, so sale prices, promo
+    # codes and new sale items are missing from today's run (Nick, Nov 26, 2026: say so instead of a quiet Problems line).
+    seph_fail = [p_ for p_ in problems if p_.startswith(("Sephora Sale page failed", "Sephora promo pages unreachable"))]
+    if seph_fail:
+        alerts.append("Sephora not read (sale prices, promo codes and new sale items missing today): "
+                      + "; ".join(p_[:120] for p_ in seph_fail[:2]))
+    hub_fail = [p_ for p_ in problems if ("Hub" in p_ or "failed" in p_) and not p_.startswith("Lead Score") and p_ not in seph_fail]
     if hub_fail:
         alerts.append(f"{len(hub_fail)} step(s) failed: " + "; ".join(p_[:120] for p_ in hub_fail[:3]))
     if fatal:
